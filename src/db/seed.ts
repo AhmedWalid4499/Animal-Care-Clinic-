@@ -2,6 +2,18 @@
 import bcrypt from 'bcryptjs';
 import { all, get, insert, run, tx } from './core';
 import { addDays, today } from '../lib/dates';
+import clinicLogo from '../assets/clinic-logo.png?inline';
+
+/** Clinic details from the signed scope (v1.0, 3 Nov 2026) and the clinic logo. Editable in Settings → Clinic. */
+export const CLINIC = {
+  name_en: 'Animal Care Clinic',
+  name_ar: 'عيادة رعاية الحيوان',
+  phone: '01227007428',
+  whatsapp: '01227007428', // assumed same as phone until Dr. Waleed confirms
+  address: 'Giza · الجيزة',
+  receipt_footer: 'Where pets are people · شكراً لثقتكم',
+  logo_url: clinicLogo,
+};
 
 export const DEFAULT_LOGINS = [
   { email: 'waleed@clinic.local', password: 'vet12345', role: 'VET' as const },
@@ -13,8 +25,9 @@ export function seedBase() {
     run(
       `INSERT INTO clinic_settings (id,name_en,name_ar,phone,whatsapp,address,currency,locale_default,receipt_footer)
        VALUES (1,?,?,?,?,?,?,?,?)`,
-      ['Animal Care Clinic', 'عيادة رعاية الحيوان', '', '', '', 'EGP', 'ar', 'Thank you — شكراً لثقتكم'],
+      [CLINIC.name_en, CLINIC.name_ar, CLINIC.phone, CLINIC.whatsapp, CLINIC.address, 'EGP', 'ar', CLINIC.receipt_footer],
     );
+    run('UPDATE clinic_settings SET logo_url = ? WHERE id = 1', [CLINIC.logo_url]);
     insert('users', { name: 'Dr. Waleed El-Bourgy', email: DEFAULT_LOGINS[0].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[0].password, 10), role: 'VET', locale: 'ar' });
     insert('users', { name: 'Reception', email: DEFAULT_LOGINS[1].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[1].password, 10), role: 'ASSISTANT', locale: 'ar' });
 
