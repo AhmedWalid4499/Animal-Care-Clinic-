@@ -13,6 +13,7 @@ import { isDesktop, platform } from '../lib/platform';
 import { today } from '../lib/dates';
 import { Confirm, Dialog, Field, Icon, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { UpdatesSection } from '../components/Updates';
 import { PRICE_CATEGORIES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
 type Tab = 'clinic' | 'prices' | 'vaccines' | 'users' | 'data';
@@ -374,6 +375,7 @@ function DataTab() {
         </div>
         {result && <pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{result}</pre>}
       </div>
+      {isDesktop && <UpdatesSection />}
       {restore && (
         <Confirm
           title={t('settings.restore')}

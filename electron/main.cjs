@@ -1,15 +1,18 @@
-// Electron main process — Animal Care Clinic desktop app (Windows).
+// Electron main process — Animal Care Clinic desktop app (Windows and macOS, same code).
 // Owns the disk: the SQLite database file, daily backups, file save/open dialogs.
 // The renderer (React) never touches Node; it talks to this file through electron/preload.cjs.
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const updater = require('./updater.cjs');
 
 const isSmoke = process.argv.includes('--smoke');
+const isMac = process.platform === 'darwin';
 const seedDemo = process.env.SEED_DEMO === '1' || process.argv.includes('--seed-demo');
 
-// Data lives in %APPDATA%\Animal Care Clinic\ on Windows. CLINIC_DATA_DIR overrides it (tests, portable USB use).
+// Data lives in %APPDATA%\Animal Care Clinic\ on Windows and ~/Library/Application Support/Animal Care Clinic/ on macOS.
+// CLINIC_DATA_DIR overrides it (tests, portable USB use).
 const dataDir = process.env.CLINIC_DATA_DIR || path.join(app.getPath('userData'), 'data');
 // With an explicit data dir, keep the browser profile (UI language, theme, visit drafts) beside it too.
 if (process.env.CLINIC_DATA_DIR) app.setPath('userData', path.join(dataDir, 'profile'));
@@ -19,7 +22,7 @@ const backupDir = path.join(dataDir, 'backups');
 const exportDir = process.env.CLINIC_EXPORT_DIR || path.join(app.getPath('documents'), 'Animal Care Clinic', 'Exports');
 const KEEP_BACKUPS = 14;
 
-// Day-first date pickers (dd/mm/yyyy) regardless of the Windows display language.
+// Day-first date pickers (dd/mm/yyyy) regardless of the system display language.
 app.commandLine.appendSwitch('lang', 'en-GB');
 
 function ensureDirs() {
@@ -129,7 +132,7 @@ ipcMain.handle('file:pick', async (e, { filters }) => {
   return { name: path.basename(filePaths[0]), bytes: fs.readFileSync(filePaths[0]) };
 });
 
-// Attachments are stored inside the database; to view one we write a temp copy and let Windows open it.
+// Attachments are stored inside the database; to view one we write a temp copy and let the OS open it.
 ipcMain.handle('file:open', async (_e, { name, bytes }) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-'));
   const file = path.join(dir, name.replace(/[\\/:*?"<>|]/g, '_'));
@@ -149,6 +152,27 @@ ipcMain.handle('app:print', (e) => {
   win.webContents.print({ printBackground: true });
 });
 
+// Minimal macOS menu: app (About/Hide/Quit), Edit (copy/paste/undo in text fields), Window. No reload/devtools.
+function macMenu() {
+  return [
+    { role: 'appMenu' },
+    { role: 'editMenu' },
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Print…',
+          accelerator: 'CmdOrCtrl+P',
+          click: (_item, win) => win && win.webContents.print({ printBackground: true }),
+        },
+        { type: 'separator' },
+        { role: 'close' },
+      ],
+    },
+    { role: 'windowMenu' },
+  ];
+}
+
 // ---- lifecycle -------------------------------------------------------------------------------
 if (!app.requestSingleInstanceLock() && !isSmoke) {
   app.quit();
@@ -156,7 +180,9 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
   app.whenReady().then(() => {
     ensureDirs();
     dailyBackup();
-    Menu.setApplicationMenu(null);
+    updater.init({ dataDir, dbPath, backupDir, noAutoCheck: isSmoke });
+    // Windows: no menu bar. macOS always shows one, and without it ⌘C/⌘V/⌘Z/⌘A/⌘Q stop working.
+    Menu.setApplicationMenu(isMac ? Menu.buildFromTemplate(macMenu()) : null);
     const win = createWindow();
     if (isSmoke) {
       // CI check: load the UI, wait for the login screen, exit 0.

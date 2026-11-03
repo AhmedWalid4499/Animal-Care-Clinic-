@@ -13,4 +13,15 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   openExternal: (url) => ipcRenderer.invoke('shell:external', url),
   showDataFolder: () => ipcRenderer.invoke('shell:showData'),
   print: () => ipcRenderer.invoke('app:print'),
+  // Automatic updates (electron/updater.cjs)
+  updateGet: () => ipcRenderer.invoke('update:get'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateSetAuto: (on) => ipcRenderer.invoke('update:setAuto', !!on),
+  updateOpenReleases: () => ipcRenderer.invoke('update:openReleases'),
+  onUpdateState: (cb) => {
+    const fn = (_e, st) => cb(st);
+    ipcRenderer.on('update:state', fn);
+    return () => ipcRenderer.removeListener('update:state', fn);
+  },
 });

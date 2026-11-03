@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useApp, useQuery, type Theme } from '../lib/app';
 import { getSettings } from '../db/repo';
 import { Icon } from './ui';
+import { UpdateBanner } from './Updates';
 
 export function Layout() {
   const { t, user, setUser, isVet, locale, setLocale, theme, setTheme } = useApp();
@@ -19,6 +20,7 @@ export function Layout() {
   return (
     <>
       {__WEB_DEMO__ && <div className="demo-banner no-print">{t('app.demoBanner')}</div>}
+      <UpdateBanner />
       <div className="shell">
         <aside className="side no-print">
           {settings.logo_url ? (

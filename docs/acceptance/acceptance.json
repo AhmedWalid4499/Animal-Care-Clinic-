@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-03T19:06:24.832Z",
+  "at": "2026-11-03T19:14:56.833Z",
   "results": [
     {
       "id": "size",
@@ -11,13 +11,13 @@
       "id": "S1-load",
       "criterion": "Dashboard loads in under 1 s with 500 pets",
       "pass": true,
-      "evidence": "sign-in → dashboard 211 ms (includes password check); dashboard re-open 81 / 66 / 64 ms; 173 due-vaccination rows on screen"
+      "evidence": "sign-in → dashboard 194 ms (includes password check); dashboard re-open 56 / 52 / 57 ms; 173 due-vaccination rows on screen"
     },
     {
       "id": "S1-search",
       "criterion": "Quick search returns on the 3rd keystroke",
       "pass": true,
-      "evidence": "\"Moh\" 18 ms, 16 hits; \"Lun\" 20 ms, 16 hits; \"011\" 45 ms, 16 hits; \"مشم\" 33 ms, 16 hits"
+      "evidence": "\"Moh\" 17 ms, 16 hits; \"Lun\" 18 ms, 16 hits; \"011\" 43 ms, 16 hits; \"مشم\" 28 ms, 16 hits"
     },
     {
       "id": "S8-export-xlsx",

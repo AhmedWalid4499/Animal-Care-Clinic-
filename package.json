@@ -12,9 +12,10 @@
     "build:web": "vite build --mode web",
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
-    "dist:win": "npm run build && electron-builder --win --x64",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --universal --publish never",
     "dist:linux": "npm run build && electron-builder --linux dir",
-    "dist:win:linux": "npm run build && electron-builder --win --x64 -c.win.signAndEditExecutable=false",
+    "dist:win:linux": "npm run build && electron-builder --win --x64 --publish never -c.win.signAndEditExecutable=false",
     "walkthrough": "npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots",
     "acceptance": "npm run build && xvfb-run -a node scripts/acceptance.mjs acceptance-out",
     "howto": "node scripts/make-howto.mjs"
@@ -31,6 +32,15 @@
       "electron/**",
       "build/icon.png",
       "package.json"
+    ],
+    "afterPack": "build/mac-adhoc-sign.cjs",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AhmedWalid4499",
+        "repo": "Animal-Care-Clinic-",
+        "releaseType": "release"
+      }
     ],
     "win": {
       "target": [
@@ -53,10 +63,38 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "shortcutName": "Animal Care Clinic"
+      "shortcutName": "Animal Care Clinic",
+      "artifactName": "AnimalCareClinic-Setup-${version}.${ext}"
     },
     "portable": {
       "artifactName": "AnimalCareClinic-${version}-portable.exe"
+    },
+    "mac": {
+      "category": "public.app-category.medical",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "11.0",
+      "artifactName": "AnimalCareClinic-${version}-mac.${ext}"
+    },
+    "dmg": {
+      "title": "Animal Care Clinic",
+      "artifactName": "AnimalCareClinic-${version}-mac.dmg"
     },
     "linux": {
       "target": "dir"
@@ -65,6 +103,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-sans-arabic": "5.1.0",
     "bcryptjs": "2.4.3",
+    "electron-updater": "6.3.9",
     "fflate": "0.8.2",
     "react": "18.3.1",
     "react-dom": "18.3.1",
