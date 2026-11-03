@@ -72,7 +72,14 @@ export function UpdatesSection() {
         {t('updates.current')} <code className="ltr">{st.current}</code>
       </p>
       {st.reason && st.reason !== 'portable' ? (
-        <p className="note warn">{t(`updates.reason_${st.reason}`)}</p>
+        <div className="note warn">
+          <p style={{ margin: 0 }}>{t(`updates.reason_${st.reason}`)}</p>
+          {st.appPath && (
+            <p className="small muted" style={{ margin: '6px 0 0' }}>
+              {t('updates.runningFrom')} <code className="ltr">{st.appPath}</code>
+            </p>
+          )}
+        </div>
       ) : (
         <>
           <label className="check">
@@ -87,6 +94,7 @@ export function UpdatesSection() {
           <button className="btn" disabled={busy} onClick={() => updates.check()}>{t('updates.check')}</button>
         )}
         {st.status === 'ready' && <button className="btn primary" onClick={() => updates.install()}>{t('updates.restart')}</button>}
+        {st.reason === 'mac-move' && <button className="btn primary" onClick={() => updates.moveToApplications()}>{t('updates.moveToApps')}</button>}
         {(st.reason || st.status === 'error') && st.releasesUrl && (
           <button className="btn ghost" onClick={() => updates.openReleases()}>{t('updates.download')}</button>
         )}

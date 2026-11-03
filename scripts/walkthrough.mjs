@@ -174,6 +174,16 @@ await step('update ready banner', async () => {
   if (await win.locator('.update-banner').count()) throw new Error('Later did not hide the banner');
 });
 
+// macOS opened from the dmg / a translocated copy: Settings explains, shows where it runs from, offers the move.
+await step('mac not in Applications', async () => {
+  const misplaced = { current: '0.1.0', auto: true, supported: false, reason: 'mac-move', status: 'idle', version: null, progress: 0, error: null, releasesUrl: 'https://example.invalid', appPath: '/Volumes/Animal Care Clinic 0.1.1-universal/Animal Care Clinic.app' };
+  await app.evaluate(({ BrowserWindow }, st) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', st), misplaced);
+  await win.getByRole('button', { name: 'Move to Applications' }).waitFor();
+  await win.getByText('/Volumes/Animal Care Clinic 0.1.1-universal/').waitFor();
+  await win.locator('.form-section:has(h2:text("Updates"))').scrollIntoViewIfNeeded();
+  await shot('update-mac-move');
+});
+
 await step('dark mode', async () => {
   await go('#/');
   await win.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
