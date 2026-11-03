@@ -15,7 +15,9 @@ export interface UpdateState {
 }
 
 interface DesktopBridge {
-  config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; version: string; platform: string }>;
+  config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; exportDir: string; version: string; platform: string }>;
+  exportFile(name: string, bytes: Uint8Array): Promise<string>;
+  showItem(file: string): Promise<void>;
   loadDb(): Promise<Uint8Array | null>;
   saveDb(bytes: Uint8Array): Promise<boolean>;
   saveFile(name: string, bytes: Uint8Array, filters?: Filter[]): Promise<boolean>;
@@ -44,6 +46,8 @@ export const isDesktop = !!desktop;
 
 // ---- browser fallback (prototype): IndexedDB holds the database bytes ----
 const IDB_NAME = 'animal-care-clinic';
+// Bump when the demo seed changes so prototype viewers get the new demo data instead of their old copy.
+const DEMO_DB_KEY = 'db-v2';
 function idb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, 1);
@@ -106,23 +110,32 @@ function pickInBrowser(accept: string): Promise<{ name: string; bytes: Uint8Arra
 export const platform = {
   async config() {
     if (desktop) return desktop.config();
-    return { seedDemo: true, dataDir: '', dbPath: '', backupDir: '', version: '0.1.0', platform: 'web' };
+    return { seedDemo: true, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: '0.1.0', platform: 'web' };
   },
   async loadDb() {
     if (desktop) {
       const b = await desktop.loadDb();
       return b ? new Uint8Array(b) : null;
     }
-    return idbGet('db');
+    return idbGet(DEMO_DB_KEY);
   },
   async saveDb(bytes: Uint8Array) {
     if (desktop) await desktop.saveDb(bytes);
-    else await idbSet('db', bytes);
+    else await idbSet(DEMO_DB_KEY, bytes);
   },
   async saveFile(name: string, bytes: Uint8Array, mime: string, filters?: Filter[]) {
     if (desktop) return desktop.saveFile(name, bytes, filters);
     download(name, bytes, mime);
     return true;
+  },
+  /** One-click export: desktop writes straight to the Exports folder and returns the full path; web downloads. */
+  async exportFile(name: string, bytes: Uint8Array, mime: string): Promise<string> {
+    if (desktop) return desktop.exportFile(name, bytes);
+    download(name, bytes, mime);
+    return name;
+  },
+  showItem(file: string) {
+    desktop?.showItem(file);
   },
   async pickFile(filters: Filter[]) {
     if (desktop) {

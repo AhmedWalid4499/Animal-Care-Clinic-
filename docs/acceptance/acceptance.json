@@ -1,0 +1,83 @@
+{
+  "at": "2026-11-03T19:14:56.833Z",
+  "results": [
+    {
+      "id": "size",
+      "criterion": "Test database at the scope size (screen 1: 500 pets)",
+      "pass": true,
+      "evidence": "500 pets, 305 owners, 1982 visits, 499 vaccinations, 250 invoices, 27 appointments"
+    },
+    {
+      "id": "S1-load",
+      "criterion": "Dashboard loads in under 1 s with 500 pets",
+      "pass": true,
+      "evidence": "sign-in → dashboard 194 ms (includes password check); dashboard re-open 56 / 52 / 57 ms; 173 due-vaccination rows on screen"
+    },
+    {
+      "id": "S1-search",
+      "criterion": "Quick search returns on the 3rd keystroke",
+      "pass": true,
+      "evidence": "\"Moh\" 17 ms, 16 hits; \"Lun\" 18 ms, 16 hits; \"011\" 43 ms, 16 hits; \"مشم\" 28 ms, 16 hits"
+    },
+    {
+      "id": "S8-export-xlsx",
+      "criterion": "Excel export in one click: one sheet per table, every row",
+      "pass": true,
+      "evidence": "clinic-export-2026-11-03.xlsx written with no dialog; 15 sheets; row counts match the database for all 15 tables"
+    },
+    {
+      "id": "S7.6-export-csv",
+      "criterion": "CSV export in one click: one file per table",
+      "pass": true,
+      "evidence": "clinic-export-2026-11-03-csv.zip holds 15 CSV files; row counts match"
+    },
+    {
+      "id": "S7.7-restore",
+      "criterion": "Backup restore tested once",
+      "pass": true,
+      "evidence": "owners: backup 305 → after adding one 306 → after restore 305; the added owner is gone from the list"
+    },
+    {
+      "id": "S4-template",
+      "criterion": "Spreadsheet template matches import/TEMPLATE.md",
+      "pass": true,
+      "evidence": "16 columns"
+    },
+    {
+      "id": "S7.9-import",
+      "criterion": "Imported data matches the spreadsheet row count",
+      "pass": true,
+      "evidence": "73 sheet rows = 61 pets + 10 owner-only rows + 2 skipped rows (reported by row number); 41 new owners, 1 row merged into an existing owner by phone. App said: \"Imported 41 owners and 61 pets. Skipped 2 rows.\""
+    },
+    {
+      "id": "S7.5-receipt",
+      "criterion": "A5 receipt prints on one A5 page",
+      "pass": true,
+      "evidence": "receipt-A5.pdf: 1 page, 420×595 pt (A5 = 420×595 pt)"
+    },
+    {
+      "id": "S4-summary",
+      "criterion": "Pet summary prints / saves as PDF",
+      "pass": true,
+      "evidence": "pet-summary-A5.pdf: 1 page(s), 420×595 pt"
+    },
+    {
+      "id": "RTL",
+      "criterion": "Arabic right-to-left on every screen, laptop and phone width",
+      "pass": true,
+      "evidence": "25 screens × 2 widths: dir=rtl, Arabic labels, no sideways scrolling (screenshots in rtl/)"
+    },
+    {
+      "id": "persist",
+      "criterion": "Data survives closing and reopening the app",
+      "pass": true,
+      "evidence": "346 owners / 561 pets / 250 invoices before and after"
+    },
+    {
+      "id": "S7.7-daily",
+      "criterion": "Automatic daily backup copy exists",
+      "pass": true,
+      "evidence": "clinic-2026-11-03.sqlite in data\\backups (taken when the app is first opened each day; last 14 kept)"
+    }
+  ]
+}

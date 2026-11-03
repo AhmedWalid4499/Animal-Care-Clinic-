@@ -16,7 +16,9 @@
     "dist:mac": "npm run build && electron-builder --mac --universal --publish never",
     "dist:linux": "npm run build && electron-builder --linux dir",
     "dist:win:linux": "npm run build && electron-builder --win --x64 --publish never -c.win.signAndEditExecutable=false",
-    "walkthrough": "npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots"
+    "walkthrough": "npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots",
+    "acceptance": "npm run build && xvfb-run -a node scripts/acceptance.mjs acceptance-out",
+    "howto": "node scripts/make-howto.mjs"
   },
   "build": {
     "appId": "com.animalcareclinic.tracker",
@@ -102,6 +104,7 @@
     "@fontsource/ibm-plex-sans-arabic": "5.1.0",
     "bcryptjs": "2.4.3",
     "electron-updater": "6.3.9",
+    "fflate": "0.8.2",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-router-dom": "6.28.0",

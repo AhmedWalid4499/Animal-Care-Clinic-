@@ -1,4 +1,4 @@
-# [CLINIC NAME] Patient Tracker — Database schema v1
+# Animal Care Clinic Patient Tracker — Database schema v1
 
 Decided 3 Nov 2026. Same conventions as the software-house platform: **Postgres on Railway, Prisma, UUID primary keys, `created_at` / `updated_at` on every table, `status` / `type` as enums, soft-delete via `status` where listed (never hard-delete clinical data).** Money is `Decimal(10,2)` in EGP. Times are `timestamptz`.
 

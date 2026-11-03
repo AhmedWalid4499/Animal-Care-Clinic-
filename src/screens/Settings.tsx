@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { strToU8, zipSync } from 'fflate';
 import { useApp, useQuery } from '../lib/app';
 import {
   getSettings, importOwnersPets, listPriceItems, listUsers, listVaccineTypes, savePriceItem, saveSettings, saveUser, saveVaccineType,
@@ -88,6 +89,7 @@ function PricesTab() {
       <div className="row end" style={{ marginBottom: 10 }}>
         <button className="btn primary" onClick={() => setEdit({ name_en: '', name_ar: '', category: 'OTHER', unit_price: 0, is_active: 1 })}><Icon name="plus" /> {t('settings.addPrice')}</button>
       </div>
+      <div className="tablewrap">
       <table className="t">
         <thead><tr><th>{t('settings.nameEnCol')}</th><th>{t('settings.nameArCol')}</th><th>{t('settings.category')}</th><th className="r">{t('settings.price')}</th><th>{t('common.status')}</th></tr></thead>
         <tbody>
@@ -99,6 +101,7 @@ function PricesTab() {
           ))}
         </tbody>
       </table>
+      </div>
       {edit && <PriceDialog item={edit} onClose={() => setEdit(null)} />}
     </>
   );
@@ -141,6 +144,7 @@ function VaccinesTab() {
       <div className="row end" style={{ marginBottom: 10 }}>
         <button className="btn primary" onClick={() => setEdit({ name: '', species: 'DOG,CAT', interval_days: 365, is_active: 1 })}><Icon name="plus" /> {t('settings.addVaccine')}</button>
       </div>
+      <div className="tablewrap">
       <table className="t">
         <thead><tr><th>{t('settings.vaccineName')}</th><th>{t('settings.species')}</th><th className="r">{t('settings.interval')}</th><th>{t('common.status')}</th></tr></thead>
         <tbody>
@@ -152,6 +156,7 @@ function VaccinesTab() {
           ))}
         </tbody>
       </table>
+      </div>
       {edit && <VaccineDialog item={edit} onClose={() => setEdit(null)} />}
     </>
   );
@@ -199,6 +204,7 @@ function UsersTab() {
       <div className="row end" style={{ marginBottom: 10 }}>
         <button className="btn primary" onClick={() => setEdit({ name: '', email: '', role: 'ASSISTANT', locale: 'ar', is_active: 1 })}><Icon name="plus" /> {t('settings.addUser')}</button>
       </div>
+      <div className="tablewrap">
       <table className="t">
         <thead><tr><th>{t('settings.userName')}</th><th>{t('settings.email')}</th><th>{t('settings.role')}</th><th>{t('settings.locale')}</th><th>{t('common.status')}</th></tr></thead>
         <tbody>
@@ -210,6 +216,7 @@ function UsersTab() {
           ))}
         </tbody>
       </table>
+      </div>
       {edit && <UserDialog item={edit} onClose={() => setEdit(null)} />}
     </>
   );
@@ -280,6 +287,12 @@ function DataTab() {
   }, []);
   const stamp = today();
 
+  const [saved, setSaved] = useState<string | null>(null);
+  const done = (path: string) => {
+    setSaved(path);
+    toast(t('settings.exported'));
+  };
+
   const exportXlsx = async () => {
     const wb = XLSX.utils.book_new();
     for (const table of EXPORT_TABLES) {
@@ -287,18 +300,20 @@ function DataTab() {
       XLSX.utils.book_append_sheet(wb, rows.length ? XLSX.utils.json_to_sheet(rows) : XLSX.utils.aoa_to_sheet([['(empty)']]), table.slice(0, 31));
     }
     const bytes = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
-    if (await platform.saveFile(`clinic-export-${stamp}.xlsx`, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', [{ name: 'Excel', extensions: ['xlsx'] }])) toast(t('settings.exported'));
+    done(await platform.exportFile(`clinic-export-${stamp}.xlsx`, bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
   };
   const exportCsv = async () => {
+    // One .zip with one UTF-8 CSV per table (BOM so Excel opens Arabic correctly).
+    const files: Record<string, Uint8Array> = {};
     for (const table of EXPORT_TABLES) {
-      const csv = XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(exportRows(table)));
-      const bytes = new TextEncoder().encode(`﻿${csv}`);
-      if (!(await platform.saveFile(`${table}-${stamp}.csv`, bytes, 'text/csv', [{ name: 'CSV', extensions: ['csv'] }]))) return;
+      const rows = exportRows(table);
+      const csv = rows.length ? XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(rows)) : '';
+      files[`${table}.csv`] = strToU8(`\uFEFF${csv}`);
     }
-    toast(t('settings.exported'));
+    done(await platform.exportFile(`clinic-export-${stamp}-csv.zip`, zipSync(files), 'application/zip'));
   };
   const backup = async () => {
-    if (await platform.saveFile(`clinic-backup-${stamp}.sqlite`, exportBytes(), 'application/x-sqlite3', [{ name: 'SQLite backup', extensions: ['sqlite'] }])) toast(t('settings.exported'));
+    done(await platform.exportFile(`clinic-backup-${stamp}.sqlite`, exportBytes(), 'application/x-sqlite3'));
   };
   const pickRestore = async () => {
     const f = await platform.pickFile([{ name: 'SQLite backup', extensions: ['sqlite'] }]);
@@ -313,7 +328,7 @@ function DataTab() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'owners-pets');
     const bytes = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
-    await platform.saveFile('owners-pets-TEMPLATE.xlsx', bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', [{ name: 'Excel', extensions: ['xlsx'] }]);
+    done(await platform.exportFile('owners-pets-TEMPLATE.xlsx', bytes, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
   };
   const doImport = async () => {
     const f = await platform.pickFile([{ name: 'Excel / CSV', extensions: ['xlsx', 'xls', 'csv'] }]);
@@ -333,6 +348,12 @@ function DataTab() {
           <button className="btn primary" onClick={exportXlsx}>⬇ {t('settings.export')}</button>
           <button className="btn" onClick={exportCsv}>{t('settings.exportCsv')}</button>
         </div>
+        {saved && isDesktop && (
+          <p className="note row" style={{ marginTop: 12 }}>
+            <span className="spacer ltr" style={{ wordBreak: 'break-all' }}>{t('settings.savedTo', { path: saved })}</span>
+            <button className="btn sm" onClick={() => platform.showItem(saved)}>{t('settings.showInFolder')}</button>
+          </p>
+        )}
       </div>
       <div className="form-section">
         <h2>{t('settings.backup')}</h2>

@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<title>Animal Care Clinic — How to</title>
+<!-- One-page "how to" for clinic staff (SCOPE §7.10). Page 1 Arabic, page 2 English.
+     Rendered to PDF by scripts/make-howto.mjs. Fonts and logo load from the repo. -->
+<style>
+  @font-face { font-family: 'Plex Arabic'; font-weight: 400; src: url('../../node_modules/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-400-normal.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+FB50-FDFF, U+FE70-FEFF, U+200C-200E; }
+  @font-face { font-family: 'Plex Arabic'; font-weight: 600; src: url('../../node_modules/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-arabic-600-normal.woff2') format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+FB50-FDFF, U+FE70-FEFF, U+200C-200E; }
+  @font-face { font-family: 'Plex Arabic'; font-weight: 400; src: url('../../node_modules/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F, U+2190-21FF; }
+  @font-face { font-family: 'Plex Arabic'; font-weight: 600; src: url('../../node_modules/@fontsource/ibm-plex-sans-arabic/files/ibm-plex-sans-arabic-latin-600-normal.woff2') format('woff2'); unicode-range: U+0000-00FF, U+2000-206F, U+2190-21FF; }
+  :root { --teal: #2e6f73; --soft: #e5f0f0; --ink: #1b1f23; --ink2: #555d63; --rule: #d5dadd; }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Plex Arabic', 'Segoe UI', Tahoma, sans-serif; color: var(--ink); background: #fff; font-size: 10pt; line-height: 1.42; }
+  .page { width: 210mm; height: 297mm; padding: 12mm 13mm 10mm; display: flex; flex-direction: column; page-break-after: always; overflow: hidden; }
+  .page:last-child { page-break-after: auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10mm; border-bottom: 2px solid var(--teal); padding-bottom: 4mm; }
+  header img { height: 19mm; }
+  header h1 { margin: 0; font-size: 19pt; font-weight: 600; color: var(--teal); }
+  header p { margin: 1mm 0 0; color: var(--ink2); font-size: 9.5pt; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm 8mm; margin-top: 4.5mm; flex: 1; align-content: start; }
+  section h2 { margin: 0 0 1.5mm; font-size: 11.5pt; font-weight: 600; display: flex; gap: 2.5mm; align-items: baseline; }
+  section h2 b { background: var(--teal); color: #fff; border-radius: 3px; min-width: 6mm; text-align: center; font-size: 9.5pt; padding: 0 1.5mm; }
+  section ol, section ul { margin: 0; padding-inline-start: 5mm; }
+  section li { margin: 0.6mm 0; }
+  .k { font-weight: 600; color: var(--teal); }
+  .note { background: var(--soft); border-inline-start: 3px solid var(--teal); padding: 2mm 3mm; border-radius: 0 3px 3px 0; margin-top: 1.5mm; font-size: 9.3pt; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.3pt; }
+  th, td { text-align: start; padding: 1.2mm 1.5mm; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { border-bottom: 1.5px solid var(--ink); font-weight: 600; }
+  .wide { grid-column: 1 / -1; }
+  footer { border-top: 1px solid var(--rule); padding-top: 2.5mm; display: flex; justify-content: space-between; color: var(--ink2); font-size: 8.8pt; }
+  .ltr { direction: ltr; unicode-bidi: isolate; }
+  code { font-family: Consolas, monospace; font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<!-- ============================== العربية ============================== -->
+<div class="page" dir="rtl" lang="ar">
+  <header>
+    <div>
+      <h1>دليل الاستخدام السريع</h1>
+      <p>سجل المرضى — عيادة رعاية الحيوان · د. وليد البرجي · الجيزة</p>
+    </div>
+    <img src="../../src/assets/clinic-logo.png" alt="Animal Care Clinic">
+  </header>
+
+  <div class="grid">
+    <section>
+      <h2><b>١</b> الدخول</h2>
+      <ol>
+        <li>افتح <span class="k">Animal Care Clinic</span> من سطح المكتب.</li>
+        <li>ادخل ببريدك وكلمة مرورك. لكل شخص حسابه — لا تشارك كلمة المرور.</li>
+        <li>زر <span class="k">English / العربية</span> أسفل القائمة يغيّر اللغة.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>٢</b> البحث عن مريض</h2>
+      <ul>
+        <li>من <span class="k">الرئيسية</span> اكتب اسم المالك أو رقم الهاتف أو اسم الحيوان — النتائج تظهر من الحرف الثالث.</li>
+        <li>اضغط الحيوان لفتح ملفه: السجل، التطعيمات، منحنى الوزن، الملفات.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2><b>٣</b> مالك أو حيوان جديد</h2>
+      <ol>
+        <li><span class="k">الملاك ← مالك جديد</span>: الاسم والهاتف يكفيان.</li>
+        <li>إذا ظهر تنبيه <span class="k">رقم الهاتف مستخدم</span> فافتح المالك الموجود بدلاً من التكرار.</li>
+        <li>من صفحة المالك: <span class="k">إضافة حيوان</span>.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>٤</b> تسجيل زيارة <small>(الطبيب)</small></h2>
+      <ol>
+        <li><span class="k">زيارة جديدة</span> ← اختر الحيوان. الحيوان والتاريخ والنوع تكفي للحفظ.</li>
+        <li>أضف الوزن والحرارة والتشخيص والروشتة حسب الحاجة.</li>
+        <li><span class="k">إضافة تطعيم</span>: الموعد القادم يُحسب تلقائياً ويمكن تعديله.</li>
+        <li>تاريخ <span class="k">المتابعة</span> يُنشئ موعداً تلقائياً.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>٥</b> المواعيد</h2>
+      <ul>
+        <li><span class="k">المواعيد</span>: عرض يوم أو أسبوع. اضغط ساعة فارغة لحجز موعد.</li>
+        <li>عند الحضور: <span class="k">تم ← زيارة</span> يفتح زيارة جاهزة. أو <span class="k">لم يحضر</span>.</li>
+        <li>إذا كان الوقت محجوزاً يظهر تنبيه قبل الحفظ.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2><b>٦</b> التذكير على واتساب</h2>
+      <ul>
+        <li>في <span class="k">الرئيسية</span> قائمة <span class="k">تطعيمات مستحقة</span> لسبعة أيام.</li>
+        <li>زر <span class="k">تذكير</span> يفتح واتساب برسالة جاهزة — راجعها ثم اضغط إرسال بنفسك.</li>
+        <li>يظهر ✓ بجانب من تم تذكيره.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2><b>٧</b> الفاتورة والدفع</h2>
+      <ol>
+        <li>بعد حفظ الزيارة: <span class="k">فاتورة جديدة</span>، أو من <span class="k">الفواتير</span>.</li>
+        <li>أضف البنود من <span class="k">قائمة الأسعار</span>، والخصم إن وُجد.</li>
+        <li><span class="k">تسجيل دفعة</span>: نقداً أو إنستاباي أو بطاقة. الدفع الجزئي مسموح.</li>
+        <li><span class="k">طباعة إيصال A5</span>.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>٨</b> النسخ الاحتياطي <small>(الطبيب)</small></h2>
+      <ul>
+        <li>البرنامج يحفظ نسخة تلقائية كل يوم عند أول فتح.</li>
+        <li><span class="k">الإعدادات ← البيانات ← حفظ نسخة احتياطية</span>: الملف يُحفظ في <span class="ltr">Documents\Animal Care Clinic\Exports</span>.</li>
+      </ul>
+      <div class="note">انسخ ملف النسخة الاحتياطية إلى فلاشة أو Google Drive مرة كل أسبوع على الأقل. النسخ التلقائية على نفس الجهاز.</div>
+    </section>
+
+    <section class="wide">
+      <h2><b>٩</b> من يستطيع ماذا</h2>
+      <table>
+        <tr><th></th><th>الطبيب</th><th>المساعد</th></tr>
+        <tr><td>الملاك والحيوانات والمواعيد والفواتير</td><td>✓</td><td>✓</td></tr>
+        <tr><td>تسجيل وتعديل الزيارات</td><td>✓</td><td>عرض فقط</td></tr>
+        <tr><td>أرشفة مالك، إلغاء فاتورة</td><td>✓</td><td>—</td></tr>
+        <tr><td>الإعدادات، الأسعار، المستخدمون، التصدير والنسخ الاحتياطي</td><td>✓</td><td>—</td></tr>
+      </table>
+    </section>
+  </div>
+
+  <footer>
+    <span>مشكلة أو سؤال؟ راسل أحمد البرجي — Yuto Software House على واتساب. الإصلاح مجاني حتى ٢٩ ديسمبر ٢٠٢٦.</span>
+    <span>الإصدار ٠٫١</span>
+  </footer>
+</div>
+
+<!-- ============================== English ============================== -->
+<div class="page" dir="ltr" lang="en">
+  <header>
+    <div>
+      <h1>Quick how-to</h1>
+      <p>Patient Tracker — Animal Care Clinic · Dr. Waleed El-Bourgy · Giza</p>
+    </div>
+    <img src="../../src/assets/clinic-logo.png" alt="Animal Care Clinic">
+  </header>
+
+  <div class="grid">
+    <section>
+      <h2><b>1</b> Sign in</h2>
+      <ol>
+        <li>Open <span class="k">Animal Care Clinic</span> from the desktop.</li>
+        <li>Sign in with your own email and password. Everyone has their own login; don't share passwords.</li>
+        <li><span class="k">English / العربية</span> at the bottom of the menu switches language.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>2</b> Find a patient</h2>
+      <ul>
+        <li>On the <span class="k">Dashboard</span>, type the owner's name, phone or the pet's name. Results appear by the 3rd letter.</li>
+        <li>Tap the pet to open its record: timeline, vaccinations, weight chart, files.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2><b>3</b> New owner or pet</h2>
+      <ol>
+        <li><span class="k">Owners → New owner</span>: name and phone are enough.</li>
+        <li>If <span class="k">Phone already used</span> appears, open the existing owner instead of adding a copy.</li>
+        <li>From the owner's page: <span class="k">Add pet</span>.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>4</b> Record a visit <small>(vet)</small></h2>
+      <ol>
+        <li><span class="k">New visit</span> → choose the pet. Pet, date and type are enough to save.</li>
+        <li>Add weight, temperature, diagnosis and prescriptions as needed.</li>
+        <li><span class="k">Add vaccination</span>: the next-due date fills in itself and can be changed.</li>
+        <li>A <span class="k">Follow-up</span> date books the appointment for you.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>5</b> Appointments</h2>
+      <ul>
+        <li><span class="k">Appointments</span>: day or week view. Click an empty hour to book.</li>
+        <li>When the pet arrives: <span class="k">Done → visit</span> opens a pre-filled visit. Otherwise <span class="k">No-show</span>.</li>
+        <li>If the time is already booked you get a warning before saving.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2><b>6</b> WhatsApp reminders</h2>
+      <ul>
+        <li>The <span class="k">Dashboard</span> lists vaccinations due in the next 7 days.</li>
+        <li><span class="k">Remind</span> opens WhatsApp with the message written. Check it and press send yourself.</li>
+        <li>A ✓ shows who has been reminded.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2><b>7</b> Invoice and payment</h2>
+      <ol>
+        <li>After saving a visit: <span class="k">New invoice</span>, or start from <span class="k">Invoices</span>.</li>
+        <li>Add lines from the <span class="k">price list</span>, and a discount if any.</li>
+        <li><span class="k">Record payment</span>: cash, InstaPay or card. Part payments are fine.</li>
+        <li><span class="k">Print A5 receipt</span>.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2><b>8</b> Backups <small>(vet)</small></h2>
+      <ul>
+        <li>The app keeps an automatic copy every day when it is first opened.</li>
+        <li><span class="k">Settings → Data &amp; backup → Save backup file</span> writes to <code>Documents\Animal Care Clinic\Exports</code>.</li>
+      </ul>
+      <div class="note">Copy the backup file to a USB stick or Google Drive at least once a week. The automatic copies stay on this PC.</div>
+    </section>
+
+    <section class="wide">
+      <h2><b>9</b> Who can do what</h2>
+      <table>
+        <tr><th></th><th>Vet</th><th>Assistant</th></tr>
+        <tr><td>Owners, pets, appointments, invoices</td><td>✓</td><td>✓</td></tr>
+        <tr><td>Record and edit visits</td><td>✓</td><td>View only</td></tr>
+        <tr><td>Archive an owner, void an invoice</td><td>✓</td><td>—</td></tr>
+        <tr><td>Settings, prices, users, export and backup</td><td>✓</td><td>—</td></tr>
+      </table>
+    </section>
+  </div>
+
+  <footer>
+    <span>Problem or question? WhatsApp Ahmed El-Bourgy, Yuto Software House. Fixes are free until 29 Dec 2026.</span>
+    <span>Version 0.1</span>
+  </footer>
+</div>
+
+</body>
+</html>
