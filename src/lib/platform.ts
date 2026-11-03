@@ -27,6 +27,8 @@ export const isDesktop = !!desktop;
 
 // ---- browser fallback (prototype): IndexedDB holds the database bytes ----
 const IDB_NAME = 'animal-care-clinic';
+// Bump when the demo seed changes so prototype viewers get the new demo data instead of their old copy.
+const DEMO_DB_KEY = 'db-v2';
 function idb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, 1);
@@ -96,11 +98,11 @@ export const platform = {
       const b = await desktop.loadDb();
       return b ? new Uint8Array(b) : null;
     }
-    return idbGet('db');
+    return idbGet(DEMO_DB_KEY);
   },
   async saveDb(bytes: Uint8Array) {
     if (desktop) await desktop.saveDb(bytes);
-    else await idbSet('db', bytes);
+    else await idbSet(DEMO_DB_KEY, bytes);
   },
   async saveFile(name: string, bytes: Uint8Array, mime: string, filters?: Filter[]) {
     if (desktop) return desktop.saveFile(name, bytes, filters);
