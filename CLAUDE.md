@@ -1,6 +1,6 @@
-# CLAUDE.md — [CLINIC NAME] Patient Tracker
+# CLAUDE.md — Animal Care Clinic Patient Tracker
 
-Vet clinic records app for Dr. Waleed El-Bourgy. Built by [BUSINESS NAME] (Ahmed El-Bourgy) as a **Build** package (fixed scope, 3 weeks, 8 screens, 1 integration). Read `SCOPE.md` before touching features and `DATABASE.md` / `src/db/schema.ts` before touching data. The scope is the contract: anything not in `SCOPE.md §4` is a change request — say so instead of building it.
+Vet clinic records app for Dr. Waleed El-Bourgy. Built by Yuto Software House (Ahmed El-Bourgy) as a **Build** package (fixed scope, 3 weeks, 8 screens, 1 integration). Read `SCOPE.md` before touching features and `DATABASE.md` / `src/db/schema.ts` before touching data. The scope is the contract: anything not in `SCOPE.md §4` is a change request — say so instead of building it.
 
 ## Stack (changed 3 Nov 2026: Windows desktop app, at Ahmed's request)
 The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced by a **Windows desktop app**. SCOPE.md §4/§5 still describe a web/PWA delivery; it must be re-confirmed with Dr. Waleed as a change request.
@@ -40,14 +40,14 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in `lib/whatsapp.ts` (AR/EN): vaccination reminder, appointment reminder, invoice balance. Set `reminder_sent_at` when the button is clicked. **No WhatsApp Business API** — out of scope.
 
 ## UI
-- Clean, clinical, not a template: Plex Sans Arabic 400/600, 4px corners, rules not boxes, one accent colour = clinic brand (placeholder `#0078d4` until Dr. Waleed picks). Light + dark via `prefers-color-scheme` + `data-theme`.
+- Clean, clinical, not a template: Plex Sans Arabic 400/600, 4px corners, rules not boxes, one accent colour = clinic brand (teal `#2e6f73` from the logo, to be confirmed). Light + dark via `prefers-color-scheme` + `data-theme`.
 - Mobile first: every form must be completable one-handed on a phone; primary action is a bottom sticky button on mobile.
 - Minimum fields to save a visit: pet, date, type. Everything else optional.
 
 ## Working agreement
 - Branch per screen (`feat/04-pet-record`), PR to `main`; CI builds the Windows exe per PR.
 - Commit as `Ahmed El-Bourgy <ahmedwalid4499@gmail.com>`.
-- `npm run typecheck` and `npm run build && xvfb-run -a node scripts/walkthrough.mjs` must pass before any PR.
+- `npm run typecheck`, `npm run walkthrough` and `npm run acceptance` must pass before any PR.
 - Seed: `src/db/seed.ts` loads users, vaccine types, price items, clinic settings from `DATABASE.md` on a fresh database. Demo data only behind `SEED_DEMO=1` (and in the browser prototype).
 - Import: Settings → Data & backup → Import reads the owners/pets sheet (columns in `import/TEMPLATE.md`).
 
@@ -55,8 +55,9 @@ WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in 
 Scope sign-off 8 Nov · Prototype 13 Nov · Data sheet 22 Nov · Handover 29 Nov 2026 · Fix window to 29 Dec.
 
 ## Open items (fill in, then delete this section)
-- [ ] Clinic name EN/AR, logo, brand colour, phone/WhatsApp, address
-- [ ] Dr. Waleed's title/affiliation for the scope header
+- [x] Clinic name, logo (`src/assets/clinic-logo.png`), phone 01227007428, Giza — seeded in `src/db/seed.ts` (`CLINIC`)
+- [ ] Confirm: brand colour = logo teal `#2e6f73`; WhatsApp number = phone; full street address; Arabic clinic name
+- [ ] Confirm spelling: logo says "Dr. Waleed ElBoargi", scope says "El-Bourgy"; Arabic spelling used in the how-to is "وليد البرجي"
 - [ ] Confirm species list and vaccine catalogue with intervals
 - [ ] Price list values
 - [ ] Re-confirm with Dr. Waleed: Windows desktop app on the clinic PC instead of web/PWA (SCOPE §4–§5 change request); which PC holds the data; code-signing certificate (optional)

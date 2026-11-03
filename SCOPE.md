@@ -1,9 +1,9 @@
-# Fixed Scope — [CLINIC NAME] Patient Tracker
+# Fixed Scope — Animal Care Clinic Patient Tracker
 
 | | |
 |---|---|
-| **Client** | Dr. Waleed El-Bourgy — [title / affiliation, fill from ResearchGate] — [CLINIC NAME], [city] |
-| **Provider** | [BUSINESS NAME] (Ahmed "Yuto" El-Bourgy) |
+| **Client** | Dr. Waleed El-Bourgy — Animal Care Clinic, Giza |
+| **Provider** | Yuto Software House — Ahmed El-Bourgy |
 | **Package** | **Build** — web app / MVP: auth & roles, database, admin, ≤ 8 screens, 1 integration |
 | **Delivery** | 3 weeks from scope sign-off |
 | **Fixed price** | Build package value 45,000 EGP — **waived (family / portfolio project)**. Delivered under the standard process so it can serve as the first public case study. |
@@ -130,4 +130,4 @@ Anything outside §4 is estimated from the add-on list (revision round 1,500 EGP
 | | Name | Date | Signature |
 |---|---|---|---|
 | Client | Dr. Waleed El-Bourgy | | |
-| Provider | Ahmed El-Bourgy — [BUSINESS NAME] | | |
+| Provider | Ahmed El-Bourgy — Yuto Software House | | |

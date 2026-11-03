@@ -21,13 +21,20 @@ export function Layout() {
       {__WEB_DEMO__ && <div className="demo-banner no-print">{t('app.demoBanner')}</div>}
       <div className="shell">
         <aside className="side no-print">
-          <div className="brand">
-            {settings.logo_url ? <img src={settings.logo_url} alt="" /> : <div className="mark">{clinicName.slice(0, 1)}</div>}
-            <div>
-              <b>{clinicName}</b>
-              <span>{t('app.name')}</span>
+          {settings.logo_url ? (
+            <div className="brand with-logo">
+              <span className="logo-plate"><img src={settings.logo_url} alt={clinicName} /></span>
+              <span>{locale === 'ar' ? `${settings.name_ar} · ` : ''}{t('app.name')}</span>
             </div>
-          </div>
+          ) : (
+            <div className="brand">
+              <div className="mark">{clinicName.slice(0, 1)}</div>
+              <div>
+                <b>{clinicName}</b>
+                <span>{t('app.name')}</span>
+              </div>
+            </div>
+          )}
           <nav className="nav">
             {items.map((i) => (
               <NavLink key={i.to} to={i.to} end={i.end}>
@@ -69,10 +76,11 @@ export function Layout() {
 }
 
 export function PageHead({ title, sub, crumb, children }: { title: string; sub?: string; crumb?: { to: string; label: string }; children?: React.ReactNode }) {
+  const { locale } = useApp();
   return (
     <div className="pagehead">
       <div>
-        {crumb && <NavLink className="crumb" to={crumb.to}>← {crumb.label}</NavLink>}
+        {crumb && <NavLink className="crumb" to={crumb.to}>{locale === 'ar' ? '→' : '←'} {crumb.label}</NavLink>}
         <h1>{title}</h1>
         {sub && <div className="sub">{sub}</div>}
       </div>

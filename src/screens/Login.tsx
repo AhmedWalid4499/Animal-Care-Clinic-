@@ -14,15 +14,18 @@ export function Login({ firstRun }: { firstRun: boolean }) {
   return (
     <div className="login">
       <div className="art">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {settings.logo_url ? <img src={settings.logo_url} alt="" style={{ height: 44 }} /> : <span style={{ fontSize: 28 }}>🐾</span>}
-          <b>{name}</b>
-        </div>
+        {settings.logo_url ? (
+          <span className="logo-plate"><img src={settings.logo_url} alt={name} /></span>
+        ) : (
+          <b style={{ fontSize: 20 }}>{name}</b>
+        )}
         <div>
           <h1>{t('app.name')}</h1>
           <p>{locale === 'ar' ? 'سجل واحد لكل حيوان، تحت مالكه. الزيارات، التطعيمات، الوزن، والفواتير في ثوانٍ.' : 'One record per pet, grouped under its owner. Visits, vaccinations, weight and invoices in seconds.'}</p>
         </div>
-        <small style={{ opacity: 0.7 }}>{settings.address}</small>
+        <small style={{ opacity: 0.8 }}>
+          {[locale === 'ar' ? settings.name_ar : null, settings.address, settings.phone].filter(Boolean).join(' · ')}
+        </small>
       </div>
       <div className="pane">
         <form
@@ -36,6 +39,7 @@ export function Login({ firstRun }: { firstRun: boolean }) {
           <div className="login-tools tools">
             <button type="button" className="linkbtn" onClick={() => setLocale(locale === 'ar' ? 'en' : 'ar')}>{t('app.language')}</button>
           </div>
+          {settings.logo_url && <span className="logo-plate mobile-logo"><img src={settings.logo_url} alt={name} /></span>}
           <div>
             <h1>{t('login.title')}</h1>
             <p className="muted" style={{ margin: '4px 0 0' }}>{t('login.subtitle')}</p>
