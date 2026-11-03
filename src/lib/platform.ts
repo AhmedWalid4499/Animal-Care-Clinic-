@@ -2,7 +2,9 @@
 type Filter = { name: string; extensions: string[] };
 
 interface DesktopBridge {
-  config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; version: string; platform: string }>;
+  config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; exportDir: string; version: string; platform: string }>;
+  exportFile(name: string, bytes: Uint8Array): Promise<string>;
+  showItem(file: string): Promise<void>;
   loadDb(): Promise<Uint8Array | null>;
   saveDb(bytes: Uint8Array): Promise<boolean>;
   saveFile(name: string, bytes: Uint8Array, filters?: Filter[]): Promise<boolean>;
@@ -87,7 +89,7 @@ function pickInBrowser(accept: string): Promise<{ name: string; bytes: Uint8Arra
 export const platform = {
   async config() {
     if (desktop) return desktop.config();
-    return { seedDemo: true, dataDir: '', dbPath: '', backupDir: '', version: '0.1.0', platform: 'web' };
+    return { seedDemo: true, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: '0.1.0', platform: 'web' };
   },
   async loadDb() {
     if (desktop) {
@@ -104,6 +106,15 @@ export const platform = {
     if (desktop) return desktop.saveFile(name, bytes, filters);
     download(name, bytes, mime);
     return true;
+  },
+  /** One-click export: desktop writes straight to the Exports folder and returns the full path; web downloads. */
+  async exportFile(name: string, bytes: Uint8Array, mime: string): Promise<string> {
+    if (desktop) return desktop.exportFile(name, bytes);
+    download(name, bytes, mime);
+    return name;
+  },
+  showItem(file: string) {
+    desktop?.showItem(file);
   },
   async pickFile(filters: Filter[]) {
     if (desktop) {

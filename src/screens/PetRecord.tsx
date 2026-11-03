@@ -18,9 +18,10 @@ export function PetRecord() {
   const { id = '' } = useParams();
   const [sp, setSp] = useSearchParams();
   const tab = (sp.get('tab') as Tab) || 'timeline';
-  const { t, fmt, isVet } = useApp();
+  const { t, fmt, isVet, locale } = useApp();
   const nav = useNavigate();
   const pet = useQuery(() => getPet(id), [id]);
+  const settings = useQuery(getSettings);
   const weight = useQuery(() => lastWeight(id), [id]);
   const upcoming = useQuery(() => petAppointments(id), [id]);
   if (!pet) return <div className="page">{t('common.notFound')}</div>;
@@ -29,6 +30,10 @@ export function PetRecord() {
   return (
     <div className="page">
       <PageHead title={pet.name} crumb={{ to: `/owners/${pet.owner_id}`, label: pet.owner_name }}>
+        <WaButton
+          phone={pet.owner_whatsapp || pet.owner_phone}
+          text={t('wa.pet', { owner: pet.owner_name, clinic: locale === 'ar' ? settings.name_ar : settings.name_en, pet: pet.name })}
+        />
         <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
         {isVet && pet.status === 'ACTIVE' && (

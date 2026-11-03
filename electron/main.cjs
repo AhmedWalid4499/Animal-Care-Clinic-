@@ -15,6 +15,8 @@ const dataDir = process.env.CLINIC_DATA_DIR || path.join(app.getPath('userData')
 if (process.env.CLINIC_DATA_DIR) app.setPath('userData', path.join(dataDir, 'profile'));
 const dbPath = path.join(dataDir, 'clinic.sqlite');
 const backupDir = path.join(dataDir, 'backups');
+// One-click exports land here (Documents\Animal Care Clinic\Exports) without a save dialog.
+const exportDir = process.env.CLINIC_EXPORT_DIR || path.join(app.getPath('documents'), 'Animal Care Clinic', 'Exports');
 const KEEP_BACKUPS = 14;
 
 // Day-first date pickers (dd/mm/yyyy) regardless of the Windows display language.
@@ -86,6 +88,7 @@ ipcMain.handle('app:config', () => ({
   dataDir,
   dbPath,
   backupDir,
+  exportDir,
   version: app.getVersion(),
   platform: process.platform,
 }));
@@ -106,6 +109,17 @@ ipcMain.handle('file:save', async (e, { name, bytes, filters }) => {
   if (canceled || !filePath) return false;
   fs.writeFileSync(filePath, Buffer.from(bytes));
   return true;
+});
+
+ipcMain.handle('file:export', (_e, { name, bytes }) => {
+  fs.mkdirSync(exportDir, { recursive: true });
+  const file = path.join(exportDir, name.replace(/[\\/:*?"<>|]/g, '_'));
+  writeAtomic(file, Buffer.from(bytes));
+  return file;
+});
+
+ipcMain.handle('shell:showItem', (_e, file) => {
+  if (typeof file === 'string' && file.startsWith(exportDir)) shell.showItemInFolder(file);
 });
 
 ipcMain.handle('file:pick', async (e, { filters }) => {

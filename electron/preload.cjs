@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   loadDb: () => ipcRenderer.invoke('db:load'),
   saveDb: (bytes) => ipcRenderer.invoke('db:save', bytes),
   saveFile: (name, bytes, filters) => ipcRenderer.invoke('file:save', { name, bytes, filters }),
+  exportFile: (name, bytes) => ipcRenderer.invoke('file:export', { name, bytes }),
+  showItem: (file) => ipcRenderer.invoke('shell:showItem', file),
   pickFile: (filters) => ipcRenderer.invoke('file:pick', { filters }),
   openFile: (name, bytes) => ipcRenderer.invoke('file:open', { name, bytes }),
   openExternal: (url) => ipcRenderer.invoke('shell:external', url),
