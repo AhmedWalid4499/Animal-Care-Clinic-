@@ -1,0 +1,85 @@
+{
+  "name": "animal-care-clinic",
+  "productName": "Animal Care Clinic",
+  "version": "0.1.0",
+  "description": "Patient tracker for Dr. Waleed El-Bourgy's veterinary clinic",
+  "author": "Ahmed El-Bourgy <ahmedwalid4499@gmail.com>",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:web": "vite build --mode web",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win --x64",
+    "dist:linux": "npm run build && electron-builder --linux dir",
+    "dist:win:linux": "npm run build && electron-builder --win --x64 -c.win.signAndEditExecutable=false",
+    "walkthrough": "npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots"
+  },
+  "build": {
+    "appId": "com.animalcareclinic.tracker",
+    "productName": "Animal Care Clinic",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "Animal Care Clinic"
+    },
+    "portable": {
+      "artifactName": "AnimalCareClinic-${version}-portable.exe"
+    },
+    "linux": {
+      "target": "dir"
+    }
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-sans-arabic": "5.1.0",
+    "bcryptjs": "2.4.3",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-router-dom": "6.28.0",
+    "recharts": "2.13.3",
+    "sql.js": "1.12.0",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/sql.js": "1.4.9",
+    "@vitejs/plugin-react": "4.3.4",
+    "electron": "44.7.2",
+    "electron-builder": "25.1.8",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vite-plugin-singlefile": "2.0.3"
+  }
+}
