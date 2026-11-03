@@ -1,5 +1,5 @@
 // Database core: sql.js (SQLite compiled to JS) running in the renderer, persisted as one file by
-// the platform layer (Windows: %APPDATA%\Animal Care Clinic\data\clinic.sqlite).
+// the platform layer (Windows: %APPDATA%\Animal Care Clinic\data\clinic.sqlite; macOS: ~/Library/Application Support/Animal Care Clinic/data/clinic.sqlite).
 import initSqlJs from 'sql.js/dist/sql-asm.js';
 import type { Database, SqlValue } from 'sql.js';
 import { platform } from '../lib/platform';

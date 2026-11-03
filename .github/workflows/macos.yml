@@ -1,0 +1,33 @@
+name: macOS build
+
+# Same triggers as windows.yml: every change to main or any PR produces both a Windows exe and a Mac dmg
+# from the same source, so the two builds never drift apart.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Check the app signature (ad-hoc) is valid
+        run: codesign --verify --deep --strict --verbose=2 "release/mac-universal/Animal Care Clinic.app"
+      - name: Smoke test (app starts and renders the login screen)
+        run: '"release/mac-universal/Animal Care Clinic.app/Contents/MacOS/Animal Care Clinic" --smoke'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: animal-care-clinic-macos
+          path: release/*.dmg
+          if-no-files-found: error

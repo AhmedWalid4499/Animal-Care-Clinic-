@@ -1,15 +1,19 @@
-# Animal Care Clinic — Patient Tracker (Windows desktop app)
+# Animal Care Clinic — Patient Tracker (Windows + macOS desktop app)
 
 Clinic records app for Dr. Waleed El-Bourgy: owners → pets → visits, vaccinations due, appointments, invoices, WhatsApp reminders. Arabic (default, right-to-left) and English. Scope: `SCOPE.md` · data model: `DATABASE.md` · working rules: `CLAUDE.md`.
 
 ## What it is
 
-A Windows desktop app (Electron) that keeps all clinic data in **one SQLite file on the clinic PC**:
+A desktop app (Electron) for **Windows and macOS**, built from the same code, that keeps all clinic data in **one SQLite file on the computer it runs on**:
 
 ```
-%APPDATA%\Animal Care Clinic\data\clinic.sqlite        ← the database
-%APPDATA%\Animal Care Clinic\data\backups\             ← automatic daily copy, last 14 kept
+Windows: %APPDATA%\Animal Care Clinic\data\clinic.sqlite                     ← the database
+         %APPDATA%\Animal Care Clinic\data\backups\                          ← automatic daily copy, last 14 kept
+macOS:   ~/Library/Application Support/Animal Care Clinic/data/clinic.sqlite
+         ~/Library/Application Support/Animal Care Clinic/data/backups/
 ```
+
+Every change builds both versions: CI produces a Windows exe (`windows.yml`) and a Mac dmg (`macos.yml`) on every push to `main` and every PR, so the Mac build is always the same app as the Windows one. The two computers do **not** share data: each has its own database file (move data with Settings → Data & backup → backup/restore).
 
 No server and no internet connection needed, except to open WhatsApp. Backups and Excel export are under **Settings → Data & backup**.
 
@@ -21,6 +25,17 @@ Download the build from GitHub Actions (**Actions → Windows build → artifact
 - `AnimalCareClinic-0.1.0-portable.exe`: a single exe that runs without installing (for a USB stick or a trial).
 
 The build is not code-signed yet, so Windows SmartScreen will warn on first run: click **More info → Run anyway**.
+
+## Install on a Mac (for testing)
+
+Download **Actions → macOS build → artifact `animal-care-clinic-macos`** (unzip it to get `AnimalCareClinic-0.1.0-mac.dmg`), or build locally with `npm run dist:mac`.
+
+1. Open the `.dmg` and drag **Animal Care Clinic** into **Applications**.
+2. First launch only: in Applications, **right-click (or Control-click) the app → Open → Open**. macOS warns because the app has no Apple Developer ID yet; after this it opens normally.
+   - On macOS 15 (Sequoia) and later, if there is no Open button: try to open it once, then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+   - If macOS says the app "is damaged", run this once in Terminal, then open it again: `xattr -cr "/Applications/Animal Care Clinic.app"`
+
+The dmg is universal: it runs on Apple-chip (M1–M4) and Intel Macs, macOS 11 or later. Same default logins as below.
 
 First sign-in uses the default logins shown on the login screen:
 
@@ -41,11 +56,14 @@ SEED_DEMO=1 npm start  # same, with demo owners/pets/visits/invoices on a fresh 
 npm run typecheck
 ```
 
-Build Windows binaries:
+Build the desktop binaries:
 
 ```bash
 npm run dist:win       # on Windows (or CI): installer + portable exe in release/
+npm run dist:mac       # on a Mac (or CI): universal dmg in release/ (ad-hoc signed, not notarized)
 ```
+
+The Mac build has to run on macOS (DMG tools and `codesign` exist only there); CI uses `macos-latest`.
 
 On Linux, building the Windows installer needs Wine 32-bit (`wine32:i386`). Add `-c.win.signAndEditExecutable=false` when the exe icon/metadata step fails under Wine. CI (`.github/workflows/windows.yml`) builds on `windows-latest` and smoke-tests the exe.
 
@@ -59,7 +77,8 @@ npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots
 
 | Path | What |
 |---|---|
-| `electron/main.cjs` | Desktop shell: database file, daily backups, save/open dialogs, opens WhatsApp/links externally |
+| `electron/main.cjs` | Desktop shell (Windows + macOS): database file, daily backups, save/open dialogs, opens WhatsApp/links externally, Mac menu |
+| `build/mac-adhoc-sign.cjs` | Mac build hook: ad-hoc signs the app so Apple-chip Macs will run it (remove once there is a Developer ID) |
 | `electron/preload.cjs` | The only bridge from UI to disk |
 | `src/db/schema.ts` | SQLite version of `DATABASE.md` (money in piastres, enums as CHECKs) |
 | `src/db/repo.ts` | Every query and write. Writes are transactional and append to `audit_log` |

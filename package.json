@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win --x64",
+    "dist:mac": "npm run build && electron-builder --mac --universal",
     "dist:linux": "npm run build && electron-builder --linux dir",
     "dist:win:linux": "npm run build && electron-builder --win --x64 -c.win.signAndEditExecutable=false",
     "walkthrough": "npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots"
@@ -30,6 +31,7 @@
       "build/icon.png",
       "package.json"
     ],
+    "afterPack": "build/mac-adhoc-sign.cjs",
     "win": {
       "target": [
         {
@@ -55,6 +57,26 @@
     },
     "portable": {
       "artifactName": "AnimalCareClinic-${version}-portable.exe"
+    },
+    "mac": {
+      "category": "public.app-category.medical",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "11.0"
+    },
+    "dmg": {
+      "title": "Animal Care Clinic",
+      "artifactName": "AnimalCareClinic-${version}-mac.dmg"
     },
     "linux": {
       "target": "dir"

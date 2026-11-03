@@ -9,7 +9,8 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - Auth: local users, bcryptjs, roles `VET` / `ASSISTANT` (assistant: no Settings, no archive/void, no visit writes)
 - i18n: `src/i18n/ar.json` (default, RTL) + `en.json`; never hard-code UI text
 - Charts: `recharts` (weight chart) · receipt / pet summary: print CSS, A5 · export: SheetJS (xlsx/csv)
-- Packaging: `electron-builder` → NSIS installer + portable exe; `.github/workflows/windows.yml` builds on `windows-latest`
+- Packaging: `electron-builder` → Windows: NSIS installer + portable exe (`.github/workflows/windows.yml`, `windows-latest`) · macOS: universal dmg, ad-hoc signed via `build/mac-adhoc-sign.cjs`, not notarized (`.github/workflows/macos.yml`, `macos-latest`)
+- **macOS build (added 3 Nov 2026, so Ahmed can test on his MacBook):** same code, same features. Every change must keep working on both: no Windows-only or Mac-only paths/APIs in the renderer; anything OS-specific lives in `electron/main.cjs` behind `process.platform`. Mac data dir: `~/Library/Application Support/Animal Care Clinic/data/`. Mac needs its app menu (`macMenu()` in `main.cjs`) or copy/paste/quit shortcuts break
 - Browser build (`npm run build:web`) = clickable prototype with demo data in IndexedDB
 - Timezone: clinic PC local time (Africa/Cairo); currency EGP; dates shown `d MMM yyyy`
 
@@ -45,7 +46,7 @@ WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in 
 - Minimum fields to save a visit: pet, date, type. Everything else optional.
 
 ## Working agreement
-- Branch per screen (`feat/04-pet-record`), PR to `main`; CI builds the Windows exe per PR.
+- Branch per screen (`feat/04-pet-record`), PR to `main`; CI builds the Windows exe and the Mac dmg per PR — both must be green.
 - Commit as `Ahmed El-Bourgy <ahmedwalid4499@gmail.com>`.
 - `npm run typecheck` and `npm run build && xvfb-run -a node scripts/walkthrough.mjs` must pass before any PR.
 - Seed: `src/db/seed.ts` loads users, vaccine types, price items, clinic settings from `DATABASE.md` on a fresh database. Demo data only behind `SEED_DEMO=1` (and in the browser prototype).

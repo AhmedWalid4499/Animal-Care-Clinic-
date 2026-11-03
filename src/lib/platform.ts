@@ -1,4 +1,4 @@
-// Platform bridge: the Windows desktop app (Electron preload) or the browser prototype.
+// Platform bridge: the desktop app (Electron preload, Windows/macOS) or the browser prototype.
 type Filter = { name: string; extensions: string[] };
 
 interface DesktopBridge {
