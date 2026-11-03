@@ -11,7 +11,7 @@ A Windows desktop app (Electron) that keeps all clinic data in **one SQLite file
 %APPDATA%\Animal Care Clinic\data\backups\             ← automatic daily copy, last 14 kept
 ```
 
-No server and no internet connection needed, except to open WhatsApp. Backups and Excel export are under **Settings → Data & backup**.
+No server and no internet connection needed, except to open WhatsApp. Backups and Excel export are under **Settings → Data & backup**. Exports and backup files go straight to `Documents\Animal Care Clinic\Exports` with no save dialog.
 
 ## Install on the clinic PC
 
@@ -52,8 +52,16 @@ On Linux, building the Windows installer needs Wine 32-bit (`wine32:i386`). Add 
 End-to-end walkthrough (screenshots of every screen, checks the acceptance paths):
 
 ```bash
-npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots
+npm run walkthrough
 ```
+
+Acceptance checks against SCOPE §4 / §7: 500-pet speed, one-click export row counts, backup restore, import row counts, A5 PDFs, and an Arabic right-to-left pass over every screen. The latest report is in `docs/acceptance/ACCEPTANCE.md`:
+
+```bash
+npm run acceptance
+```
+
+Staff how-to (one A4 page each in Arabic and English): `docs/how-to/Animal-Care-Clinic-How-to.pdf`. Rebuild it after editing `docs/how-to/how-to.html` with `npm run howto`.
 
 ## Layout
 
