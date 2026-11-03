@@ -35,7 +35,7 @@ Download `AnimalCareClinic-<version>-mac.dmg` from **[Releases](https://github.c
    - On macOS 15 (Sequoia) and later, if there is no Open button: try to open it once, then go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
    - If macOS says the app "is damaged", run this once in Terminal, then open it again: `xattr -cr "/Applications/Animal Care Clinic.app"`
 
-The dmg is universal: it runs on Apple-chip (M1–M4) and Intel Macs, macOS 11 or later. Same default logins as below. Run it from **Applications** (not from the open dmg) or it can't update itself.
+The dmg is universal: it runs on Apple-chip (M1–M4) and Intel Macs, macOS 11 or later. Same default logins as below. Run it from **Applications** (not from the open dmg) or it can't update itself. If it is started from the dmg, or macOS runs a temporary copy of a downloaded app, it offers **Move to Applications** at start (also under Settings → Data & backup → Updates) and moves and reopens itself.
 
 ## Updates
 

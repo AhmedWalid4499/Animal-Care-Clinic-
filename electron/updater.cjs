@@ -6,7 +6,7 @@
 // Developer ID, and these builds are ad-hoc signed. So on the Mac we download the zip, check its SHA-512
 // against latest-mac.yml, unpack it with ditto and swap the .app after the app has quit.
 // Before any update is installed, the database is copied to backups/ (the last 5 such copies are kept).
-const { app, net, shell, BrowserWindow, ipcMain } = require('electron');
+const { app, net, shell, dialog, BrowserWindow, ipcMain } = require('electron');
 const { execFile, spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -37,7 +37,9 @@ const state = {
   progress: 0,
   error: null,
   releasesUrl: RELEASES_URL,
+  appPath: null, // macOS: where the .app is running from (shown when it is in the wrong place)
 };
+let askMove = true; // macOS: offer "Move to Applications" at start until the user says Not now
 
 function prefsFile() {
   return path.join(opts.dataDir, 'updates.json');
@@ -46,12 +48,13 @@ function loadPrefs() {
   try {
     const p = JSON.parse(fs.readFileSync(prefsFile(), 'utf8'));
     if (typeof p.auto === 'boolean') state.auto = p.auto;
+    if (typeof p.askMove === 'boolean') askMove = p.askMove;
   } catch {
     /* first run: automatic updates on */
   }
 }
 function savePrefs() {
-  fs.writeFileSync(prefsFile(), JSON.stringify({ auto: state.auto }, null, 2));
+  fs.writeFileSync(prefsFile(), JSON.stringify({ auto: state.auto, askMove }, null, 2));
 }
 
 function publish(patch) {
@@ -71,13 +74,18 @@ function macAppPath() {
   return path.resolve(path.dirname(process.execPath), '..', '..');
 }
 
+// Running from the mounted dmg, or from a read-only copy macOS made of a downloaded (quarantined) app
+// ("App Translocation"). Neither can be replaced in place, so updates need the app in Applications first.
+function macMisplaced(bundle) {
+  return bundle.startsWith('/Volumes/') || bundle.includes('/AppTranslocation/');
+}
+
 function detectSupport() {
   if (!app.isPackaged) return { supported: false, reason: 'dev' };
   if (isWin) return process.env.PORTABLE_EXECUTABLE_DIR ? { supported: false, reason: 'portable' } : { supported: true, reason: null };
   if (isMac) {
     const bundle = macAppPath();
-    // Running from the mounted dmg, or from a quarantined copy macOS moved to a random read-only folder.
-    if (bundle.startsWith('/Volumes/') || bundle.includes('/AppTranslocation/')) return { supported: false, reason: 'mac-move' };
+    if (macMisplaced(bundle)) return { supported: false, reason: 'mac-move', appPath: bundle };
     try {
       fs.accessSync(path.dirname(bundle), fs.constants.W_OK);
       fs.accessSync(bundle, fs.constants.W_OK);
@@ -206,6 +214,53 @@ function macSwap(relaunch) {
   }).unref();
 }
 
+// ---- macOS: get the app into /Applications ----------------------------------------------------
+// After this process exits: clear the download flag on the real app (so macOS stops translocating it) and open it.
+const REOPEN_SCRIPT = `
+pid="$1"; target="$2"
+while kill -0 "$pid" 2>/dev/null; do sleep 0.3; done
+xattr -dr com.apple.quarantine "$target" 2>/dev/null
+open "$target"
+exit 0`;
+function moveToApplications() {
+  if (!isMac || !app.isPackaged) return false;
+  const bundle = macAppPath();
+  const dest = path.join('/Applications', path.basename(bundle));
+  try {
+    if (bundle.includes('/AppTranslocation/') && fs.existsSync(dest)) {
+      // Already in Applications, but macOS is running a temporary copy of it: reopen the real one.
+      spawn('/bin/sh', ['-c', REOPEN_SCRIPT, 'sh', String(process.pid), dest], { detached: true, stdio: 'ignore' }).unref();
+      app.quit();
+      return true;
+    }
+    // Copies the app into /Applications (replacing an older copy that is not running), then relaunches from there.
+    const moved = app.moveToApplicationsFolder({ conflictHandler: (type) => type === 'exists' });
+    if (!moved) publish({ status: 'error', error: 'Could not move the app to Applications. Quit any other copy of Animal Care Clinic and try again.' });
+    return moved;
+  } catch (e) {
+    publish({ status: 'error', error: String((e && e.message) || e).split('\n')[0] });
+    return false;
+  }
+}
+
+async function offerMoveAtStart() {
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    buttons: ['Move to Applications — نقل إلى التطبيقات', 'Not now — ليس الآن'],
+    defaultId: 0,
+    cancelId: 1,
+    message: 'Move Animal Care Clinic to the Applications folder?\nنقل البرنامج إلى مجلد التطبيقات؟',
+    detail:
+      'It is running from outside Applications, so it cannot update itself. Moving it takes a few seconds and the app reopens. Clinic data is not affected.\n\n' +
+      'البرنامج يعمل من خارج مجلد التطبيقات، لذلك لا يمكنه تحديث نفسه. النقل يستغرق ثوانيَ ثم يُفتح البرنامج من جديد. بيانات العيادة لا تتأثر.',
+  });
+  if (response === 0) moveToApplications();
+  else {
+    askMove = false; // Settings → Updates still has the button
+    savePrefs();
+  }
+}
+
 // ---- shared ------------------------------------------------------------------------------------
 async function check() {
   if (!state.supported && state.reason !== 'portable') return state;
@@ -272,6 +327,13 @@ function init(o) {
     return { ...state };
   });
   ipcMain.handle('update:openReleases', () => shell.openExternal(RELEASES_URL));
+  ipcMain.handle('update:moveToApplications', () => moveToApplications());
+
+  if (isMac && app.isPackaged && !opts.noAutoCheck) {
+    if (state.reason === 'mac-move' && askMove) setTimeout(() => offerMoveAtStart().catch(() => {}), 1500);
+    // In the right place: drop the download flag so macOS never starts translocating this copy later.
+    if (state.supported) execFile('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', macAppPath()], () => {});
+  }
 
   // A downloaded update the user did not restart for is installed when the app closes.
   app.on('before-quit', () => {
@@ -287,4 +349,4 @@ function init(o) {
   schedule();
 }
 
-module.exports = { init, _test: { parseLatestMac, newer, SWAP_SCRIPT } };
+module.exports = { init, _test: { parseLatestMac, newer, SWAP_SCRIPT, REOPEN_SCRIPT, macMisplaced } };

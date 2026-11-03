@@ -12,6 +12,7 @@ export interface UpdateState {
   progress: number;
   error: string | null;
   releasesUrl: string;
+  appPath?: string | null;
 }
 
 interface DesktopBridge {
@@ -29,6 +30,7 @@ interface DesktopBridge {
   updateInstall(): Promise<boolean>;
   updateSetAuto(on: boolean): Promise<UpdateState>;
   updateOpenReleases(): Promise<void>;
+  updateMoveToApplications(): Promise<boolean>;
   onUpdateState(cb: (s: UpdateState) => void): () => void;
 }
 
@@ -161,5 +163,6 @@ export const updates = {
   install: (): Promise<boolean> => (desktop ? desktop.updateInstall() : Promise.resolve(false)),
   setAuto: (on: boolean): Promise<UpdateState> => (desktop ? desktop.updateSetAuto(on) : Promise.resolve(WEB_UPDATE_STATE)),
   openReleases: () => desktop?.updateOpenReleases(),
+  moveToApplications: (): Promise<boolean> => (desktop ? desktop.updateMoveToApplications() : Promise.resolve(false)),
   subscribe: (cb: (s: UpdateState) => void): (() => void) => (desktop ? desktop.onUpdateState(cb) : () => {}),
 };

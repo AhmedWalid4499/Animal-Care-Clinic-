@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   updateInstall: () => ipcRenderer.invoke('update:install'),
   updateSetAuto: (on) => ipcRenderer.invoke('update:setAuto', !!on),
   updateOpenReleases: () => ipcRenderer.invoke('update:openReleases'),
+  updateMoveToApplications: () => ipcRenderer.invoke('update:moveToApplications'),
   onUpdateState: (cb) => {
     const fn = (_e, st) => cb(st);
     ipcRenderer.on('update:state', fn);
