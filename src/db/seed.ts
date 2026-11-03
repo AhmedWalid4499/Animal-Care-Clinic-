@@ -1,8 +1,8 @@
 // Seed from DATABASE.md "Seed data". Demo records only when SEED_DEMO=1 (desktop) or in the web prototype.
 import bcrypt from 'bcryptjs';
-import { all, get, insert, run, tx } from './core';
+import { all, audit, get, insert, run, tx } from './core';
 import { addDays, today } from '../lib/dates';
-import clinicLogo from '../assets/clinic-logo.png?inline';
+import { CLINIC_LOGO_DATA_URL } from '../assets/clinic-logo';
 
 /** Clinic details from the signed scope (v1.0, 3 Nov 2026) and the clinic logo. Editable in Settings → Clinic. */
 export const CLINIC = {
@@ -12,13 +12,61 @@ export const CLINIC = {
   whatsapp: '01227007428', // assumed same as phone until Dr. Waleed confirms
   address: 'Giza · الجيزة',
   receipt_footer: 'Where pets are people · شكراً لثقتكم',
-  logo_url: clinicLogo,
+  logo_url: CLINIC_LOGO_DATA_URL,
 };
 
 export const DEFAULT_LOGINS = [
   { email: 'waleed@clinic.local', password: 'vet12345', role: 'VET' as const },
   { email: 'assistant@clinic.local', password: 'assist123', role: 'ASSISTANT' as const },
 ];
+
+/**
+ * One-time upgrade for databases created before the clinic details existed (version 0.1, 3 Nov 2026).
+ * Fills only what is still empty or still the old placeholder, so nothing the vet typed in Settings is
+ * overwritten, and records that it ran so a logo the vet later removes stays removed.
+ * Returns true if it changed anything.
+ */
+export function applyClinicDetails(): boolean {
+  const KEY = 'clinic_details_v1';
+  const fixedLogo = repairBundledLogoLink();
+  if (get('SELECT 1 FROM meta WHERE key = ?', [KEY])) return fixedLogo;
+  const s = get<Record<string, string | null>>('SELECT * FROM clinic_settings WHERE id = 1');
+  const changed: Record<string, string> = {};
+  if (s) {
+    const empty = (v: string | null | undefined) => v == null || v.trim() === '';
+    if (empty(s.logo_url)) changed.logo_url = CLINIC.logo_url;
+    if (empty(s.phone)) changed.phone = CLINIC.phone;
+    if (empty(s.whatsapp)) changed.whatsapp = CLINIC.whatsapp;
+    if (empty(s.address)) changed.address = CLINIC.address;
+    if (empty(s.receipt_footer) || s.receipt_footer === 'Thank you — شكراً لثقتكم') changed.receipt_footer = CLINIC.receipt_footer;
+  }
+  tx(() => {
+    const cols = Object.keys(changed);
+    if (cols.length) {
+      run(`UPDATE clinic_settings SET ${cols.map((c) => `${c} = ?`).join(', ')}, updated_at = ? WHERE id = 1`, [...cols.map((c) => changed[c]), new Date().toISOString()]);
+      audit('clinic_settings', '1', 'UPDATE', { ...changed, ...(changed.logo_url ? { logo_url: '[image]' } : {}), reason: 'upgrade: clinic details v1' });
+    }
+    run('INSERT INTO meta (key, value) VALUES (?, ?)', [KEY, new Date().toISOString()]);
+  });
+  return fixedLogo || Object.keys(changed).length > 0;
+}
+
+/**
+ * Version 0.1.x stored the bundled logo as a link into the app's install folder
+ * (e.g. file:///…/dist/assets/clinic-logo-XXXX.png?inline) instead of the image. That link breaks when the app runs
+ * from another folder (portable exe, a moved Mac app). Replace such a link with the embedded image. A logo the vet
+ * uploaded in Settings is always a data: URL and is never touched.
+ */
+function repairBundledLogoLink(): boolean {
+  const s = get<{ logo_url: string | null }>('SELECT logo_url FROM clinic_settings WHERE id = 1');
+  const url = s?.logo_url ?? '';
+  if (!url || url.startsWith('data:') || !/\/assets\/clinic-logo-[^/]*\.png/.test(url)) return false;
+  tx(() => {
+    run('UPDATE clinic_settings SET logo_url = ?, updated_at = ? WHERE id = 1', [CLINIC.logo_url, new Date().toISOString()]);
+    audit('clinic_settings', '1', 'UPDATE', { logo_url: '[image]', reason: 'upgrade: replace broken logo link with embedded image' });
+  });
+  return true;
+}
 
 export function seedBase() {
   tx(() => {
@@ -28,6 +76,7 @@ export function seedBase() {
       [CLINIC.name_en, CLINIC.name_ar, CLINIC.phone, CLINIC.whatsapp, CLINIC.address, 'EGP', 'ar', CLINIC.receipt_footer],
     );
     run('UPDATE clinic_settings SET logo_url = ? WHERE id = 1', [CLINIC.logo_url]);
+    run('INSERT INTO meta (key, value) VALUES (?, ?)', ['clinic_details_v1', 'seeded']);
     insert('users', { name: 'Dr. Waleed El-Bourgy', email: DEFAULT_LOGINS[0].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[0].password, 10), role: 'VET', locale: 'ar' });
     insert('users', { name: 'Reception', email: DEFAULT_LOGINS[1].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[1].password, 10), role: 'ASSISTANT', locale: 'ar' });
 

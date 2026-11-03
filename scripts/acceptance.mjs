@@ -388,10 +388,54 @@ async function pdfOf(hash, name) {
 await flushWait();
 const beforeClose = counts(openDbFile());
 await app.close();
+// Make the file look like a database from version 0.1 (before clinic details existed): no logo/phone/address,
+// old receipt footer, upgrade never run. Opening it must fill those in once.
+{
+  const db = openDbFile();
+  db.run("UPDATE clinic_settings SET logo_url = NULL, phone = '', whatsapp = '', address = '', receipt_footer = 'Thank you — شكراً لثقتكم' WHERE id = 1");
+  db.run("DELETE FROM meta WHERE key = 'clinic_details_v1'");
+  fs.writeFileSync(dbFile, Buffer.from(db.export()));
+}
+({ app, win } = await launch());
+const loginLogo = await win.locator('.login .logo-plate img').first().isVisible();
+await signIn(win);
+const sideLogo = await win.locator('.side .logo-plate img').evaluate((img) => img.complete && img.naturalWidth > 0);
+await flushWait();
+const afterRelaunch = counts(openDbFile());
+{
+  const row = openDbFile().exec('SELECT logo_url, phone, address, receipt_footer FROM clinic_settings WHERE id = 1')[0].values[0];
+  check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',
+    `0.1-style database (no logo, phone, address) reopened: logo on login ${loginLogo ? 'shown' : 'MISSING'}, in the sidebar ${sideLogo ? 'shown' : 'MISSING'}; stored logo ${String(row[0]).slice(0, 22)}…; phone ${row[1]}; address ${row[2]}; receipt footer "${row[3]}"`);
+}
+// Version 0.1.x stored the logo as a link into the install folder. Opening such a database must swap in the image.
+await app.close();
+{
+  const db = openDbFile();
+  db.run("UPDATE clinic_settings SET logo_url = 'file:///C:/Users/clinic/AppData/Local/Temp/2abc/resources/app.asar/dist/assets/clinic-logo-F2anZT9h.png?inline' WHERE id = 1");
+  fs.writeFileSync(dbFile, Buffer.from(db.export()));
+}
+({ app, win } = await launch());
+await signIn(win);
+const linkFixedShown = await win.locator('.side .logo-plate img').evaluate((img) => img.complete && img.naturalWidth > 0);
+await flushWait();
+{
+  const logo = String(openDbFile().exec('SELECT logo_url FROM clinic_settings WHERE id = 1')[0].values[0][0]);
+  check('upgrade-link', 'A logo saved as a broken install-folder link is repaired', logo.startsWith('data:image/png') && linkFixedShown, `stored logo now ${logo.slice(0, 22)}…; image ${linkFixedShown ? 'drawn' : 'NOT drawn'} in the sidebar`);
+}
+// The upgrade runs once: a logo the vet removes afterwards must stay removed.
+await app.close();
+{
+  const db = openDbFile();
+  db.run('UPDATE clinic_settings SET logo_url = NULL WHERE id = 1');
+  fs.writeFileSync(dbFile, Buffer.from(db.export()));
+}
 ({ app, win } = await launch());
 await signIn(win);
 await flushWait();
-const afterRelaunch = counts(openDbFile());
+{
+  const logo = openDbFile().exec('SELECT logo_url FROM clinic_settings WHERE id = 1')[0].values[0][0];
+  check('upgrade-once', 'The upgrade runs once and respects a removed logo', logo === null, `logo removed after the upgrade is still removed on the next start (logo_url = ${logo})`);
+}
 const backups = fs.readdirSync(path.join(dataDir, 'backups')).filter((f) => /^clinic-\d{4}-\d{2}-\d{2}\.sqlite$/.test(f));
 check('persist', 'Data survives closing and reopening the app', afterRelaunch.owners === beforeClose.owners && afterRelaunch.pets === beforeClose.pets && afterRelaunch.invoices === beforeClose.invoices, `${afterRelaunch.owners} owners / ${afterRelaunch.pets} pets / ${afterRelaunch.invoices} invoices before and after`);
 check('S7.7-daily', 'Automatic daily backup copy exists', backups.length >= 1, `${backups.join(', ')} in data\\backups (taken when the app is first opened each day; last 14 kept)`);

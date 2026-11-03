@@ -4,7 +4,7 @@ import '@fontsource/ibm-plex-sans-arabic/400.css';
 import '@fontsource/ibm-plex-sans-arabic/600.css';
 import './styles.css';
 import { flush, get, openDb } from './db/core';
-import { seedBase, seedDemo } from './db/seed';
+import { applyClinicDetails, seedBase, seedDemo } from './db/seed';
 import { platform } from './lib/platform';
 import { AppProvider } from './lib/app';
 import { App } from './App';
@@ -20,6 +20,8 @@ function Boot() {
         if (fresh) {
           seedBase();
           if (cfg.seedDemo) seedDemo();
+          await flush();
+        } else if (applyClinicDetails()) {
           await flush();
         }
         const loc = (get<{ locale_default: Locale }>('SELECT locale_default FROM clinic_settings WHERE id = 1')?.locale_default ?? 'ar') as Locale;
