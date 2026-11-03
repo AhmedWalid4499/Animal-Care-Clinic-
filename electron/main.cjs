@@ -5,6 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const updater = require('./updater.cjs');
 
 const isSmoke = process.argv.includes('--smoke');
 const isMac = process.platform === 'darwin';
@@ -165,6 +166,7 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
   app.whenReady().then(() => {
     ensureDirs();
     dailyBackup();
+    updater.init({ dataDir, dbPath, backupDir, noAutoCheck: isSmoke });
     // Windows: no menu bar. macOS always shows one, and without it ⌘C/⌘V/⌘Z/⌘A/⌘Q stop working.
     Menu.setApplicationMenu(isMac ? Menu.buildFromTemplate(macMenu()) : null);
     const win = createWindow();

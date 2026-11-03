@@ -1,6 +1,19 @@
 // Platform bridge: the desktop app (Electron preload, Windows/macOS) or the browser prototype.
 type Filter = { name: string; extensions: string[] };
 
+// Mirrors `state` in electron/updater.cjs.
+export interface UpdateState {
+  current: string;
+  auto: boolean;
+  supported: boolean;
+  reason: null | 'dev' | 'portable' | 'mac-move' | 'mac-permission' | 'platform' | 'web';
+  status: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error';
+  version: string | null;
+  progress: number;
+  error: string | null;
+  releasesUrl: string;
+}
+
 interface DesktopBridge {
   config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; version: string; platform: string }>;
   loadDb(): Promise<Uint8Array | null>;
@@ -11,6 +24,12 @@ interface DesktopBridge {
   openExternal(url: string): Promise<void>;
   showDataFolder(): Promise<void>;
   print(): Promise<void>;
+  updateGet(): Promise<UpdateState>;
+  updateCheck(): Promise<UpdateState>;
+  updateInstall(): Promise<boolean>;
+  updateSetAuto(on: boolean): Promise<UpdateState>;
+  updateOpenReleases(): Promise<void>;
+  onUpdateState(cb: (s: UpdateState) => void): () => void;
 }
 
 declare global {
@@ -129,4 +148,18 @@ export const platform = {
     if (desktop) desktop.print();
     else window.print();
   },
+};
+
+const WEB_UPDATE_STATE: UpdateState = {
+  current: '0.1.0', auto: false, supported: false, reason: 'web', status: 'idle', version: null, progress: 0, error: null, releasesUrl: '',
+};
+
+// Automatic updates — desktop only; the browser prototype reports "not supported".
+export const updates = {
+  get: (): Promise<UpdateState> => (desktop ? desktop.updateGet() : Promise.resolve(WEB_UPDATE_STATE)),
+  check: (): Promise<UpdateState> => (desktop ? desktop.updateCheck() : Promise.resolve(WEB_UPDATE_STATE)),
+  install: (): Promise<boolean> => (desktop ? desktop.updateInstall() : Promise.resolve(false)),
+  setAuto: (on: boolean): Promise<UpdateState> => (desktop ? desktop.updateSetAuto(on) : Promise.resolve(WEB_UPDATE_STATE)),
+  openReleases: () => desktop?.updateOpenReleases(),
+  subscribe: (cb: (s: UpdateState) => void): (() => void) => (desktop ? desktop.onUpdateState(cb) : () => {}),
 };

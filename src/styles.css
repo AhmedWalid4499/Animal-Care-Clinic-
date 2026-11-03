@@ -75,6 +75,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pagehead .sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
 .crumb { font-size: 13px; color: var(--ink-2); margin-bottom: 6px; display: inline-block; }
 .demo-banner { background: var(--warn-soft); color: var(--warn); font-size: 12px; padding: 4px 12px; text-align: center; }
+.update-banner { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; flex-wrap: wrap; background: var(--accent-soft); border-bottom: 1px solid var(--rule); font-size: 13px; padding: 6px 16px; }
 .bottom-nav { display: none; }
 
 /* ---------- controls ---------- */
@@ -275,7 +276,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 @media print {
   @page { size: A5; margin: 10mm; }
   body { background: #fff; color: #111; font-size: 11pt; }
-  .side, .bottom-nav, .no-print, .toasts, .demo-banner, .actionbar { display: none !important; }
+  .side, .bottom-nav, .no-print, .toasts, .demo-banner, .update-banner, .actionbar { display: none !important; }
   .shell { display: block; }
   .page { padding: 0; max-width: none; }
   .print-only { display: block; }

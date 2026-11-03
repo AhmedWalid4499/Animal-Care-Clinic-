@@ -1,10 +1,16 @@
 name: Windows build
 
+# Runs on every PR (test build, downloadable as an artifact). On main it is called by release.yml with a
+# version number, and its files become part of the GitHub Release the installed apps update from.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp into the build (release builds only)
+        type: string
+        default: ''
 
 jobs:
   build:
@@ -16,14 +22,32 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Set release version
+        if: inputs.version
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
       - run: npm run typecheck
       - run: npm run dist:win
       - name: Smoke test (app starts and renders the login screen)
         run: .\release\win-unpacked\"Animal Care Clinic.exe" --smoke
         shell: pwsh
+      - name: Check the update feed (latest.yml + app-update.yml) was generated
+        shell: bash
+        run: |
+          cat release/latest.yml
+          grep -q "url: AnimalCareClinic-Setup-.*\.exe" release/latest.yml
+          grep -q "provider: github" "release/win-unpacked/resources/app-update.yml"
       - uses: actions/upload-artifact@v4
         with:
           name: animal-care-clinic-windows
+          path: release/*.exe
+          if-no-files-found: error
+      - name: Upload release files (installer, portable, update feed)
+        if: inputs.version
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
           path: |
             release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
           if-no-files-found: error

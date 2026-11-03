@@ -1,12 +1,16 @@
 name: macOS build
 
-# Same triggers as windows.yml: every change to main or any PR produces both a Windows exe and a Mac dmg
-# from the same source, so the two builds never drift apart.
+# Same triggers as windows.yml: every PR produces both a Windows exe and a Mac dmg from the same source,
+# and on main release.yml calls both, so the two builds never drift apart.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to stamp into the build (release builds only)
+        type: string
+        default: ''
 
 jobs:
   build:
@@ -18,16 +22,39 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Set release version
+        if: inputs.version
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
       - run: npm run typecheck
       - run: npm run dist:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - name: Check the app signature (ad-hoc) is valid
         run: codesign --verify --deep --strict --verbose=2 "release/mac-universal/Animal Care Clinic.app"
+      - name: Check the update zip unpacks to a validly signed app
+        run: |
+          mkdir -p "$RUNNER_TEMP/unzip"
+          ditto -x -k release/*-mac.zip "$RUNNER_TEMP/unzip"
+          codesign --verify --deep --strict "$RUNNER_TEMP/unzip/Animal Care Clinic.app"
+      - name: Check the update feed (latest-mac.yml) points at the zip
+        run: |
+          cat release/latest-mac.yml
+          grep -Eq "url: AnimalCareClinic-.*-mac\.zip" release/latest-mac.yml
       - name: Smoke test (app starts and renders the login screen)
         run: '"release/mac-universal/Animal Care Clinic.app/Contents/MacOS/Animal Care Clinic" --smoke'
       - uses: actions/upload-artifact@v4
         with:
           name: animal-care-clinic-macos
           path: release/*.dmg
+          if-no-files-found: error
+      - name: Upload release files (dmg, update zip, update feed)
+        if: inputs.version
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
           if-no-files-found: error
