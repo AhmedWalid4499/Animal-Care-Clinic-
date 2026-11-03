@@ -162,6 +162,18 @@ await step('settings', async () => {
   await shot('settings-data');
 });
 
+// The updater only runs in an installed app; push its "update downloaded" state from the main process to
+// check the banner (everyone) and the Settings → Updates section render it.
+await step('update ready banner', async () => {
+  const ready = { current: '0.1.0', auto: true, supported: true, reason: null, status: 'ready', version: '0.1.7', progress: 100, error: null, releasesUrl: '' };
+  await app.evaluate(({ BrowserWindow }, st) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', st), ready);
+  await win.locator('.update-banner').waitFor();
+  await win.getByRole('checkbox', { name: 'Update automatically' }).waitFor();
+  await shot('update-ready');
+  await win.locator('.update-banner .btn.ghost').click(); // Later
+  if (await win.locator('.update-banner').count()) throw new Error('Later did not hide the banner');
+});
+
 await step('dark mode', async () => {
   await go('#/');
   await win.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
