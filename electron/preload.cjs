@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   openFile: (name, bytes) => ipcRenderer.invoke('file:open', { name, bytes }),
   openExternal: (url) => ipcRenderer.invoke('shell:external', url),
   showDataFolder: () => ipcRenderer.invoke('shell:showData'),
+  backupNow: (label) => ipcRenderer.invoke('db:backupNow', label),
   print: () => ipcRenderer.invoke('app:print'),
   // Automatic updates (electron/updater.cjs)
   updateGet: () => ipcRenderer.invoke('update:get'),

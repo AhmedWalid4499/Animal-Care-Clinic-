@@ -9,7 +9,7 @@ import { PageHead } from '../components/Layout';
 
 export function OwnerDetail() {
   const { id = '' } = useParams();
-  const { t, fmt, isVet, locale } = useApp();
+  const { t, fmt, isAdmin, locale } = useApp();
   const nav = useNavigate();
   const owner = useQuery(() => getOwner(id), [id]);
   const pets = useQuery(() => ownerPets(id), [id]);
@@ -93,7 +93,7 @@ export function OwnerDetail() {
         </section>
       </div>
 
-      {isVet && (
+      {isAdmin && (
         <div style={{ marginTop: 32 }}>
           <button className="btn danger sm" onClick={() => setConfirm(true)}>
             {owner.status === 'ACTIVE' ? t('owners.archive') : t('owners.unarchive')}

@@ -117,7 +117,7 @@ function DayView({ date, rows, onOpen, onNew }: { date: string; rows: ApptRow[];
 }
 
 function ApptDialog({ id, at, onClose }: { id?: string; at?: string; onClose: () => void }) {
-  const { t, fmt, isVet, toast, locale } = useApp();
+  const { t, fmt, canVisit, toast, locale } = useApp();
   const navigate = useNavigate();
   const existing = useQuery(() => (id ? getAppointment(id) : undefined), [id]);
   const settings = useQuery(getSettings);
@@ -148,7 +148,7 @@ function ApptDialog({ id, at, onClose }: { id?: string; at?: string; onClose: ()
   };
   const status = (s: 'DONE' | 'NO_SHOW' | 'CANCELLED' | 'SCHEDULED') => {
     if (!id) return;
-    if (s === 'DONE' && isVet) {
+    if (s === 'DONE' && canVisit) {
       onClose();
       navigate(`/pets/${existing!.pet_id}/visits/new?appointment=${id}`);
       return;
@@ -168,7 +168,7 @@ function ApptDialog({ id, at, onClose }: { id?: string; at?: string; onClose: ()
             <>
               <button className="btn danger" onClick={() => status('CANCELLED')}>{t('appointments.cancelAppt')}</button>
               <button className="btn" onClick={() => status('NO_SHOW')}>{t('appointments.noShow')}</button>
-              <button className="btn" onClick={() => status('DONE')}>✓ {isVet ? t('appointments.markDone') : t('appointments.markDoneOnly')}</button>
+              <button className="btn" onClick={() => status('DONE')}>✓ {canVisit ? t('appointments.markDone') : t('appointments.markDoneOnly')}</button>
             </>
           )}
           {existing && existing.status !== 'SCHEDULED' && existing.status !== 'DONE' && (

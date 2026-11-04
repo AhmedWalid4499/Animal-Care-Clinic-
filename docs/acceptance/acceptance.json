@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-04T10:44:12.283Z",
+  "at": "2026-11-04T12:26:33.661Z",
   "results": [
     {
       "id": "size",
@@ -11,13 +11,13 @@
       "id": "S1-load",
       "criterion": "Dashboard loads in under 1 s with 500 pets",
       "pass": true,
-      "evidence": "sign-in → dashboard 290 ms (includes password check); dashboard re-open 103 / 92 / 58 ms; 173 due-vaccination rows on screen"
+      "evidence": "sign-in → dashboard 248 ms (includes password check); dashboard re-open 114 / 86 / 83 ms; 173 due-vaccination rows on screen"
     },
     {
       "id": "S1-search",
       "criterion": "Quick search returns on the 3rd keystroke",
       "pass": true,
-      "evidence": "\"Moh\" 19 ms, 16 hits; \"Lun\" 21 ms, 16 hits; \"011\" 38 ms, 16 hits; \"مشم\" 22 ms, 16 hits"
+      "evidence": "\"Moh\" 20 ms, 16 hits; \"Lun\" 20 ms, 16 hits; \"011\" 40 ms, 16 hits; \"مشم\" 18 ms, 16 hits"
     },
     {
       "id": "S8-export-xlsx",
@@ -66,6 +66,12 @@
       "criterion": "Arabic right-to-left on every screen, laptop and phone width",
       "pass": true,
       "evidence": "25 screens × 2 widths: dir=rtl, Arabic labels, no sideways scrolling (screenshots in rtl/)"
+    },
+    {
+      "id": "upgrade-roles",
+      "criterion": "Updating from version 0.1 turns the Vet into an Admin and keeps every user",
+      "pass": true,
+      "evidence": "schema 2; roles now ADMIN×1, ASSISTANT×1; the former Vet still has Settings: yes"
     },
     {
       "id": "upgrade",

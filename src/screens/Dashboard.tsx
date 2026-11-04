@@ -7,7 +7,7 @@ import { Badge, Icon, StatusBadge, WaButton, speciesEmoji } from '../components/
 import { PageHead } from '../components/Layout';
 
 export function Dashboard() {
-  const { t, fmt, isVet, locale } = useApp();
+  const { t, fmt, canVisit, locale } = useApp();
   const nav = useNavigate();
   const [q, setQ] = useState('');
   const hits = useQuery(() => quickSearch(q), [q]);
@@ -21,7 +21,7 @@ export function Dashboard() {
   return (
     <div className="page">
       <PageHead title={`${t('dashboard.title')} · ${fmt.weekday(d)}`} sub={t('dashboard.stats', counts)}>
-        {isVet && (
+        {canVisit && (
           <button className="btn primary" onClick={() => nav('/visits/new')}>
             <Icon name="plus" /> {t('nav.newVisit')}
           </button>

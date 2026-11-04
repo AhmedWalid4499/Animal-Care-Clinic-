@@ -234,7 +234,7 @@ function getOwnerIdOfPet(petId: string) {
 
 export function InvoiceDetail() {
   const { id = '' } = useParams();
-  const { t, fmt, isVet, user, toast, locale } = useApp();
+  const { t, fmt, isAdmin, user, toast, locale } = useApp();
   const nav = useNavigate();
   const inv = useQuery(() => getInvoice(id), [id]);
   const settings = useQuery(getSettings);
@@ -297,7 +297,7 @@ export function InvoiceDetail() {
         </ul>
       </section>
 
-      {isVet && inv.status !== 'VOID' && (
+      {isAdmin && inv.status !== 'VOID' && (
         <div style={{ marginTop: 28 }}><button className="btn danger sm" onClick={() => setConfirmVoid(true)}>{t('invoices.void')}</button></div>
       )}
       {confirmVoid && <Confirm title={t('invoices.void')} body={t('invoices.voidConfirm')} danger onClose={() => setConfirmVoid(false)} onConfirm={() => { voidInvoice(id); toast(t('app.saved')); }} />}

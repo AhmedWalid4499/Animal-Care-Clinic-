@@ -94,7 +94,19 @@ ipcMain.handle('app:config', () => ({
   exportDir,
   version: app.getVersion(),
   platform: process.platform,
+  deviceName: os.hostname(),
 }));
+
+// A named copy of the database right now (e.g. before this laptop joins a clinic server and its local
+// records are replaced by the clinic's).
+ipcMain.handle('db:backupNow', (_e, label) => {
+  if (!fs.existsSync(dbPath)) return null;
+  fs.mkdirSync(backupDir, { recursive: true });
+  const safe = String(label || 'manual').replace(/[^a-z0-9-]/gi, '_').slice(0, 40);
+  const target = path.join(backupDir, `clinic-${safe}-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`);
+  fs.copyFileSync(dbPath, target);
+  return target;
+});
 
 ipcMain.handle('db:load', () => (fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null));
 

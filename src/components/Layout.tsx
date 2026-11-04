@@ -4,9 +4,11 @@ import { useApp, useQuery, type Theme } from '../lib/app';
 import { getSettings } from '../db/repo';
 import { Icon } from './ui';
 import { UpdateBanner } from './Updates';
+import { SyncBadge } from './SyncBadge';
+import { signOutSync } from '../sync/engine';
 
 export function Layout() {
-  const { t, user, setUser, isVet, locale, setLocale, theme, setTheme } = useApp();
+  const { t, user, setUser, isAdmin, canVisit, locale, setLocale, theme, setTheme } = useApp();
   const settings = useQuery(getSettings);
   const nav = useNavigate();
   const { pathname } = useLocation();
@@ -19,7 +21,7 @@ export function Layout() {
     { to: '/owners', icon: 'users', label: t('nav.owners') },
     { to: '/appointments', icon: 'calendar', label: t('nav.appointments') },
     { to: '/invoices', icon: 'receipt', label: t('nav.invoices') },
-    ...(isVet ? [{ to: '/settings', icon: 'settings', label: t('nav.settings') }] : []),
+    ...(isAdmin ? [{ to: '/settings', icon: 'settings', label: t('nav.settings') }] : []),
   ];
   const clinicName = locale === 'ar' ? settings.name_ar : settings.name_en;
   const nextTheme: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
@@ -50,12 +52,13 @@ export function Layout() {
               </NavLink>
             ))}
           </nav>
-          {isVet && (
+          {canVisit && (
             <button className="btn primary" style={{ marginTop: 14 }} onClick={() => nav('/visits/new')}>
               <Icon name="plus" /> {t('nav.newVisit')}
             </button>
           )}
           <div className="side-foot">
+            <SyncBadge />
             <div className="who">
               <b>{user?.name}</b>
               <span className="muted">{t(`roles.${user?.role}`)}</span>
@@ -64,7 +67,7 @@ export function Layout() {
             <button className="linkbtn" onClick={() => setTheme(nextTheme[theme])}>
               {t('app.theme')}: {t(`app.theme${theme[0].toUpperCase()}${theme.slice(1)}`)}
             </button>
-            <button className="linkbtn" onClick={() => { setUser(null); nav('/'); }}>{t('app.logout')}</button>
+            <button className="linkbtn" onClick={() => { signOutSync(); setUser(null); nav('/'); }}>{t('app.logout')}</button>
           </div>
         </aside>
         <main className="main">

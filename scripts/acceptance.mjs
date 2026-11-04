@@ -100,7 +100,7 @@ await app.close();
 
 {
   const db = openDbFile();
-  const vetId = db.exec("SELECT id FROM users WHERE role='VET'")[0].values[0][0];
+  const vetId = db.exec("SELECT id FROM users WHERE role='ADMIN'")[0].values[0][0];
   const vt = db.exec('SELECT id, interval_days, species FROM vaccine_types')[0].values;
   const first = ['Mohamed', 'Ahmed', 'Mona', 'Sara', 'Omar', 'Hoda', 'Karim', 'Nour', 'Youssef', 'Laila', 'محمد', 'أحمد', 'منى', 'سارة', 'عمر', 'هدى', 'كريم', 'نور', 'يوسف', 'ليلى'];
   const last = ['Hassan', 'Adel', 'Farouk', 'Ibrahim', 'Mahmoud', 'Saeed', 'حسن', 'عادل', 'فاروق', 'إبراهيم', 'محمود', 'سعيد'];
@@ -390,10 +390,22 @@ const beforeClose = counts(openDbFile());
 await app.close();
 // Make the file look like a database from version 0.1 (before clinic details existed): no logo/phone/address,
 // old receipt footer, upgrade never run. Opening it must fill those in once.
+// It is also turned back into schema 1 (role VET, no sync tables) to check the v2 upgrade: VET → ADMIN.
 {
   const db = openDbFile();
   db.run("UPDATE clinic_settings SET logo_url = NULL, phone = '', whatsapp = '', address = '', receipt_footer = 'Thank you — شكراً لثقتكم' WHERE id = 1");
   db.run("DELETE FROM meta WHERE key = 'clinic_details_v1'");
+  db.run('PRAGMA foreign_keys = OFF');
+  for (const t of db.exec("SELECT name FROM sqlite_master WHERE type = 'trigger'")[0]?.values ?? []) db.run(`DROP TRIGGER ${t[0]}`);
+  db.run(`CREATE TABLE users_v1 (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('VET','ASSISTANT')), locale TEXT NOT NULL DEFAULT 'ar', is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+  db.run("INSERT INTO users_v1 SELECT id, name, email, password_hash, CASE role WHEN 'ADMIN' THEN 'VET' ELSE 'ASSISTANT' END, locale, is_active, created_at, updated_at FROM users");
+  db.run('DROP TABLE users');
+  db.run('ALTER TABLE users_v1 RENAME TO users');
+  db.run('DROP TABLE sync_outbox');
+  db.run('DROP TABLE sync_state');
+  db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
   fs.writeFileSync(dbFile, Buffer.from(db.export()));
 }
 ({ app, win } = await launch());
@@ -404,6 +416,14 @@ await flushWait();
 const afterRelaunch = counts(openDbFile());
 {
   const row = openDbFile().exec('SELECT logo_url, phone, address, receipt_footer FROM clinic_settings WHERE id = 1')[0].values[0];
+  {
+    const db2 = openDbFile();
+    const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
+    const roles = db2.exec('SELECT role, COUNT(*) FROM users GROUP BY role')[0].values.map((r) => `${r[0]}×${r[1]}`).join(', ');
+    const settingsLink = await win.locator('.nav a[href="#/settings"]').count();
+    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '2' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
+      `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
+  }
   check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',
     `0.1-style database (no logo, phone, address) reopened: logo on login ${loginLogo ? 'shown' : 'MISSING'}, in the sidebar ${sideLogo ? 'shown' : 'MISSING'}; stored logo ${String(row[0]).slice(0, 22)}…; phone ${row[1]}; address ${row[2]}; receipt footer "${row[3]}"`);
 }

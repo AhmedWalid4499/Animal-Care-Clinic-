@@ -17,7 +17,10 @@ function Boot() {
       try {
         const cfg = await platform.config();
         const fresh = await openDb();
-        if (fresh) {
+        if (fresh && __CLOUD__) {
+          // Served by the clinic server: the clinic's records arrive after the first sign-in.
+          await flush();
+        } else if (fresh) {
           seedBase();
           if (cfg.seedDemo) seedDemo();
           await flush();

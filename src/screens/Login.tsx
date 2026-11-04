@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { get } from '../db/core';
 import { useApp, useQuery } from '../lib/app';
-import { getSettings, login } from '../db/repo';
+import { auditLogin, getSettings, login } from '../db/repo';
 import { DEFAULT_LOGINS } from '../db/seed';
 import { Icon } from '../components/ui';
+import { checkServer, normaliseUrl, onlineLogin, resumeSync, serverFixed, serverUrl, setServerUrl } from '../sync/engine';
 
 const LAST_EMAIL = 'login:lastEmail';
 const FEATURES = ['search', 'vaccines', 'receipts'] as const;
@@ -71,6 +73,10 @@ function FeatureSlides() {
   );
 }
 
+function getSettingsRowExists() {
+  return !!get('SELECT 1 FROM users LIMIT 1');
+}
+
 export function Login({ firstRun }: { firstRun: boolean }) {
   const { t, setUser, locale, setLocale } = useApp();
   const settings = useQuery(getSettings);
@@ -81,31 +87,71 @@ export function Login({ firstRun }: { firstRun: boolean }) {
   const [error, setError] = useState(false);
   const [shake, setShake] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [server, setServer] = useState<string | null>(serverUrl);
+  const [editServer, setEditServer] = useState(false);
+  const [serverInput, setServerInput] = useState('');
+  const [serverMsg, setServerMsg] = useState<string | null>(null);
   const pwRef = useRef<HTMLInputElement>(null);
   const name = locale === 'ar' ? settings.name_ar : settings.name_en;
 
+  const remember = (mail: string) => {
+    try {
+      localStorage.setItem(LAST_EMAIL, mail);
+    } catch {
+      /* private window */
+    }
+  };
+  const fail = (msg: string | null) => {
+    setBusy(false);
+    setError(msg === null);
+    setMessage(msg);
+    setShake((n) => n + 1);
+    setPassword('');
+    pwRef.current?.focus();
+  };
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
+    setMessage(null);
     // Checking the password takes a moment; let the "Signing in…" state paint first.
-    setTimeout(() => {
-      const u = login(email, password);
-      if (u) {
-        try {
-          localStorage.setItem(LAST_EMAIL, u.email);
-        } catch {
-          /* private window */
+    setTimeout(async () => {
+      try {
+        // Linked to a clinic server: sign in there (and sync); without a connection, sign in on this device.
+        if (serverUrl()) {
+          const u = await onlineLogin(email, password);
+          if (u !== 'unreachable') {
+            auditLogin(u.id);
+            remember(u.email);
+            setUser(u);
+            return;
+          }
         }
-        setUser(u);
-        return;
+        const u = login(email, password);
+        if (u) {
+          remember(u.email);
+          setUser(u);
+          resumeSync(u.id);
+          return;
+        }
+        fail(serverUrl() && !getSettingsRowExists() ? t('login.firstSignInOnline') : null);
+      } catch (err) {
+        const m = (err as Error).message;
+        const status = (err as { status?: number }).status;
+        fail(m === 'NOT_SET_UP' ? t('login.notSetUp') : status === 401 ? null : status === 429 ? t('login.tooMany') : m);
       }
-      setBusy(false);
-      setError(true);
-      setShake((n) => n + 1);
-      setPassword('');
-      pwRef.current?.focus();
     }, 30);
+  };
+  const connectServer = async () => {
+    const url = normaliseUrl(serverInput);
+    setServerMsg('…');
+    if (await checkServer(url)) {
+      setServerUrl(url);
+      setServer(url);
+      setEditServer(false);
+      setServerMsg(t('login.serverSaved'));
+    } else setServerMsg(t('login.serverUnreachable'));
   };
   const capsCheck = (e: React.KeyboardEvent) => setCaps(e.getModifierState?.('CapsLock') ?? false);
 
@@ -176,7 +222,7 @@ export function Login({ firstRun }: { firstRun: boolean }) {
               </button>
             </label>
             <div className="login-msg" aria-live="polite">
-              {error ? <span className="err">{t('login.error')}</span> : caps ? <span className="warn">⇪ {t('login.capsLock')}</span> : null}
+              {message ? <span className="err">{message}</span> : error ? <span className="err">{t('login.error')}</span> : caps ? <span className="warn">⇪ {t('login.capsLock')}</span> : null}
             </div>
           </div>
 
@@ -184,7 +230,36 @@ export function Login({ firstRun }: { firstRun: boolean }) {
             {busy ? <><span className="spinner" aria-hidden="true" /> {t('login.signingIn')}</> : t('login.submit')}
           </button>
 
-          {firstRun && (
+          {!serverFixed() && (
+            <div className="server-line enter" style={{ ['--d' as string]: '220ms' }}>
+              {editServer ? (
+                <div className="server-edit">
+                  <input
+                    type="url"
+                    className="ltr"
+                    value={serverInput}
+                    placeholder={t('login.serverPlaceholder')}
+                    aria-label={t('login.server')}
+                    onChange={(e) => setServerInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void connectServer(); } }}
+                    autoFocus
+                  />
+                  <button type="button" className="btn sm primary" onClick={() => void connectServer()} disabled={!serverInput.trim()}>{t('login.connect')}</button>
+                  <button type="button" className="btn sm ghost" onClick={() => { setEditServer(false); setServerMsg(null); }}>{t('common.cancel')}</button>
+                </div>
+              ) : server ? (
+                <span>
+                  {t('login.server')}: <b className="ltr">{new URL(server).host}</b>{' '}
+                  <button type="button" className="linkbtn" onClick={() => { setServerInput(server); setEditServer(true); }}>{t('login.changeServer')}</button>
+                </span>
+              ) : (
+                <button type="button" className="linkbtn" onClick={() => setEditServer(true)}>{t('login.connectServer')}</button>
+              )}
+              {serverMsg && <div className="small muted">{serverMsg}</div>}
+            </div>
+          )}
+
+          {firstRun && !server && (
             <div className="creds enter" style={{ ['--d' as string]: '240ms' }}>
               {t('login.firstRun')}
               <div className="role-chips">

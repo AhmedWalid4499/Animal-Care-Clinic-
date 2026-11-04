@@ -17,7 +17,8 @@ export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 export type PriceCategory = (typeof PRICE_CATEGORIES)[number];
 export type InvoiceStatus = (typeof INVOICE_STATUS)[number];
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
-export type Role = 'VET' | 'ASSISTANT';
+export type Role = 'ADMIN' | 'DOCTOR' | 'ASSISTANT';
+export const ROLES: Role[] = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
 export type Locale = 'ar' | 'en';
 
 export interface User {

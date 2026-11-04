@@ -18,7 +18,10 @@
     "dist:win:linux": "npm run build && electron-builder --win --x64 --publish never -c.win.signAndEditExecutable=false",
     "walkthrough": "npm run build && xvfb-run -a node scripts/walkthrough.mjs screenshots",
     "acceptance": "npm run build && xvfb-run -a node scripts/acceptance.mjs acceptance-out",
-    "howto": "node scripts/make-howto.mjs"
+    "howto": "node scripts/make-howto.mjs",
+    "build:cloud": "vite build --mode cloud",
+    "server": "node server/index.mjs",
+    "sync-test": "npm run build && npm run build:cloud && xvfb-run -a node scripts/sync-test.mjs sync-test-out"
   },
   "build": {
     "appId": "com.animalcareclinic.tracker",
@@ -105,11 +108,13 @@
     "bcryptjs": "2.4.3",
     "electron-updater": "6.3.9",
     "fflate": "0.8.2",
+    "pg": "8.13.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-router-dom": "6.28.0",
     "recharts": "2.13.3",
     "sql.js": "1.12.0",
+    "ws": "8.18.0",
     "xlsx": "0.18.5"
   },
   "devDependencies": {
@@ -123,5 +128,8 @@
     "typescript": "5.6.3",
     "vite": "5.4.11",
     "vite-plugin-singlefile": "2.0.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

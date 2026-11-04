@@ -3,7 +3,8 @@
 import initSqlJs from 'sql.js/dist/sql-asm.js';
 import type { Database, SqlValue } from 'sql.js';
 import { platform } from '../lib/platform';
-import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
+import { MIGRATIONS, SCHEMA_SQL, SCHEMA_VERSION } from './schema';
+import { ensureSyncTriggers } from '../sync/local';
 
 let db: Database | null = null;
 let actorId: string | null = null;
@@ -126,6 +127,11 @@ function changed() {
   saveTimer = setTimeout(() => void flush(), 250);
 }
 
+/** Tell the UI and the save timer that the database changed outside tx() (sync engine). */
+export function markChanged() {
+  changed();
+}
+
 export function flush(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer);
@@ -161,12 +167,47 @@ export async function openDb(): Promise<boolean> {
   if (bytes && bytes.length) {
     db = new SQL.Database(bytes);
     db.run('PRAGMA foreign_keys = ON');
+    migrate();
     return false;
   }
   db = new SQL.Database();
   db.run(SCHEMA_SQL);
   run('INSERT INTO meta (key,value) VALUES (?,?)', ['schema_version', String(SCHEMA_VERSION)]);
+  ensureSyncTriggers();
   return true;
+}
+
+/** Bring an older database up to SCHEMA_VERSION, one step at a time, then (re)create the sync triggers. */
+function migrate() {
+  const d = conn();
+  let v = Number(get<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'")?.value ?? 1);
+  let stepped = false;
+  while (v < SCHEMA_VERSION) {
+    const next = v + 1;
+    const sql = MIGRATIONS[next];
+    if (!sql) throw new Error(`No migration to schema ${next}`);
+    d.run('PRAGMA foreign_keys = OFF');
+    d.run('BEGIN');
+    try {
+      d.run(sql);
+      d.run("INSERT INTO meta (key,value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [String(next)]);
+      d.run('COMMIT');
+    } catch (e) {
+      d.run('ROLLBACK');
+      throw e;
+    } finally {
+      d.run('PRAGMA foreign_keys = ON');
+    }
+    v = next;
+    stepped = true;
+  }
+  ensureSyncTriggers();
+  if (stepped) changed();
+}
+
+/** Low-level handle for the sync engine (applying server rows with FK checks off). */
+export function rawDb(): Database {
+  return conn();
 }
 
 /** Replace the whole database with a backup file (Settings → Restore). Validates it first. */
@@ -178,6 +219,7 @@ export async function restoreFrom(bytes: Uint8Array) {
   db?.close();
   db = candidate;
   db.run('PRAGMA foreign_keys = ON');
+  migrate();
   changed();
   await flush();
 }

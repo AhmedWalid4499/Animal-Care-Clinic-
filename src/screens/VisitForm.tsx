@@ -72,7 +72,7 @@ export function VisitFormPage() {
     return {
       visited_at: appt ? toLocalInput(appt.scheduled_at) : nowLocalInput(), type: appt?.type ?? 'CHECKUP', complaint: appt?.notes ?? '',
       weight_kg: '', temperature_c: '', diagnosis: '', treatment_notes: '', follow_up_at: '',
-      vet_id: user?.role === 'VET' ? user.id : vets[0]?.id ?? '', prescriptions: [], vaccinations: [],
+      vet_id: user && user.role !== 'ASSISTANT' ? user.id : vets[0]?.id ?? '', prescriptions: [], vaccinations: [],
     };
   }, [existing, appt, user, vets]);
 

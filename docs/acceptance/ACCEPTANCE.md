@@ -1,12 +1,12 @@
 # Acceptance run
 
-Run 2026-11-04 10:44 UTC by `scripts/acceptance.mjs` against the desktop build (Electron on Linux, same code as the Windows exe). 16/16 checks passed.
+Run 2026-11-04 12:26 UTC by `scripts/acceptance.mjs` against the desktop build (Electron on Linux, same code as the Windows exe). 17/17 checks passed.
 
 | Check | Scope reference | Result | Evidence |
 |---|---|---|---|
 | Test database at the scope size (screen 1: 500 pets) | size | Pass | 500 pets, 305 owners, 1982 visits, 499 vaccinations, 250 invoices, 27 appointments |
-| Dashboard loads in under 1 s with 500 pets | S1-load | Pass | sign-in → dashboard 290 ms (includes password check); dashboard re-open 103 / 92 / 58 ms; 173 due-vaccination rows on screen |
-| Quick search returns on the 3rd keystroke | S1-search | Pass | "Moh" 19 ms, 16 hits; "Lun" 21 ms, 16 hits; "011" 38 ms, 16 hits; "مشم" 22 ms, 16 hits |
+| Dashboard loads in under 1 s with 500 pets | S1-load | Pass | sign-in → dashboard 248 ms (includes password check); dashboard re-open 114 / 86 / 83 ms; 173 due-vaccination rows on screen |
+| Quick search returns on the 3rd keystroke | S1-search | Pass | "Moh" 20 ms, 16 hits; "Lun" 20 ms, 16 hits; "011" 40 ms, 16 hits; "مشم" 18 ms, 16 hits |
 | Excel export in one click: one sheet per table, every row | S8-export-xlsx | Pass | clinic-export-2026-11-04.xlsx written with no dialog; 15 sheets; row counts match the database for all 15 tables |
 | CSV export in one click: one file per table | S7.6-export-csv | Pass | clinic-export-2026-11-04-csv.zip holds 15 CSV files; row counts match |
 | Backup restore tested once | S7.7-restore | Pass | owners: backup 305 → after adding one 306 → after restore 305; the added owner is gone from the list |
@@ -15,6 +15,7 @@ Run 2026-11-04 10:44 UTC by `scripts/acceptance.mjs` against the desktop build (
 | A5 receipt prints on one A5 page | S7.5-receipt | Pass | receipt-A5.pdf: 1 page, 420×595 pt (A5 = 420×595 pt) |
 | Pet summary prints / saves as PDF | S4-summary | Pass | pet-summary-A5.pdf: 1 page(s), 420×595 pt |
 | Arabic right-to-left on every screen, laptop and phone width | RTL | Pass | 25 screens × 2 widths: dir=rtl, Arabic labels, no sideways scrolling (screenshots in rtl/) |
+| Updating from version 0.1 turns the Vet into an Admin and keeps every user | upgrade-roles | Pass | schema 2; roles now ADMIN×1, ASSISTANT×1; the former Vet still has Settings: yes |
 | Updating an older install adds the clinic logo and details | upgrade | Pass | 0.1-style database (no logo, phone, address) reopened: logo on login shown, in the sidebar shown; stored logo data:image/png;base64,…; phone 01227007428; address Giza · الجيزة; receipt footer "Where pets are people · شكراً لثقتكم" |
 | A logo saved as a broken install-folder link is repaired | upgrade-link | Pass | stored logo now data:image/png;base64,…; image drawn in the sidebar |
 | The upgrade runs once and respects a removed logo | upgrade-once | Pass | logo removed after the upgrade is still removed on the next start (logo_url = null) |
