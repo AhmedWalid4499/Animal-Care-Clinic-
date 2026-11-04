@@ -36,7 +36,7 @@ The repo will then contain a `railway.json`, so Railway knows how to build and s
    ```
    `${{Postgres.DATABASE_URL}}` is Railway's reference syntax: it links the app to the database from Stage 1. `ADMIN_EMAIL` / `ADMIN_PASSWORD` create the first Admin account on first start. Change the password in the app afterwards; the app ignores these two variables once an Admin exists.
 3. **Region.** Click the app service → **Settings** → **Region** → **EU West Metal**.
-4. **Storage for X-rays and lab files.** Right-click the canvas (or press `Ctrl/⌘ + K`) → **Volume**, connect it to the app service, and set the mount path to **`/data`**. Then the app service's **Backups** tab → **Daily** + **Weekly**.
+4. **Storage for X-rays and lab files.** Right-click the canvas (or press `Ctrl/⌘ + K`) → **Volume**, connect it to the app service, and set the mount path to **`/data`**.
 5. **Branch.** App service → **Settings** → **Source**: trigger branch **`main`**. If you see **Wait for CI**, turn it on, so Railway only deploys after the Windows and Mac builds pass.
 6. **Public address.** App service → **Settings** → **Networking** → **Generate Domain**. You get `https://<something>.up.railway.app`, with free SSL. Send me that address.
 7. **Deploy.** Click **Deploy** at the top of the canvas. The first build takes a few minutes. When the deployment shows **Active**, open the address and sign in with `ADMIN_EMAIL`.
