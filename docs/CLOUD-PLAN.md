@@ -97,7 +97,7 @@ Notifications reach people even when the app is closed:
 - **One service:** Node with Fastify. It serves the built web app, the sync API, the WebSocket and file upload/download. One Postgres database. One volume for X-rays and lab files: their metadata syncs, and the file itself downloads when you open it, so phones don't fill up.
 - **Secrets:** the session key and the Web Push (VAPID) keys are generated on the server's first start and stored in Postgres, so nobody has to copy secrets around. The first Admin comes from two Railway variables (`ADMIN_EMAIL`, `ADMIN_PASSWORD`), which are ignored once an Admin exists.
 - **Postgres schema:** the same tables as `src/db/schema.ts` and DATABASE.md, plus `clinics`, `changes` (the sync log), `sessions`, `devices`, `push_subscriptions` and `notifications`. Every clinic table has a `clinic_id`. Money stays as integer piastres, as on the devices.
-- **Backups:** a nightly `pg_dump` plus the files volume, copied off Railway (Google Drive or an S3-style bucket), keeping 30 days. Restoring one is part of acceptance (SCOPE §7.7).
+- **Backups:** a nightly `pg_dump` plus the files volume, copied off Railway (Google Drive or an S3-style bucket), keeping 30 days. Restoring one is part of acceptance (SCOPE §7.7). Railway's own scheduled backups need the Pro plan ($20/month), so we don't rely on them on Hobby; every laptop also holds a full copy.
 - **Region:** Railway EU West.
 - **Cost:** Hobby plan $5/month, which includes $5 of usage. A small app and database should be about $5–10/month in total. Check after the first month.
 

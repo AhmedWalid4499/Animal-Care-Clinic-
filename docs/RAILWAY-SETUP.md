@@ -19,7 +19,7 @@ You don't need to give me any password, token or Railway access. Railway deploys
 3. **Create the project.** On the dashboard, click **New Project** → **Empty project**. Rename it to `animal-care-clinic` (project **Settings**).
 4. **Add the database.** On the project canvas, click **`+ New`** (or press `Ctrl/⌘ + K`) → **Database** → **PostgreSQL**.
 5. **Check its region.** Click the **Postgres** service → **Settings** → **Region**. It should say **EU West Metal**; if not, pick it now, while it's still empty.
-6. **Turn on database backups.** Click the **Postgres** service → **Backups** tab → turn on the **Daily** schedule (each backup is kept 6 days) and the **Weekly** schedule (kept 27 days). Our own nightly copy, kept away from Railway, comes in Stage 2.
+6. **Backups: nothing to do on Hobby.** Railway's scheduled backups (the **Backups** tab) need the **Pro** plan; on Hobby the tab only lists existing backups (checked with Ahmed, 4 Nov). Our backups come from the app itself, see "Backups" below.
 7. **Tell me when it's done.** Nothing to copy or send.
 
 ## Stage 2 — when I say the server is ready (Phase 1 merged)
@@ -42,6 +42,14 @@ The repo will then contain a `railway.json`, so Railway knows how to build and s
 7. **Deploy.** Click **Deploy** at the top of the canvas. The first build takes a few minutes. When the deployment shows **Active**, open the address and sign in with `ADMIN_EMAIL`.
 
 After that, every merge to `main` deploys by itself, the same way the desktop apps already update.
+
+## Backups
+
+| Layer | Where | Plan needed |
+|---|---|---|
+| Full copy on every laptop | Each desktop app keeps the whole database locally, plus its daily backup file (last 14) | none |
+| Nightly export kept away from Railway | The server exports Postgres and the files every night to an S3-style bucket (Cloudflare R2 or Backblaze B2, small free tiers) or Google Drive, keeping 30 days. Restore tested once before handover (SCOPE §7.7) | Hobby is enough; the bucket choice comes in Phase 4 |
+| Railway scheduled backups + point-in-time recovery | Postgres and volume **Backups** tab | **Pro** ($20/month incl. $20 usage). Optional; worth it before go-live if you want one-click restores |
 
 ## Later
 
