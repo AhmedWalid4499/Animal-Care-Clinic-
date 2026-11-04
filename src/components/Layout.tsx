@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useQuery, type Theme } from '../lib/app';
 import { getSettings } from '../db/repo';
 import { Icon } from './ui';
@@ -8,6 +9,11 @@ export function Layout() {
   const { t, user, setUser, isVet, locale, setLocale, theme, setTheme } = useApp();
   const settings = useQuery(getSettings);
   const nav = useNavigate();
+  const { pathname } = useLocation();
+  // Each screen starts at the top and slides in (see .route-enter in styles.css).
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [pathname]);
   const items = [
     { to: '/', icon: 'home', label: t('nav.dashboard'), end: true },
     { to: '/owners', icon: 'users', label: t('nav.owners') },
@@ -62,7 +68,9 @@ export function Layout() {
           </div>
         </aside>
         <main className="main">
-          <Outlet />
+          <div key={pathname} className="route-enter">
+            <Outlet />
+          </div>
         </main>
       </div>
       <nav className="bottom-nav no-print">
