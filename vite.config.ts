@@ -10,17 +10,18 @@ const csp: Plugin = {
   transformIndexHtml(html) {
     return html.replace(
       '<!--CSP-->',
-      `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'none'">`,
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob: https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; object-src 'none'; base-uri 'none'">`,
     );
   },
 };
 
+// Cloud build (--mode cloud): the web app the clinic server serves at its own address (phone, browser).
 export default defineConfig(({ mode }) => ({
-  base: './',
-  plugins: mode === 'web' ? [react(), viteSingleFile()] : [react(), csp],
-  define: { __WEB_DEMO__: JSON.stringify(mode === 'web') },
+  base: mode === 'cloud' ? '/' : './',
+  plugins: mode === 'web' ? [react(), viteSingleFile()] : mode === 'cloud' ? [react()] : [react(), csp],
+  define: { __WEB_DEMO__: JSON.stringify(mode === 'web'), __CLOUD__: JSON.stringify(mode === 'cloud') },
   build: {
-    outDir: mode === 'web' ? 'dist-web' : 'dist',
+    outDir: mode === 'web' ? 'dist-web' : mode === 'cloud' ? 'dist-cloud' : 'dist',
     emptyOutDir: true,
     chunkSizeWarningLimit: 4000,
     assetsInlineLimit: mode === 'web' ? 100_000_000 : 4096,

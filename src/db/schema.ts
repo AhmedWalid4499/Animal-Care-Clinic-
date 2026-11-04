@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -22,7 +22,7 @@ CREATE TABLE users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE COLLATE NOCASE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('VET','ASSISTANT')),
+  role TEXT NOT NULL CHECK (role IN ('ADMIN','DOCTOR','ASSISTANT')),
   locale TEXT NOT NULL DEFAULT 'ar' CHECK (locale IN ('ar','en')),
   is_active INTEGER NOT NULL DEFAULT 1,
   ${ts}
@@ -210,6 +210,18 @@ CREATE TABLE clinic_settings (
   ${ts}
 );
 
+-- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
+CREATE TABLE sync_outbox (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  tbl TEXT NOT NULL,
+  row_id TEXT NOT NULL,
+  op TEXT NOT NULL CHECK (op IN ('upsert','delete')),
+  old_row TEXT,
+  new_row TEXT,
+  at TEXT NOT NULL
+);
+CREATE TABLE sync_state (key TEXT PRIMARY KEY, value TEXT);
+
 CREATE TABLE audit_log (
   id TEXT PRIMARY KEY,
   user_id TEXT,
@@ -222,8 +234,37 @@ CREATE TABLE audit_log (
 CREATE INDEX audit_at ON audit_log(at);
 `;
 
+/** SQL that upgrades an older database to the current SCHEMA_VERSION, keyed by the version it produces. */
+export const MIGRATIONS: Record<number, string> = {
+  // v2 (4 Nov 2026): roles become ADMIN / DOCTOR / ASSISTANT (VET → ADMIN), and the sync tables appear.
+  2: `
+    CREATE TABLE users_v2 (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('ADMIN','DOCTOR','ASSISTANT')),
+      locale TEXT NOT NULL DEFAULT 'ar' CHECK (locale IN ('ar','en')),
+      is_active INTEGER NOT NULL DEFAULT 1,
+      ${ts}
+    );
+    INSERT INTO users_v2 (id, name, email, password_hash, role, locale, is_active, created_at, updated_at)
+      SELECT id, name, email, password_hash, CASE role WHEN 'VET' THEN 'ADMIN' ELSE role END, locale, is_active, created_at, updated_at FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_v2 RENAME TO users;
+    CREATE TABLE IF NOT EXISTS sync_outbox (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT, tbl TEXT NOT NULL, row_id TEXT NOT NULL,
+      op TEXT NOT NULL CHECK (op IN ('upsert','delete')), old_row TEXT, new_row TEXT, at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
+  `,
+};
+
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
   'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log',
 ] as const;
+
+/** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */
+export const SYNC_TABLES: readonly string[] = EXPORT_TABLES;

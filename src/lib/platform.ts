@@ -16,7 +16,8 @@ export interface UpdateState {
 }
 
 interface DesktopBridge {
-  config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; exportDir: string; version: string; platform: string }>;
+  config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; exportDir: string; version: string; platform: string; deviceName?: string }>;
+  backupNow(label: string): Promise<string | null>;
   exportFile(name: string, bytes: Uint8Array): Promise<string>;
   showItem(file: string): Promise<void>;
   loadDb(): Promise<Uint8Array | null>;
@@ -112,7 +113,7 @@ function pickInBrowser(accept: string): Promise<{ name: string; bytes: Uint8Arra
 export const platform = {
   async config() {
     if (desktop) return desktop.config();
-    return { seedDemo: true, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: '0.1.0', platform: 'web' };
+    return { seedDemo: __WEB_DEMO__, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: '0.1.0', platform: 'web', deviceName: navigator.userAgent.includes('Android') ? 'Android phone' : navigator.userAgent.includes('iPhone') ? 'iPhone' : 'Browser' };
   },
   async loadDb() {
     if (desktop) {
@@ -155,6 +156,10 @@ export const platform = {
   openExternal(url: string) {
     if (desktop) desktop.openExternal(url);
     else window.open(url, '_blank', 'noopener');
+  },
+  /** Desktop: copy the database file into the backups folder now. Browser: no-op. */
+  async backupNow(label: string) {
+    return desktop ? desktop.backupNow(label) : null;
   },
   showDataFolder() {
     desktop?.showDataFolder();

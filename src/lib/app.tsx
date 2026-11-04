@@ -27,7 +27,10 @@ interface Ctx {
   t: T;
   user: User | null;
   setUser: (u: User | null) => void;
-  isVet: boolean;
+  /** Admin: users, settings, archive, void. */
+  isAdmin: boolean;
+  /** Admin or Doctor: record and edit visits. */
+  canVisit: boolean;
   theme: Theme;
   setTheme: (t: Theme) => void;
   toast: (msg: string) => void;
@@ -115,7 +118,8 @@ export function AppProvider({ children, defaultLocale }: { children: ReactNode; 
         setUserState(u);
         if (u && !safeGet('locale')) setLocaleState(u.locale);
       },
-      isVet: user?.role === 'VET',
+      isAdmin: user?.role === 'ADMIN',
+      canVisit: user?.role === 'ADMIN' || user?.role === 'DOCTOR',
       theme,
       setTheme: (th) => {
         setThemeState(th);

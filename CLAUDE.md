@@ -6,7 +6,8 @@ Vet clinic records app for Dr. Waleed El-Bourgy. Built by Yuto Software House (A
 The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced by a **Windows desktop app**. SCOPE.md §4/§5 still describe a web/PWA delivery; it must be re-confirmed with Dr. Waleed as a change request.
 - **Electron** (`electron/main.cjs`, sandboxed renderer, `electron/preload.cjs` is the only bridge) · **React 18 + Vite + TypeScript** · HashRouter
 - Data: **SQLite via sql.js**, one file at `%APPDATA%\Animal Care Clinic\data\clinic.sqlite`, written atomically after every transaction; daily backup copy (keep 14). Schema in `src/db/schema.ts` mirrors `DATABASE.md` (money = integer piastres; attachments' bytes in `attachment_blobs`)
-- Auth: local users, bcryptjs, roles `VET` / `ASSISTANT` (assistant: no Settings, no archive/void, no visit writes)
+- Auth: users with bcryptjs, roles `ADMIN` / `DOCTOR` / `ASSISTANT` (schema v2; old `VET` → `ADMIN`). Admin: everything; Doctor: visits but no Settings/users/archive/void; Assistant: front desk, read-only visits. The UI hides what a role can't do (`isAdmin`, `canVisit` in `src/lib/app.tsx`), and `server/rules.mjs` enforces it
+- **Cloud sync (Phase 1, 4 Nov 2026):** local-first, as in `docs/CLOUD-PLAN.md`. Each device keeps its SQLite and SQLite triggers feed `sync_outbox` (`src/sync/local.ts`); `src/sync/engine.ts` pushes and pulls against `server/` (Node + Postgres on Railway, `railway.json`). Any new table or column syncs automatically if it is in `SYNC_TABLES`, which must match `server/tables.mjs`. Invoice numbers come from the server while linked (`TMP-…` until synced)
 - i18n: `src/i18n/ar.json` (default, RTL) + `en.json`; never hard-code UI text
 - Charts: `recharts` (weight chart) · receipt / pet summary: print CSS, A5 · export: SheetJS (xlsx/csv)
 - Packaging: `electron-builder` → Windows: NSIS installer + portable exe (`.github/workflows/windows.yml`, `windows-latest`) · macOS: universal dmg, ad-hoc signed via `build/mac-adhoc-sign.cjs`, not notarized (`.github/workflows/macos.yml`, `macos-latest`)
@@ -36,7 +37,7 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/pets/[id]/visits/new`, `/visits/[id]/edit` | 5 Visit |
 | `/appointments` (`?view=day\|week`) | 6 Appointments |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
-| `/settings` (clinic, prices, vaccines, users, export) | 8 Settings — VET only |
+| `/settings` (clinic, prices, vaccines, users, export, clinic server) | 8 Settings — Admin only |
 
 ## The one integration
 WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in `lib/whatsapp.ts` (AR/EN): vaccination reminder, appointment reminder, invoice balance. Set `reminder_sent_at` when the button is clicked. **No WhatsApp Business API** — out of scope.
@@ -49,7 +50,7 @@ WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in 
 ## Working agreement
 - Branch per screen (`feat/04-pet-record`), PR to `main`; CI builds the Windows exe and the Mac dmg per PR — both must be green. Merging to `main` ships the update to every installed app.
 - Commit as `Ahmed El-Bourgy <ahmedwalid4499@gmail.com>`.
-- `npm run typecheck`, `npm run walkthrough` and `npm run acceptance` must pass before any PR.
+- `npm run typecheck`, `npm run walkthrough`, `npm run acceptance` and `npm run sync-test` (needs a local Postgres; see the script header) must pass before any PR.
 - Seed: `src/db/seed.ts` loads users, vaccine types, price items, clinic settings from `DATABASE.md` on a fresh database. Demo data only behind `SEED_DEMO=1` (and in the browser prototype).
 - Import: Settings → Data & backup → Import reads the owners/pets sheet (columns in `import/TEMPLATE.md`).
 

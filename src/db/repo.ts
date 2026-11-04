@@ -23,14 +23,15 @@ export function login(email: string, password: string): User | null {
   return u;
 }
 export const listUsers = () => all<User>('SELECT * FROM users ORDER BY role DESC, name');
-export const listVets = () => all<User>("SELECT * FROM users WHERE is_active = 1 ORDER BY role = 'VET' DESC, name");
+/** People who can be the vet on a visit: active Admins and Doctors. */
+export const listVets = () => all<User>("SELECT * FROM users WHERE is_active = 1 AND role IN ('ADMIN','DOCTOR') ORDER BY role = 'ADMIN' DESC, name");
 export function saveUser(d: { name: string; email: string; role: Role; locale: 'ar' | 'en'; is_active: boolean; password?: string }, id?: string) {
   return tx(() => {
     const values: Record<string, unknown> = { name: d.name.trim(), email: d.email.trim(), role: d.role, locale: d.locale, is_active: d.is_active ? 1 : 0 };
     if (d.password) values.password_hash = bcrypt.hashSync(d.password, 10);
     if (id) {
-      const remainingVets = get<{ n: number }>("SELECT COUNT(*) n FROM users WHERE role='VET' AND is_active=1 AND id <> ?", [id])!.n;
-      if ((d.role !== 'VET' || !d.is_active) && remainingVets === 0) throw new Error('ONE_VET_MINIMUM');
+      const remainingAdmins = get<{ n: number }>("SELECT COUNT(*) n FROM users WHERE role='ADMIN' AND is_active=1 AND id <> ?", [id])!.n;
+      if ((d.role !== 'ADMIN' || !d.is_active) && remainingAdmins === 0) throw new Error('ONE_ADMIN_MINIMUM');
       update('users', id, values);
       return id;
     }
@@ -40,7 +41,12 @@ export function saveUser(d: { name: string; email: string; role: Role; locale: '
 }
 
 // ---------------------------------------------------------------- settings & catalogues
-export const getSettings = () => get<ClinicSettings>('SELECT * FROM clinic_settings WHERE id = 1')!;
+const EMPTY_SETTINGS: ClinicSettings = {
+  id: 1, name_en: 'Animal Care Clinic', name_ar: 'عيادة رعاية الحيوان', logo_url: null, phone: null, whatsapp: null,
+  address: null, currency: 'EGP', locale_default: 'ar', receipt_footer: null,
+};
+/** Clinic settings; a device that has not downloaded its clinic yet gets neutral defaults. */
+export const getSettings = () => get<ClinicSettings>('SELECT * FROM clinic_settings WHERE id = 1') ?? EMPTY_SETTINGS;
 export function saveSettings(d: Partial<ClinicSettings>) {
   tx(() => {
     const before = getSettings();
@@ -414,6 +420,12 @@ export function getInvoice(id: string) {
 }
 
 function nextInvoiceNumber(): string {
+  // Linked to a clinic server: a temporary number; the server gives the real sequential one on sync
+  // (two offline laptops would otherwise both issue INV-2026-0001).
+  if (get<{ value: string }>("SELECT value FROM sync_state WHERE key = 'enabled'")?.value === '1') {
+    const dev = (get<{ value: string }>("SELECT value FROM sync_state WHERE key = 'device_id'")?.value ?? 'dev').slice(0, 4);
+    return `TMP-${dev}-${Date.now().toString(36).toUpperCase()}`;
+  }
   const year = new Date().getFullYear();
   const last = get<{ number: string }>("SELECT number FROM invoices WHERE number LIKE ? ORDER BY number DESC LIMIT 1", [`INV-${year}-%`]);
   const n = last ? Number(last.number.split('-')[2]) + 1 : 1;
@@ -429,6 +441,17 @@ function recomputeInvoice(id: string) {
   const paid = get<{ s: number }>('SELECT COALESCE(SUM(amount),0) s FROM payments WHERE invoice_id = ?', [id])!.s;
   const status: InvoiceStatus = paid <= 0 ? (total === 0 ? 'PAID' : 'UNPAID') : paid >= total ? 'PAID' : 'PARTIAL';
   if (inv.subtotal !== subtotal || inv.total !== total || inv.status !== status) update('invoices', id, { subtotal, total, status });
+}
+
+/** After payments or lines arrive from another device, bring the invoices' totals and status up to date. */
+export function recomputeInvoices(ids: string[]) {
+  tx(() => ids.filter((id) => get('SELECT 1 FROM invoices WHERE id = ?', [id])).forEach(recomputeInvoice));
+}
+
+export function auditLogin(userId: string) {
+  tx(() => {
+    run('INSERT INTO audit_log (id,user_id,table_name,record_id,action,diff,at) VALUES (?,?,?,?,?,?,?)', [uuid(), userId, 'users', userId, 'LOGIN', null, nowIso()]);
+  });
 }
 
 export interface InvoiceInput {

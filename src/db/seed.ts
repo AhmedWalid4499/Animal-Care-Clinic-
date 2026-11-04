@@ -16,7 +16,7 @@ export const CLINIC = {
 };
 
 export const DEFAULT_LOGINS = [
-  { email: 'waleed@clinic.local', password: 'vet12345', role: 'VET' as const },
+  { email: 'waleed@clinic.local', password: 'vet12345', role: 'ADMIN' as const },
   { email: 'assistant@clinic.local', password: 'assist123', role: 'ASSISTANT' as const },
 ];
 
@@ -68,7 +68,8 @@ function repairBundledLogoLink(): boolean {
   return true;
 }
 
-export function seedBase() {
+/** Base data for a new clinic. users: false when the clinic's people come from the clinic server. */
+export function seedBase(opts: { users?: boolean } = {}) {
   tx(() => {
     run(
       `INSERT INTO clinic_settings (id,name_en,name_ar,phone,whatsapp,address,currency,locale_default,receipt_footer)
@@ -76,9 +77,9 @@ export function seedBase() {
       [CLINIC.name_en, CLINIC.name_ar, CLINIC.phone, CLINIC.whatsapp, CLINIC.address, 'EGP', 'ar', CLINIC.receipt_footer],
     );
     run('UPDATE clinic_settings SET logo_url = ? WHERE id = 1', [CLINIC.logo_url]);
-    run('INSERT INTO meta (key, value) VALUES (?, ?)', ['clinic_details_v1', 'seeded']);
-    insert('users', { name: 'Dr. Waleed El-Bourgy', email: DEFAULT_LOGINS[0].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[0].password, 10), role: 'VET', locale: 'ar' });
-    insert('users', { name: 'Reception', email: DEFAULT_LOGINS[1].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[1].password, 10), role: 'ASSISTANT', locale: 'ar' });
+    run('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', ['clinic_details_v1', 'seeded']);
+    if (opts.users !== false) insert('users', { name: 'Dr. Waleed El-Bourgy', email: DEFAULT_LOGINS[0].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[0].password, 10), role: 'ADMIN', locale: 'ar' });
+    if (opts.users !== false) insert('users', { name: 'Reception', email: DEFAULT_LOGINS[1].email, password_hash: bcrypt.hashSync(DEFAULT_LOGINS[1].password, 10), role: 'ASSISTANT', locale: 'ar' });
 
     // Dr. Waleed to confirm / replace at the scoping call.
     for (const [name, species, interval] of [
@@ -106,7 +107,7 @@ export function seedDemo() {
     return d.toISOString();
   };
   tx(() => {
-    const vetId = get<{ id: string }>("SELECT id FROM users WHERE role='VET' LIMIT 1")!.id;
+    const vetId = get<{ id: string }>("SELECT id FROM users WHERE role='ADMIN' LIMIT 1")!.id;
     const vt = Object.fromEntries(all<{ id: string; name: string }>('SELECT id, name FROM vaccine_types').map((x) => [x.name, x.id]));
 
     const owner = (full_name: string, phone: string, extra: Record<string, unknown> = {}) =>

@@ -13,8 +13,9 @@ import { isDesktop, platform } from '../lib/platform';
 import { today } from '../lib/dates';
 import { Confirm, Dialog, Field, Icon, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { SyncPanel } from '../components/SyncBadge';
 import { UpdatesSection } from '../components/Updates';
-import { PRICE_CATEGORIES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
+import { PRICE_CATEGORIES, ROLES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
 type Tab = 'clinic' | 'prices' | 'vaccines' | 'users' | 'data';
 
@@ -239,7 +240,7 @@ function UserDialog({ item, onClose }: { item: Partial<User>; onClose: () => voi
             toast(t('app.saved')); onClose();
           } catch (e) {
             const m = String((e as Error).message);
-            setErr(m.includes('ONE_VET') ? t('settings.oneVet') : m.includes('PASSWORD') ? t('settings.passwordRequired') : m.includes('UNIQUE') ? `${t('settings.email')} ✗` : m);
+            setErr(m.includes('ONE_ADMIN') ? t('settings.oneVet') : m.includes('PASSWORD') ? t('settings.passwordRequired') : m.includes('UNIQUE') ? `${t('settings.email')} ✗` : m);
           }
         }}>{t('common.save')}</button></>}
     >
@@ -249,7 +250,7 @@ function UserDialog({ item, onClose }: { item: Partial<User>; onClose: () => voi
         <Field label={t('settings.email')}><input type="email" className="ltr" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
         <Field label={t('settings.role')}>
           <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Role })}>
-            <option value="VET">{t('roles.VET')}</option><option value="ASSISTANT">{t('roles.ASSISTANT')}</option>
+            {ROLES.map((r) => <option key={r} value={r}>{t(`roles.${r}`)}</option>)}
           </select>
         </Field>
         <Field label={t('settings.locale')}>
@@ -343,6 +344,7 @@ function DataTab() {
 
   return (
     <div style={{ maxWidth: 760 }}>
+      <SyncPanel />
       <div className="form-section">
         <h2>{t('settings.export')}</h2>
         <p className="muted small">{t('settings.exportHint')}</p>

@@ -46,7 +46,7 @@ await win.waitForSelector('form');
 await shot('login-ar');
 
 // --- Vet, Arabic (default)
-await win.getByRole('button', { name: 'طبيب' }).click();
+await win.getByRole('button', { name: 'مدير' }).click();
 await win.locator('form button.primary').click();
 await win.waitForSelector('.searchbox');
 await shot('dashboard-ar');
@@ -198,7 +198,7 @@ await step('assistant cannot reach settings', async () => {
   await win.locator('form button.primary').click();
   await win.waitForSelector('.searchbox');
   await go('#/settings');
-  await win.waitForSelector('text=Settings are for the vet only');
+  await win.waitForSelector('text=Settings are for admins only');
   await shot('assistant-blocked-settings');
 });
 

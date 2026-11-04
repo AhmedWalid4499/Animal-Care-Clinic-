@@ -13,9 +13,15 @@ import { InvoicesList, InvoiceFormPage, InvoiceDetail, InvoicePrint } from './sc
 import { Settings } from './screens/Settings';
 import type { ReactNode } from 'react';
 
-function VetOnly({ children }: { children: ReactNode }) {
-  const { isVet, t } = useApp();
-  if (!isVet) return <div className="page"><p className="note warn">{t('settings.vetOnly')}</p></div>;
+function AdminOnly({ children }: { children: ReactNode }) {
+  const { isAdmin, t } = useApp();
+  if (!isAdmin) return <div className="page"><p className="note warn">{t('settings.vetOnly')}</p></div>;
+  return <>{children}</>;
+}
+
+function ClinicalOnly({ children }: { children: ReactNode }) {
+  const { canVisit, t } = useApp();
+  if (!canVisit) return <div className="page"><p className="note warn">{t('visits.vetOnly')}</p></div>;
   return <>{children}</>;
 }
 
@@ -36,16 +42,16 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="pets/:id" element={<PetRecord />} />
           <Route path="pets/:id/edit" element={<PetFormPage />} />
           <Route path="pets/:id/print" element={<PetSummaryPrint />} />
-          <Route path="visits/new" element={<VetOnly><VisitPickPet /></VetOnly>} />
-          <Route path="pets/:petId/visits/new" element={<VetOnly><VisitFormPage /></VetOnly>} />
-          <Route path="visits/:visitId/edit" element={<VetOnly><VisitFormPage /></VetOnly>} />
+          <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
+          <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
+          <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="appointments" element={<Appointments />} />
           <Route path="invoices" element={<InvoicesList />} />
           <Route path="invoices/new" element={<InvoiceFormPage />} />
           <Route path="invoices/:id" element={<InvoiceDetail />} />
           <Route path="invoices/:id/edit" element={<InvoiceFormPage />} />
           <Route path="invoices/:id/print" element={<InvoicePrint />} />
-          <Route path="settings" element={<VetOnly><Settings /></VetOnly>} />
+          <Route path="settings" element={<AdminOnly><Settings /></AdminOnly>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

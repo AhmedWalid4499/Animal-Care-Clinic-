@@ -6,3 +6,5 @@ release/
 .DS_Store
 /screenshots/tmp/
 acceptance-out/
+dist-cloud/
+sync-test-out/

@@ -1,6 +1,9 @@
 # Cloud plan — shared, live, offline-capable
 
-Status: **agreed direction, 4 Nov 2026**; open points at the end. Nothing here is built yet. Railway steps for Ahmed: `docs/RAILWAY-SETUP.md`.
+Status, 4 Nov 2026:
+- **Phase 1 built and tested locally.** `scripts/sync-test.mjs` passes 11/11 against Postgres 16 with two desktop apps; results are in `docs/acceptance/SYNC-TEST.md`.
+- **Next:** Railway Stage 2 (`docs/RAILWAY-SETUP.md`), then Phases 2–4.
+- Open points are at the end.
 
 ## What Ahmed asked for
 
@@ -91,6 +94,22 @@ Notifications reach people even when the app is closed:
 - **Bell:** a list in the header ("Reception booked Max for Thu 10:00"); read/unread is kept per user and synced.
 - **Triggers:** someone else books, moves, cancels or marks no-show an appointment; a visit is recorded for a pet with an appointment today; a payment is recorded; something you edited was overwritten. Each user can turn kinds off in their profile.
 - **Wording:** in the reader's language (AR/EN), with the pet and owner name, and who did it.
+
+## How Phase 1 is built
+
+| Piece | File | Notes |
+|---|---|---|
+| Change capture | `src/sync/local.ts` | SQLite triggers on every synced table write the old and new row into `sync_outbox`. They are off until the device joins a clinic, and off while server rows are applied. |
+| Sync engine | `src/sync/engine.ts` | Online sign-in, first link (upload to an empty clinic, or download), push then pull, a WebSocket ping and a 60 s fallback. A local edit syncs within about 0.4 s; the status shows in the sidebar. |
+| Server | `server/index.mjs`, `sync.mjs`, `rules.mjs`, `db.mjs` | Node `http` + `ws` + `pg`. Rows are stored as JSONB keyed by (clinic, table, id) with a version per column, so the device schema stays the single source of columns. Per-column last-writer-wins on the device's edit time. Invoice numbers are assigned in a locked counter. Bearer tokens, stored hashed. |
+| Roles | `server/rules.mjs` | Admin / Doctor / Assistant as in the table above; checked on the server for every change. A refused change comes back with the server's row, and the device undoes its edit. |
+| Web app | `npm run build:cloud` → `dist-cloud/` | Served by the server at its address; it signs in to the server it came from. |
+| Upgrade | `src/db/schema.ts` `MIGRATIONS[2]` | Existing installs: VET → ADMIN, sync tables added. The acceptance suite checks this on a schema-1 database. |
+
+Known limits, handled in later phases:
+- File bytes (X-rays, lab PDFs) stay on the laptop that added them until Phase 4.
+- Notifications and the tray come in Phase 3.
+- A laptop's clock decides which of two edits to the same field wins. Windows/Mac keep clocks in sync over the internet, which is enough for one clinic.
 
 ## Server (Railway)
 

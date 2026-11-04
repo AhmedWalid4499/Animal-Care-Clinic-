@@ -1,0 +1,68 @@
+[
+  {
+    "id": "tables",
+    "criterion": "Server and devices sync the same tables",
+    "pass": true,
+    "evidence": "15 tables"
+  },
+  {
+    "id": "bootstrap",
+    "criterion": "The first laptop (Admin) uploads its records to an empty clinic",
+    "pass": true,
+    "evidence": "server now holds 5 owners, 7 pets; default demo logins left active on the server: 0"
+  },
+  {
+    "id": "join",
+    "criterion": "A second laptop signing in gets all of the clinic’s records",
+    "pass": true,
+    "evidence": "laptop B shows 5 owners (laptop A has 5)"
+  },
+  {
+    "id": "live-ab",
+    "criterion": "A change on one laptop appears on the other within 2 s",
+    "pass": true,
+    "evidence": "new owner visible on laptop B after 557 ms"
+  },
+  {
+    "id": "live-ba",
+    "criterion": "And back the other way",
+    "pass": true,
+    "evidence": "visible on laptop A after 574 ms"
+  },
+  {
+    "id": "users",
+    "criterion": "The Admin adds a Doctor and an Assistant; both reach the server",
+    "pass": true,
+    "evidence": "users on server: 4"
+  },
+  {
+    "id": "doctor",
+    "criterion": "A Doctor can sign in on another laptop, record visits, and has no Settings",
+    "pass": true,
+    "evidence": "New visit button: yes; Settings in menu: no"
+  },
+  {
+    "id": "roles-server",
+    "criterion": "The server refuses what an Assistant may not do, and allows the WhatsApp reminder",
+    "pass": true,
+    "evidence": "refused: visits: doctors and admins only; owners: archiving is for admins; users: admins only; owners: records are archived, never deleted — reminder stamp accepted: true"
+  },
+  {
+    "id": "invoice-number",
+    "criterion": "An invoice gets its real number from the server, with no duplicates",
+    "pass": true,
+    "evidence": "new invoice shows INV-2026-0004; duplicate numbers on the server: 0"
+  },
+  {
+    "id": "offline",
+    "criterion": "A change made with the server unreachable syncs when it comes back",
+    "pass": true,
+    "evidence": "while offline laptop A showed \"غير متصل · 2 تغيير في الانتظار\"; laptop B received the owner 2 s after the server came back"
+  },
+  {
+    "id": "restart",
+    "criterion": "After restarting, the laptop remembers its clinic server and keeps everyone’s records",
+    "pass": true,
+    "evidence": "server shown on sign-in: 127.0.0.1:8788; owners: 8"
+  }
+]

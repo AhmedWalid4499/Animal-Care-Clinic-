@@ -33,7 +33,9 @@ The repo will then contain a `railway.json`, so Railway knows how to build and s
    ADMIN_EMAIL=<your email>
    ADMIN_PASSWORD=<a temporary password, at least 12 characters>
    FILES_DIR=/data
+   ELECTRON_SKIP_BINARY_DOWNLOAD=1
    ```
+   `ELECTRON_SKIP_BINARY_DOWNLOAD=1` stops the build from downloading the desktop app's 100 MB engine, which the server doesn't need.
    `${{Postgres.DATABASE_URL}}` is Railway's reference syntax: it links the app to the database from Stage 1. `ADMIN_EMAIL` / `ADMIN_PASSWORD` create the first Admin account on first start. Change the password in the app afterwards; the app ignores these two variables once an Admin exists.
 3. **Region.** Click the app service → **Settings** → **Region** → **EU West Metal**.
 4. **Storage for X-rays and lab files.** Right-click the canvas (or press `Ctrl/⌘ + K`) → **Volume**, connect it to the app service, and set the mount path to **`/data`**.
@@ -42,6 +44,17 @@ The repo will then contain a `railway.json`, so Railway knows how to build and s
 7. **Deploy.** Click **Deploy** at the top of the canvas. The first build takes a few minutes. When the deployment shows **Active**, open the address and sign in with `ADMIN_EMAIL`.
 
 After that, every merge to `main` deploys by itself, the same way the desktop apps already update.
+
+## Stage 3: connect the laptops (about 2 minutes each)
+
+The desktop app needs version 0.1.6 or later, which installs itself through auto-update.
+
+1. **First laptop: the one with the clinic's records.** On the sign-in screen, click **Connect to clinic server** (الاتصال بخادم العيادة), paste the `https://….up.railway.app` address, and click **Connect**. Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. This laptop uploads its records to the empty clinic.
+   - The demo logins `waleed@clinic.local` / `assistant@clinic.local` are switched off on the server if they still have their default passwords.
+2. **Users.** On that laptop, open **Settings → Users** and add everyone with their own email and role (**Admin**, **Doctor** or **Assistant**).
+3. **Other laptops.** Click **Connect to clinic server**, paste the same address, and sign in with that person's own email. The laptop downloads the clinic's records.
+   - Its old local records are saved first as a backup file in its data folder.
+4. **Check it works.** The sidebar shows a green dot with **Synced** and the time. Add something on one laptop, and it appears on the others within a second or two.
 
 ## Backups
 
