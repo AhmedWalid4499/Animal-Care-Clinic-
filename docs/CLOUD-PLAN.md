@@ -1,6 +1,6 @@
 # Cloud plan — shared, live, offline-capable
 
-Status: **draft for Ahmed's review**, 4 Nov 2026. Nothing here is built yet.
+Status: **agreed direction, 4 Nov 2026**; open points at the end. Nothing here is built yet. Railway steps for Ahmed: `docs/RAILWAY-SETUP.md`.
 
 ## What Ahmed asked for
 
@@ -10,6 +10,17 @@ Status: **draft for Ahmed's review**, 4 Nov 2026. Nothing here is built yet.
 | Hosting: Railway, on Ahmed's own account | One Railway project under Ahmed's account (Hobby plan). SCOPE §4 and §8 say Dr. Waleed owns the hosting account, so record this as a change. A Railway project can be handed over to his account later. |
 | Must fully work offline | Every device keeps a full local copy and works with no internet. Changes queue up and sync when the connection is back. |
 | Free Railway address | `https://<name>.up.railway.app`. It has HTTPS, which the phone install needs. A real domain can be added later without code changes. |
+
+## Decisions (Ahmed, 4 Nov)
+
+| Question | Answer | Effect |
+|---|---|---|
+| Assistant doctor | **Add a Doctor role** | Three clinic roles; see "Roles and the Admin account" below |
+| Notifications | **Also when the app is closed** | Desktop app keeps running in the tray, plus Web Push for browsers and phones; see "Notifications" |
+| Devices | **Three laptops now, built to scale** | An Admin adds and removes users in the app. The server is built for many clinics from day one |
+| Hosting | **Railway, Ahmed's own paid account** | Setup steps in `docs/RAILWAY-SETUP.md` |
+| Offline | **Must fully work offline** | Local-first sync (below) |
+| Address | **Free Railway address** | `https://<name>.up.railway.app` |
 
 ## The design in one picture
 
@@ -54,17 +65,38 @@ Status: **draft for Ahmed's review**, 4 Nov 2026. Nothing here is built yet.
 | Invoice totals and status | Payments can arrive from two devices | The server recomputes subtotal, total and status from the synced lines and payments, using the existing `recomputeInvoice` logic. |
 | Logins and roles | Can't trust the device | The server checks the password and role on every push. Offline login works only for someone who has signed in on that device before (bcrypt hash cached locally). A new user's first login needs internet. |
 
+## Roles and the Admin account
+
+| Role | Who | Can |
+|---|---|---|
+| **Admin** | Dr. Waleed (and Ahmed for support) | Everything: users, clinic settings, prices, vaccines, export/backup, archive owners, void invoices, plus all Doctor rights |
+| **Doctor** (new) | Assistant doctor | Record and edit visits, prescriptions and vaccinations; owners, pets, appointments, invoices, payments. No settings, users, archive or void |
+| **Assistant** | Reception / secretary | Owners, pets, appointments, invoices, payments; read visits. No settings, users, archive, void or visit edits |
+
+- **Users:** the Admin adds users in **Settings → Users**: name, email, role and a temporary password. The user changes it at first sign-in. Disabling a user signs them out on every device at the next sync.
+- **Upgrade:** today's `VET` users become `ADMIN`, and the role checks move from the screens to the server. A device can't grant itself rights.
+- **First Admin:** created from Railway variables on the server's first start (`docs/RAILWAY-SETUP.md`, Stage 2).
+- **More clinics later:** every server table carries a `clinic_id` from day one. A platform owner account (Yuto Software House) can create a new clinic and its first Admin without a new deployment. Each clinic only ever sees its own data. One clinic today; adding more later is a setting, not a rebuild.
+
 ### Notifications
 
-- **In the app:** a bell in the header with a list ("Reception booked Max for Thu 10:00", "Dr. Waleed recorded a visit for Luna"), plus a toast when it arrives. Read/unread is kept per user.
-- **On the PC:** the desktop app also shows a Windows/Mac system notification while it's running.
-- **On the phone:** notifications show while the app is open. Push notifications to a closed phone (Web Push) are a later step.
-- **Default triggers, to confirm with Ahmed:** an appointment booked, moved, cancelled or marked no-show by someone else; a visit recorded for a pet with an appointment today; a payment recorded; a sync conflict on something you edited.
+Notifications reach people even when the app is closed:
+
+| Device | App open | App closed |
+|---|---|---|
+| Laptop, desktop app | Bell + toast | Closing the window **keeps the app running in the tray** (system tray / menu bar). It starts when the laptop starts, keeps syncing, and shows Windows/Mac system notifications. "Quit" in the tray menu really stops it |
+| Phone or browser (installed web app) | Bell + toast | **Web Push**: the server sends a push through the browser's push service; the phone shows it even when the app is closed (Android Chrome; iPhone when the app is added to the Home Screen) |
+| Laptop or phone switched off or asleep | — | Nothing can arrive. Notifications wait on the server and show at the next sync, newest first |
+
+- **Bell:** a list in the header ("Reception booked Max for Thu 10:00"); read/unread is kept per user and synced.
+- **Triggers:** someone else books, moves, cancels or marks no-show an appointment; a visit is recorded for a pet with an appointment today; a payment is recorded; something you edited was overwritten. Each user can turn kinds off in their profile.
+- **Wording:** in the reader's language (AR/EN), with the pet and owner name, and who did it.
 
 ## Server (Railway)
 
 - **One service:** Node with Fastify. It serves the built web app, the sync API, the WebSocket and file upload/download. One Postgres database. One volume for X-rays and lab files: their metadata syncs, and the file itself downloads when you open it, so phones don't fill up.
-- **Postgres schema:** the same tables as `src/db/schema.ts` and DATABASE.md, plus `changes` (the sync log), `sessions`, `devices` and `notifications`. Money stays as integer piastres, as on the devices.
+- **Secrets:** the session key and the Web Push (VAPID) keys are generated on the server's first start and stored in Postgres, so nobody has to copy secrets around. The first Admin comes from two Railway variables (`ADMIN_EMAIL`, `ADMIN_PASSWORD`), which are ignored once an Admin exists.
+- **Postgres schema:** the same tables as `src/db/schema.ts` and DATABASE.md, plus `clinics`, `changes` (the sync log), `sessions`, `devices`, `push_subscriptions` and `notifications`. Every clinic table has a `clinic_id`. Money stays as integer piastres, as on the devices.
 - **Backups:** a nightly `pg_dump` plus the files volume, copied off Railway (Google Drive or an S3-style bucket), keeping 30 days. Restoring one is part of acceptance (SCOPE §7.7).
 - **Region:** Railway EU West.
 - **Cost:** Hobby plan $5/month, which includes $5 of usage. A small app and database should be about $5–10/month in total. Check after the first month.
@@ -84,27 +116,29 @@ Dates assume 10–15 hours a week, as in SCOPE §8.
 
 | Phase | What | Done when | Rough effort |
 |---|---|---|---|
-| 0 | Decisions below answered; Ahmed creates the Railway project and connects the GitHub repo | Railway shows an empty project linked to `main` | 1 evening (Ahmed) |
-| 1 | Sync server + Postgres + logins; outbox, push/pull and live ping on the devices; invoice numbering on the server | Two desktop apps on two computers see each other's changes within 2 s; an assistant's push to visits is refused | 4–5 evenings |
-| 2 | Offline: queue and retry, offline login, snapshot for new devices, conflict rules, merge-conflict and overlap notices | Change things on two devices with the network off, reconnect, and both end with the same data; acceptance suite gains offline tests | 3–4 evenings |
-| 3 | Notifications (bell, toast, system notifications) and the phone app (PWA install, offline storage) | Assistant books on the phone, vet's PC shows the notification; app installs on the Android phone (SCOPE §7.8) | 3 evenings |
-| 4 | Files on the volume, nightly off-site backup with a tested restore, deploy to Railway, move existing data | Acceptance on the live Railway address passes; restore tested once (SCOPE §7.7) | 2–3 evenings |
+| 0 | Ahmed: Railway Stage 1 (`docs/RAILWAY-SETUP.md`) | Railway shows the project with Postgres in EU West | 10 min (Ahmed) |
+| 1 | Sync server + Postgres (`clinic_id` everywhere), logins, roles Admin / Doctor / Assistant enforced on the server, Admin user management, outbox + push/pull + live ping, invoice numbers from the server | Three desktop apps see each other's changes within 2 s; an Assistant's push to visits is refused; Admin adds a user who can sign in on another laptop | 5–6 evenings |
+| 2 | Offline: queue and retry, offline sign-in, snapshot for new devices, conflict rules and overwrite notices | Change records on two laptops with Wi-Fi off, reconnect, and both end with the same data; acceptance suite gains offline tests | 3–4 evenings |
+| 3 | Notifications: bell + toast, desktop app in the tray with system notifications, Web Push for the installed web app | Assistant books on laptop A while the app on laptop B is closed to the tray, and B shows the notification | 3 evenings |
+| 4 | Railway Stage 2 deploy, files on the volume, nightly off-site backup with a tested restore, phone web app install | Acceptance passes on the live address; restore tested once (SCOPE §7.7); installs on the Android phone (§7.8) | 2–3 evenings |
+| 5 | Platform owner console: create a clinic and its first Admin | A second test clinic exists and can't see the first clinic's data | 1–2 evenings, after handover |
 
-**Total: roughly 12–15 evenings.** Starting after the 8 Nov sign-off, that runs to about the 29 Nov handover with little slack. If it slips, Phase 3's phone install and Phase 4 are what move into the fix window; the shared live data from Phases 1–2 comes first.
+**Total: roughly 14–18 evenings for Phases 1–4.** That's more than the 3 weeks to the 29 Nov handover hold at 10–15 h/week. Phases 1–2 (shared live data, roles, Admin, offline) come first. If time runs short, Phases 3–4 finish in the fix window (to 29 Dec), and Phase 5 is after handover.
 
 ## Scope impact (SCOPE §10)
 
 These are outside SCOPE §4, so they are change requests, quoted at list price and waived at Dr. Waleed's discretion:
 
 - **Full offline with sync:** the scope promised an "offline-tolerant draft" only.
-- **Live notifications between users.**
+- **Live notifications between users, including when the app is closed** (tray app, Web Push).
+- **Doctor role and Admin user management:** the scope has two roles; this adds a third.
+- **Built for several clinics** (`clinic_id`, platform owner console): SCOPE §5 lists multi-clinic as v2.
 - **Hosting under Ahmed's account** instead of Dr. Waleed's (§4 and §8).
 
 The rest moves the project back towards the scope: the phone install (§4, §7.8), Railway hosting in the EU (§8), and the nightly backup (§7.7).
 
-## Open questions for Ahmed
+## Still open
 
-1. **Roles:** you mentioned an *assistant doctor* and a *secretary*. The scope has two roles: Vet (everything) and Assistant (owners, pets, appointments, invoices; read-only visits). Can the assistant doctor record visits? If yes, we need a third role, e.g. **Doctor**: visits yes, settings no.
-2. **Notifications:** are the default triggers above right? Anything to add or drop?
-3. **Phone push when the app is closed:** needed for the handover, or is "while the app is open" enough for v1?
-4. **Devices:** how many PCs and phones will use it at the clinic? This sizes the testing and helps choose the Railway plan.
+1. **"At scale":** do you mean more users in this clinic, or selling the app to **other clinics** later? The design covers both. The answer decides whether Phase 5 is needed at all.
+2. **Secretary:** I assumed the secretary is the **Assistant** role. Say if the secretary should differ from reception.
+3. **Ahmed as Admin:** your support login can see patient data. Dr. Waleed should agree to that in writing; a line in the scope sign-off is enough.
