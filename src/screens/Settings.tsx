@@ -30,11 +30,13 @@ export function Settings() {
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>{t(`settings.${k}`)}</button>
         ))}
       </div>
-      {tab === 'clinic' && <ClinicTab />}
-      {tab === 'prices' && <PricesTab />}
-      {tab === 'vaccines' && <VaccinesTab />}
-      {tab === 'users' && <UsersTab />}
-      {tab === 'data' && <DataTab />}
+      <div key={tab} className="tab-enter">
+        {tab === 'clinic' && <ClinicTab />}
+        {tab === 'prices' && <PricesTab />}
+        {tab === 'vaccines' && <VaccinesTab />}
+        {tab === 'users' && <UsersTab />}
+        {tab === 'data' && <DataTab />}
+      </div>
     </div>
   );
 }

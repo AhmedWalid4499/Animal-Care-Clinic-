@@ -77,10 +77,12 @@ export function PetRecord() {
           </button>
         ))}
       </div>
-      {tab === 'timeline' && <Timeline petId={id} />}
-      {tab === 'vaccinations' && <Vaccinations petId={id} />}
-      {tab === 'weight' && <WeightChart petId={id} />}
-      {tab === 'files' && <Files petId={id} />}
+      <div key={tab} className="tab-enter">
+        {tab === 'timeline' && <Timeline petId={id} />}
+        {tab === 'vaccinations' && <Vaccinations petId={id} />}
+        {tab === 'weight' && <WeightChart petId={id} />}
+        {tab === 'files' && <Files petId={id} />}
+      </div>
     </div>
   );
 }

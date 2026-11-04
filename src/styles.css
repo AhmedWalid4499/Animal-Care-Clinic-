@@ -3,6 +3,8 @@
   --accent: #2e6f73; /* clinic teal, taken from the Animal Care Clinic logo */
   --accent-ink: #ffffff;
   --accent-soft: #e5f0f0;
+  --brand: #2e6f73; /* logo teal for brand surfaces (login panel); stays deep in dark mode */
+  --brand-ink: #ffffff;
   --bg: #ffffff;
   --bg-2: #f6f7f8;
   --ink: #1b1f23;
@@ -22,14 +24,14 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --accent: #6cc3c4; --accent-ink: #061414; --accent-soft: #11292a;
+    --accent: #6cc3c4; --accent-ink: #061414; --accent-soft: #11292a; --brand: #1f5558; --brand-ink: #eef7f7;
     --bg: #121416; --bg-2: #1a1d20; --ink: #e8eaec; --ink-2: #a5adb5; --ink-3: #757d85;
     --rule: #2a2e33; --rule-2: #3a3f45; --ok: #5cc98f; --ok-soft: #14291e; --warn: #f0b45a; --warn-soft: #2d2212;
     --bad: #f28b82; --bad-soft: #2f1715; color-scheme: dark;
   }
 }
 :root[data-theme='dark'] {
-  --accent: #6cc3c4; --accent-ink: #061414; --accent-soft: #11292a;
+  --accent: #6cc3c4; --accent-ink: #061414; --accent-soft: #11292a; --brand: #1f5558; --brand-ink: #eef7f7;
   --bg: #121416; --bg-2: #1a1d20; --ink: #e8eaec; --ink-2: #a5adb5; --ink-3: #757d85;
   --rule: #2a2e33; --rule-2: #3a3f45; --ok: #5cc98f; --ok-soft: #14291e; --warn: #f0b45a; --warn-soft: #2d2212;
   --bad: #f28b82; --bad-soft: #2f1715; color-scheme: dark;
@@ -235,18 +237,82 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .totals div.big { font-weight: 600; font-size: 17px; border-bottom: 2px solid var(--ink); }
 
 /* login */
-.login { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
-.login .art { background: var(--accent); color: var(--accent-ink); padding: 48px; display: flex; flex-direction: column; justify-content: space-between; }
-.login .art .logo-plate { max-width: 340px; padding: 14px 18px; }
-.login .art .logo-plate img { max-height: 140px; }
+.login { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+.login .art { position: relative; overflow: hidden; background: var(--brand); color: var(--brand-ink); padding: 44px 48px 28px; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; }
+.login .art::after { content: ""; position: absolute; inset: auto -20% -45% auto; width: 70%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--brand-ink) 10%, transparent), transparent); pointer-events: none; }
+.login .art .logo-plate { max-width: 320px; padding: 14px 18px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+.login .art .logo-plate img { max-height: 130px; }
+.login .art h1 { font-size: 34px; max-width: 440px; margin-bottom: 18px; text-wrap: balance; }
+.login .art-bottom { display: flex; flex-direction: column; gap: 6px; }
+.login .art-bottom small { opacity: .8; }
+.slides { max-width: 420px; }
+.slide-stage { min-height: 92px; }
+.slide b { display: block; font-size: 18px; margin-bottom: 4px; }
+.slide p { margin: 0; opacity: .88; line-height: 1.55; }
+.slide { animation: slide-in .5s ease both; }
+.dots { display: flex; gap: 8px; margin-top: 14px; }
+.dots button { width: 22px; height: 4px; border-radius: 2px; border: 0; padding: 0; cursor: pointer; background: color-mix(in srgb, var(--brand-ink) 35%, transparent); transition: width .25s ease, background-color .25s ease; }
+.dots button.on { width: 40px; background: var(--brand-ink); }
+.dots button:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 3px; }
+.paw-trail { width: 100%; max-width: 560px; height: auto; fill: var(--brand-ink); }
+.paw-trail .paw { opacity: 0; animation: paw-step 6s ease-in-out infinite; }
+.login .pane { display: grid; place-items: center; padding: 32px 20px; background: var(--bg); }
+.login form { width: min(380px, 100%); display: flex; flex-direction: column; gap: 16px; }
+.login .tools { display: flex; justify-content: flex-end; }
+.lang-pill { border: 1px solid var(--rule-2); background: var(--bg); border-radius: 999px; padding: 4px 14px; font-weight: 600; font-size: 13px; color: var(--accent); cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.lang-pill:hover { background: var(--accent-soft); border-color: var(--accent); }
 .login .mobile-logo { display: none; }
-.login .art h1 { font-size: 34px; max-width: 420px; }
-.login .art p { opacity: .85; max-width: 380px; }
-.login .pane { display: grid; place-items: center; padding: 32px 20px; }
-.login form { width: min(360px, 100%); display: flex; flex-direction: column; gap: 14px; }
-.login .tools { display: flex; gap: 12px; justify-content: flex-end; }
-.creds { font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 12px; }
-.creds code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.greeting { margin: 0 0 2px; color: var(--accent); font-weight: 600; font-size: 14px; }
+.fields { display: flex; flex-direction: column; gap: 12px; }
+.float { position: relative; display: block; }
+.float input { min-height: 54px; padding: 22px 12px 6px; font-size: 15px; transition: border-color .15s ease, box-shadow .15s ease; }
+.float > span { position: absolute; inset-inline-start: 13px; top: 17px; color: var(--ink-3); font-size: 15px; pointer-events: none; transition: top .15s ease, font-size .15s ease, color .15s ease; }
+.float input:focus + span, .float input:not(:placeholder-shown) + span { top: 7px; font-size: 11.5px; font-weight: 600; color: var(--accent); }
+.float input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); outline: none; }
+.has-eye input { padding-left: 46px; padding-right: 46px; }
+.eye { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none; width: 36px; height: 36px; border-radius: var(--radius); color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
+.eye:hover { background: var(--bg-2); color: var(--ink); }
+.eye svg { width: 18px; height: 18px; }
+.login-msg { min-height: 20px; font-size: 13px; font-weight: 600; }
+.login-msg .err { color: var(--bad); }
+.login-msg .warn { color: var(--warn); }
+.fields.shake { animation: shake .42s cubic-bezier(.36, .07, .19, .97) both; }
+.btn.signin { min-height: 48px; font-size: 15px; position: relative; transition: filter .15s ease, transform .1s ease; }
+.btn.signin.busy { cursor: progress; opacity: .92; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent-ink) 35%, transparent); border-top-color: var(--accent-ink); animation: spin .7s linear infinite; }
+.creds { font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 14px; }
+.role-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.chip-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: start; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); padding: 8px 10px; cursor: pointer; transition: border-color .15s ease, background-color .15s ease; min-width: 0; }
+.chip-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.chip-btn b { font-size: 13px; color: var(--accent); }
+.chip-btn span { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.enter { animation: rise .5s cubic-bezier(.2, .7, .2, 1) both; animation-delay: var(--d, 0ms); }
+
+/* ---------- motion: screens, tabs, dialogs, toasts ---------- */
+/* Screens use `top`, not transform, so fixed bars and dialogs inside a page keep their place while it animates. */
+.route-enter { position: relative; animation: route-in .26s cubic-bezier(.2, .7, .2, 1) both; }
+.tab-enter { animation: fade-in .2s ease both; }
+.overlay { animation: fade-in .16s ease both; }
+.overlay .dialog { animation: dialog-in .2s cubic-bezier(.2, .7, .2, 1) both; }
+.toast { animation: toast-in .22s cubic-bezier(.2, .7, .2, 1) both; }
+.btn { transition: background-color .15s ease, border-color .15s ease, filter .15s ease, transform .08s ease; }
+.btn:active:not(:disabled) { transform: scale(.98); }
+.nav a { transition: background-color .15s ease, color .15s ease; }
+.list > li.link, table.t tr.link td { transition: background-color .12s ease; }
+.tabs button { transition: color .15s ease, border-color .2s ease; }
+@keyframes route-in { from { opacity: 0; top: 8px; } to { opacity: 1; top: 0; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes slide-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes shake { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(3px); } 30%, 50%, 70% { transform: translateX(-6px); } 40%, 60% { transform: translateX(6px); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes paw-step { 0% { opacity: 0; } 6% { opacity: .26; } 50% { opacity: .26; } 64%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; transition-duration: .01ms !important; }
+  .paw-trail .paw { opacity: .18; }
+}
 
 .chart { height: 300px; margin-top: 16px; }
 
@@ -274,7 +340,8 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
   .tl > li { grid-template-columns: 1fr; gap: 4px; }
   .login { grid-template-columns: 1fr; }
   .login .art { display: none; }
-  .login .mobile-logo { display: block; max-width: 260px; }
+  .login .mobile-logo { display: block; max-width: 240px; }
+  .role-chips { grid-template-columns: 1fr; }
   .hide-sm { display: none; }
   .sheet-wrap { display: block; padding: 8px; }
   .sheet.a5 { width: 148mm; max-width: none; }

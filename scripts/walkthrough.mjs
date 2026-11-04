@@ -193,8 +193,8 @@ await step('dark mode', async () => {
 
 await step('assistant cannot reach settings', async () => {
   await win.getByRole('button', { name: 'Sign out' }).click();
-  await win.getByLabel('Email').fill('assistant@clinic.local');
-  await win.getByLabel('Password').fill('assist123');
+  await win.getByLabel('Email', { exact: true }).fill('assistant@clinic.local');
+  await win.getByLabel('Password', { exact: true }).fill('assist123');
   await win.locator('form button.primary').click();
   await win.waitForSelector('.searchbox');
   await go('#/settings');
