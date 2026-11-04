@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-03T19:14:56.833Z",
+  "at": "2026-11-03T19:57:11.173Z",
   "results": [
     {
       "id": "size",
@@ -11,13 +11,13 @@
       "id": "S1-load",
       "criterion": "Dashboard loads in under 1 s with 500 pets",
       "pass": true,
-      "evidence": "sign-in → dashboard 194 ms (includes password check); dashboard re-open 56 / 52 / 57 ms; 173 due-vaccination rows on screen"
+      "evidence": "sign-in → dashboard 215 ms (includes password check); dashboard re-open 60 / 54 / 55 ms; 173 due-vaccination rows on screen"
     },
     {
       "id": "S1-search",
       "criterion": "Quick search returns on the 3rd keystroke",
       "pass": true,
-      "evidence": "\"Moh\" 17 ms, 16 hits; \"Lun\" 18 ms, 16 hits; \"011\" 43 ms, 16 hits; \"مشم\" 28 ms, 16 hits"
+      "evidence": "\"Moh\" 19 ms, 16 hits; \"Lun\" 18 ms, 16 hits; \"011\" 36 ms, 16 hits; \"مشم\" 28 ms, 16 hits"
     },
     {
       "id": "S8-export-xlsx",
@@ -66,6 +66,24 @@
       "criterion": "Arabic right-to-left on every screen, laptop and phone width",
       "pass": true,
       "evidence": "25 screens × 2 widths: dir=rtl, Arabic labels, no sideways scrolling (screenshots in rtl/)"
+    },
+    {
+      "id": "upgrade",
+      "criterion": "Updating an older install adds the clinic logo and details",
+      "pass": true,
+      "evidence": "0.1-style database (no logo, phone, address) reopened: logo on login shown, in the sidebar shown; stored logo data:image/png;base64,…; phone 01227007428; address Giza · الجيزة; receipt footer \"Where pets are people · شكراً لثقتكم\""
+    },
+    {
+      "id": "upgrade-link",
+      "criterion": "A logo saved as a broken install-folder link is repaired",
+      "pass": true,
+      "evidence": "stored logo now data:image/png;base64,…; image drawn in the sidebar"
+    },
+    {
+      "id": "upgrade-once",
+      "criterion": "The upgrade runs once and respects a removed logo",
+      "pass": true,
+      "evidence": "logo removed after the upgrade is still removed on the next start (logo_url = null)"
     },
     {
       "id": "persist",
