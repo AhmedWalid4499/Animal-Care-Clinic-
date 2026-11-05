@@ -25,6 +25,24 @@ CREATE TABLE IF NOT EXISTS rows (
 );
 CREATE INDEX IF NOT EXISTS rows_clinic_seq ON rows (clinic_id, seq);
 CREATE INDEX IF NOT EXISTS rows_user_email ON rows (lower(data->>'email')) WHERE tbl = 'users';
+CREATE TABLE IF NOT EXISTS notifications (
+  id uuid PRIMARY KEY,
+  clinic_id uuid NOT NULL REFERENCES clinics(id),
+  user_id text NOT NULL,
+  kind text NOT NULL,
+  event text NOT NULL,
+  data jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  read_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS notifications_user ON notifications (clinic_id, user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  endpoint text PRIMARY KEY,
+  clinic_id uuid NOT NULL REFERENCES clinics(id),
+  user_id text NOT NULL,
+  keys jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   clinic_id uuid NOT NULL REFERENCES clinics(id),

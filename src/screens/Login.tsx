@@ -4,7 +4,7 @@ import { useApp, useQuery } from '../lib/app';
 import { auditLogin, getSettings, login } from '../db/repo';
 import { DEFAULT_LOGINS } from '../db/seed';
 import { Icon } from '../components/ui';
-import { checkServer, normaliseUrl, onlineLogin, resumeSync, serverFixed, serverUrl, setServerUrl } from '../sync/engine';
+import { checkServer, normaliseUrl, onlineLogin, rememberedUser, resumeSync, serverFixed, serverUrl, setServerUrl } from '../sync/engine';
 
 const LAST_EMAIL = 'login:lastEmail';
 const FEATURES = ['search', 'vaccines', 'receipts'] as const;
@@ -94,6 +94,15 @@ export function Login({ firstRun }: { firstRun: boolean }) {
   const [serverMsg, setServerMsg] = useState<string | null>(null);
   const pwRef = useRef<HTMLInputElement>(null);
   const name = locale === 'ar' ? settings.name_ar : settings.name_en;
+
+  // Linked laptops stay signed in until Sign out, so the app in the tray keeps syncing and notifying after a restart.
+  useEffect(() => {
+    const u = rememberedUser();
+    if (u) {
+      setUser(u);
+      resumeSync(u.id);
+    }
+  }, [setUser]);
 
   const remember = (mail: string) => {
     try {

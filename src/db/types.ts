@@ -22,7 +22,7 @@ export const ROLES: Role[] = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
 export type Locale = 'ar' | 'en';
 
 export interface User {
-  id: string; name: string; email: string; password_hash: string; role: Role; locale: Locale; is_active: number;
+  id: string; name: string; email: string; password_hash: string; role: Role; locale: Locale; is_active: number; notify_off?: string | null;
 }
 export interface Owner {
   id: string; full_name: string; phone: string; whatsapp: string | null; email: string | null; address: string | null;

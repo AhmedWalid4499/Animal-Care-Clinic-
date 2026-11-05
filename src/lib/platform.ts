@@ -18,6 +18,10 @@ export interface UpdateState {
 interface DesktopBridge {
   config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; exportDir: string; version: string; platform: string; deviceName?: string }>;
   backupNow(label: string): Promise<string | null>;
+  showWindow(): Promise<void>;
+  isForeground(): Promise<boolean>;
+  getBackground(): Promise<boolean>;
+  setBackground(on: boolean): Promise<boolean>;
   exportFile(name: string, bytes: Uint8Array): Promise<string>;
   showItem(file: string): Promise<void>;
   loadDb(): Promise<Uint8Array | null>;
@@ -156,6 +160,23 @@ export const platform = {
   openExternal(url: string) {
     if (desktop) desktop.openExternal(url);
     else window.open(url, '_blank', 'noopener');
+  },
+  /** Desktop: bring the window back from the tray (a notification was clicked). */
+  showWindow() {
+    if (desktop) void desktop.showWindow();
+    else window.focus();
+  },
+  /** Is the window on screen and in front? (Hidden in the tray, minimised or behind another app = no.) */
+  async isForeground() {
+    if (desktop) return desktop.isForeground();
+    return !document.hidden && document.hasFocus();
+  },
+  /** Desktop: keep running in the tray when the window is closed, and start with the computer. */
+  async getBackground() {
+    return desktop ? desktop.getBackground() : false;
+  },
+  async setBackground(on: boolean) {
+    return desktop ? desktop.setBackground(on) : false;
   },
   /** Desktop: copy the database file into the backups folder now. Browser: no-op. */
   async backupNow(label: string) {

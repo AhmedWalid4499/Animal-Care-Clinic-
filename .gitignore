@@ -4,7 +4,7 @@ dist-web/
 release/
 *.log
 .DS_Store
-/screenshots/tmp/
+/screenshots/
 acceptance-out/
 dist-cloud/
 sync-test-out/

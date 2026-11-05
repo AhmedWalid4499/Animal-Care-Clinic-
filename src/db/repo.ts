@@ -22,6 +22,10 @@ export function login(email: string, password: string): User | null {
   });
   return u;
 }
+/** The bell's on/off switches: kinds this user does not want (synced, so every device knows). */
+export function saveNotifyOff(userId: string, off: string[]) {
+  tx(() => update('users', userId, { notify_off: off.length ? off.join(',') : null }));
+}
 export const listUsers = () => all<User>('SELECT * FROM users ORDER BY role DESC, name');
 /** People who can be the vet on a visit: active Admins and Doctors. */
 export const listVets = () => all<User>("SELECT * FROM users WHERE is_active = 1 AND role IN ('ADMIN','DOCTOR') ORDER BY role = 'ADMIN' DESC, name");

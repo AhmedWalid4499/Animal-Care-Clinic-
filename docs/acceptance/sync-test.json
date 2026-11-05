@@ -21,13 +21,13 @@
     "id": "live-ab",
     "criterion": "A change on one laptop appears on the other within 2 s",
     "pass": true,
-    "evidence": "new owner visible on laptop B after 557 ms"
+    "evidence": "new owner visible on laptop B after 568 ms"
   },
   {
     "id": "live-ba",
     "criterion": "And back the other way",
     "pass": true,
-    "evidence": "visible on laptop A after 574 ms"
+    "evidence": "visible on laptop A after 575 ms"
   },
   {
     "id": "users",
@@ -54,6 +54,48 @@
     "evidence": "new invoice shows INV-2026-0004; duplicate numbers on the server: 0"
   },
   {
+    "id": "notify-live",
+    "criterion": "An assistant books an appointment: the doctor and the admin are notified at once, the assistant is not",
+    "pass": true,
+    "evidence": "doctor's bell after 96 ms: \"Reception حجز موعداً لـ Max (Mona Hassan) يوم الجمعة، 6 نوفمبر 10:00 ص\"; admin's bell: yes; assistant notified about own booking: 0"
+  },
+  {
+    "id": "notify-push",
+    "criterion": "The same booking is pushed to the doctor’s phone even with the app closed (encrypted, signed); dead phones are forgotten",
+    "pass": true,
+    "evidence": "push decrypted on the \"phone\": موعد — \"Reception حجز موعداً لـ Max (Mona Hassan) يوم الجمعة، 6 نوفمبر، 12:00 م\" → /#/appointments?view=day&date=2026-11-06&open=d95005f7-3835-4899-ab7e-4445d3151b28; signed: true; uninstalled phone removed: yes"
+  },
+  {
+    "id": "notify-tray",
+    "criterion": "Closing the window keeps the app in the tray; a change still raises a system notification that opens the appointment",
+    "pass": true,
+    "evidence": "after X: 1 window, visible=false; system notification: موعد — \"Reception غيّر موعد Max إلى الجمعة، 6 نوفمبر 11:00 ص\"; clicked → window visible=true, #/appointments?view=day&date=2026-11-06, appointment open: true"
+  },
+  {
+    "id": "notify-conflict",
+    "criterion": "Two people edit the same field: the latest edit wins and the others are told whose change replaced theirs",
+    "pass": true,
+    "evidence": "kept: \"Fasting from midnight\"; assistant told: replaced by Admin; doctor told: kept (Admin)"
+  },
+  {
+    "id": "notify-prefs",
+    "criterion": "Each person chooses what to be notified about; switching one off stops only that kind, and only for them",
+    "pass": true,
+    "evidence": "assistant turned payments off (accepted) and could not make themself Admin (admins only); doctor turned visits off from the bell: saved; payment notified to assistant: 0, to doctor: 1"
+  },
+  {
+    "id": "notify-visit",
+    "criterion": "A visit recorded for a pet booked today tells the front desk; other visits do not",
+    "pass": true,
+    "evidence": "assistant notified about visits for: Max (booked today: Max, walk-in: بندق)"
+  },
+  {
+    "id": "notify-read",
+    "criterion": "“Mark all read” clears the count, on every device of that person",
+    "pass": true,
+    "evidence": "bell count now 0; server unread for the doctor: 0"
+  },
+  {
     "id": "offline",
     "criterion": "A change made with the server unreachable syncs when it comes back",
     "pass": true,
@@ -61,8 +103,8 @@
   },
   {
     "id": "restart",
-    "criterion": "After restarting, the laptop remembers its clinic server and keeps everyone’s records",
+    "criterion": "After restarting, the laptop is still signed in to its clinic server and keeps everyone’s records",
     "pass": true,
-    "evidence": "server shown on sign-in: 127.0.0.1:8788; owners: 8"
+    "evidence": "signed in again automatically as Admin, synced; owners: 8; after Sign out the sign-in screen shows server 127.0.0.1:8788"
   }
 ]

@@ -1,8 +1,9 @@
 # Cloud plan — shared, live, offline-capable
 
-Status, 4 Nov 2026:
-- **Phase 1 built and tested locally.** `scripts/sync-test.mjs` passes 11/11 against Postgres 16 with two desktop apps; results are in `docs/acceptance/SYNC-TEST.md`.
-- **Next:** Railway Stage 2 (`docs/RAILWAY-SETUP.md`), then Phases 2–4.
+Status, 5 Nov 2026:
+- **Phase 1 live** at `https://animal-care-clinic-production.up.railway.app`; the first laptop syncs.
+- **Phase 3 (notifications) built and tested locally.** `scripts/sync-test.mjs` passes 18/18 against Postgres 16 with two desktop apps and a fake phone push service; results are in `docs/acceptance/SYNC-TEST.md`.
+- **Next:** Phase 2 (offline robustness), Phase 4, then Phase 5.
 - Open points are at the end.
 
 ## What Ahmed asked for
@@ -92,7 +93,17 @@ Notifications reach people even when the app is closed:
 | Laptop or phone switched off or asleep | — | Nothing can arrive. Notifications wait on the server and show at the next sync, newest first |
 
 - **Bell:** a list in the header ("Reception booked Max for Thu 10:00"); read/unread is kept per user and synced.
-- **Triggers:** someone else books, moves, cancels or marks no-show an appointment; a visit is recorded for a pet with an appointment today; a payment is recorded; something you edited was overwritten. Each user can turn kinds off in their profile.
+- **Triggers:** someone else books, moves, cancels or marks no-show an appointment; a visit is recorded for a pet with an appointment today; a payment is recorded; something you edited was overwritten. Each user can turn kinds off in the bell panel.
+
+How Phase 3 is built:
+
+| Piece | File | Notes |
+|---|---|---|
+| What becomes a notification | `server/notify.mjs` | Runs inside the same transaction as the accepted changes (`server/sync.mjs`). Never to the person who did it. Stored per user in `notifications`; text in the reader's language. |
+| Delivery | `server/index.mjs` | A WebSocket ping to that user's open apps (bell + toast within a second), and Web Push (VAPID keys made once and kept in `server_meta`) to their browsers/phones. Dead push subscriptions (404/410) are dropped. |
+| Bell | `src/components/Notifications.tsx`, `src/sync/notify.ts` | Unread count, list, mark read, per-kind on/off (`users.notify_off`, schema v3; the server lets each person change only that on their own row). |
+| Desktop tray | `electron/main.cjs` | Closing the window hides it to the tray; "Quit" in the tray menu stops it. Starts with Windows/Mac, hidden (installed app only). A system notification opens the right screen. On by default; switch in the bell panel. A linked laptop stays signed in across restarts so it can notify straight after start-up. |
+| Phone / browser | `public-cloud/sw.js`, `manifest.webmanifest` | Service worker for push while the app is closed; installable web app. |
 - **Wording:** in the reader's language (AR/EN), with the pet and owner name, and who did it.
 
 ## How Phase 1 is built
@@ -108,7 +119,6 @@ Notifications reach people even when the app is closed:
 
 Known limits, handled in later phases:
 - File bytes (X-rays, lab PDFs) stay on the laptop that added them until Phase 4.
-- Notifications and the tray come in Phase 3.
 - A laptop's clock decides which of two edits to the same field wins. Windows/Mac keep clocks in sync over the internet, which is enough for one clinic.
 
 ## Server (Railway)
@@ -140,9 +150,22 @@ Dates assume 10–15 hours a week, as in SCOPE §8.
 | 2 | Offline: queue and retry, offline sign-in, snapshot for new devices, conflict rules and overwrite notices | Change records on two laptops with Wi-Fi off, reconnect, and both end with the same data; acceptance suite gains offline tests | 3–4 evenings |
 | 3 | Notifications: bell + toast, desktop app in the tray with system notifications, Web Push for the installed web app | Assistant books on laptop A while the app on laptop B is closed to the tray, and B shows the notification | 3 evenings |
 | 4 | Railway Stage 2 deploy, files on the volume, nightly off-site backup with a tested restore, phone web app install | Acceptance passes on the live address; restore tested once (SCOPE §7.7); installs on the Android phone (§7.8) | 2–3 evenings |
-| 5 | Platform owner console: create a clinic and its first Admin | A second test clinic exists and can't see the first clinic's data | 1–2 evenings, after handover |
+| 5 | Ahmed's additions (5 Nov), see **Phase 5** below. Also the platform owner console: create a clinic and its first Admin | Each item's "done when" below; a second test clinic can't see the first clinic's data | 3–5 evenings, after handover |
 
 **Total: roughly 14–18 evenings for Phases 1–4.** That's more than the 3 weeks to the 29 Nov handover hold at 10–15 h/week. Phases 1–2 (shared live data, roles, Admin, offline) come first. If time runs short, Phases 3–4 finish in the fix window (to 29 Dec), and Phase 5 is after handover.
+
+## Phase 5 — Ahmed's additions (5 Nov 2026)
+
+| Item | Today | Phase 5 adds | Done when |
+|---|---|---|---|
+| **More than three laptops** | Already no limit. Any number of laptops, phones and browsers can connect with **Connect to clinic server** + their own sign-in | A **Devices** list in Settings (name, user, last seen) with **Sign out this device**, for a lost or replaced laptop; load test with 10 devices | 10 devices sync the same records; a removed device is signed out at its next sync |
+| **Admin creates users and assigns roles** | Already works: **Settings → Users** (name, email, role, temporary password); the server accepts user changes from Admins only | **Must change password at first sign-in**, **Reset password** by the Admin, and an **Invite** link sent by WhatsApp or email | A new user signs in with the temporary password and has to set their own |
+| **Pre-diagnosis by the assistant doctor** | Not built | A **pre-assessment** step before the vet. The assistant doctor records the intake (complaint, weight, temperature, first observations, urgency). The patient appears in a **Waiting for the vet** queue on the vet's dashboard, the vet opens it, sees the pre-diagnosis at the top of the visit, and continues the same visit. A notification goes to the vet | A visit started by a Doctor shows in the vet's queue with the pre-diagnosis; the vet completes it as one visit |
+
+Open questions for the pre-assessment, at the start of Phase 5:
+- Which fields does the assistant doctor fill?
+- Can the vet edit what the assistant wrote?
+- Is there an urgency scale (e.g. routine / soon / emergency)?
 
 ## Scope impact (SCOPE §10)
 
@@ -152,6 +175,7 @@ These are outside SCOPE §4, so they are change requests, quoted at list price a
 - **Live notifications between users, including when the app is closed** (tray app, Web Push).
 - **Doctor role and Admin user management:** the scope has two roles; this adds a third.
 - **Built for several clinics** (`clinic_id`, platform owner console): SCOPE §5 lists multi-clinic as v2.
+- **Phase 5:** the pre-assessment step (a new workflow), device management, and invite / password reset.
 - **Hosting under Ahmed's account** instead of Dr. Waleed's (§4 and §8).
 
 The rest moves the project back towards the scope: the phone install (§4, §7.8), Railway hosting in the EU (§8), and the nightly backup (§7.7).

@@ -56,7 +56,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- shell ---------- */
 .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100%; }
-.side { border-inline-end: 1px solid var(--rule); padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; background: var(--bg); }
+.side { border-inline-end: 1px solid var(--rule); padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; background: var(--bg); z-index: 5; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; }
 .brand.with-logo { flex-direction: column; align-items: stretch; gap: 6px; }
 .brand.with-logo span { padding-inline-start: 2px; }
@@ -297,6 +297,30 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .sync-badge.error .dot { background: var(--bad); }
 .enter { animation: rise .5s cubic-bezier(.2, .7, .2, 1) both; animation-delay: var(--d, 0ms); }
 
+
+/* ---------- notifications bell ---------- */
+.bell-wrap { position: relative; }
+.bell { position: relative; width: 34px; height: 34px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); color: var(--ink-2); display: grid; place-items: center; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.bell:hover { background: var(--bg-2); color: var(--ink); }
+.bell svg { width: 18px; height: 18px; }
+.bell.has-unread { color: var(--accent); border-color: var(--accent); }
+.bell .count { position: absolute; top: -6px; inset-inline-end: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+.bell-panel { position: absolute; bottom: 42px; inset-inline-start: 0; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); z-index: 40; animation: dialog-in .16s cubic-bezier(.2, .7, .2, 1) both; }
+.bell-panel header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+.bell-panel ul { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
+.bell-panel li button { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: start; width: 100%; text-align: start; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 12px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
+.bell-panel li button:hover { background: var(--bg-2); }
+.bell-panel li button.unread { color: var(--ink); background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.bell-panel li button.unread .text { font-weight: 600; }
+.bell-panel .kind { color: var(--accent); }
+.bell-panel .kind svg { width: 16px; height: 16px; }
+.bell-panel .when { color: var(--ink-3); font-size: 11px; white-space: nowrap; }
+.bell-panel .empty-note { padding: 18px 12px; color: var(--ink-3); font-size: 13px; }
+.bell-panel footer { border-top: 1px solid var(--rule); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.bell-panel .kinds { display: flex; flex-wrap: wrap; gap: 0 12px; }
+.bell-panel .check { min-height: 28px; align-items: flex-start; }
+.mobile-bell { display: none; }
+
 /* ---------- motion: screens, tabs, dialogs, toasts ---------- */
 /* Screens use `top`, not transform, so fixed bars and dialogs inside a page keep their place while it animates. */
 .route-enter { position: relative; animation: route-in .26s cubic-bezier(.2, .7, .2, 1) both; }
@@ -329,6 +353,9 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
   .side { display: none; }
+  .mobile-bell { display: block; position: fixed; top: max(10px, env(safe-area-inset-top, 0px)); inset-inline-end: 12px; z-index: 30; }
+  .mobile-bell .bell-panel { bottom: auto; top: 42px; inset-inline-start: auto; inset-inline-end: 0; }
+  .shell:has(.mobile-bell .bell-wrap) .page { padding-top: 54px; }
   .page { padding: 16px 16px 110px; }
   .bottom-nav { display: flex; position: fixed; bottom: 0; inset-inline: 0; background: var(--bg); border-top: 1px solid var(--rule); z-index: 20; }
   .bottom-nav a { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 10px; font-size: 11px; color: var(--ink-2); font-weight: 600; }

@@ -1,10 +1,16 @@
 // Applying device changes on the server: role checks, per-column last-writer-wins, invoice numbers.
 import { inTx } from './db.mjs';
 import { refuse } from './rules.mjs';
+import { createNotifications } from './notify.mjs';
 import { SYNC_TABLES } from './tables.mjs';
 
-/** Version stamp for one column: device time of the edit, then device id as a tie-break. */
-const stamp = (at, device) => `${at}|${device}`;
+/** Version stamp for one column: device time of the edit, device id as a tie-break, then who made it. */
+const stamp = (at, device, user = '') => `${at}|${device}|${user}`;
+const stampUser = (s) => (s ? s.split('|')[2] || null : null);
+// Columns that change as a side effect (timestamps, recomputed totals): never reported as an edit conflict.
+const NO_CONFLICT = new Set(['updated_at', 'created_at', 'subtotal', 'total', 'status_recomputed']);
+const NOTIFY_TABLES = new Set(['appointments', 'visits', 'payments']);
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 /**
  * Apply a batch of changes from one device. Changes are processed in order inside one transaction.
@@ -15,6 +21,8 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes }) 
   return inTx(pool, async (c) => {
     const rejected = [];
     const reverts = [];
+    const events = [];
+    const conflicts = [];
     let lastSeq = 0;
     for (const ch of changes) {
       if (!ch || typeof ch.tbl !== 'string' || ch.id == null || !['upsert', 'delete'].includes(ch.op)) continue;
@@ -22,7 +30,7 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes }) 
       const cols = ch.cols && typeof ch.cols === 'object' ? ch.cols : {};
       const cur = (await c.query('SELECT data, versions, deleted, seq FROM rows WHERE clinic_id = $1 AND tbl = $2 AND id = $3 FOR UPDATE', [clinicId, ch.tbl, id])).rows[0];
       const before = cur && !cur.deleted ? cur.data : null;
-      let reason = refuse(user.role, { tbl: ch.tbl, op: ch.op, cols }, before);
+      let reason = refuse(user.role, { tbl: ch.tbl, id, op: ch.op, cols }, before, user.id);
       if (!reason && ch.tbl === 'users' && typeof cols.email === 'string') {
         const dup = await c.query("SELECT 1 FROM rows WHERE tbl = 'users' AND lower(data->>'email') = lower($1) AND NOT (clinic_id = $2 AND id = $3) AND NOT deleted", [cols.email, clinicId, id]);
         if (dup.rowCount) reason = 'this email is already used by another user';
@@ -33,7 +41,8 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes }) 
         continue;
       }
       const at = typeof ch.at === 'string' ? ch.at : new Date().toISOString();
-      const mine = stamp(at, deviceId);
+      const mine = stamp(at, deviceId, user.id);
+      const base = ch.base && typeof ch.base === 'object' ? ch.base : null;
       const data = { ...(cur?.data ?? {}) };
       const versions = { ...(cur?.versions ?? {}) };
       let deleted = cur?.deleted ?? false;
@@ -46,7 +55,14 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes }) 
         // A row deleted earlier only comes back if this write is newer than the delete.
         if (deleted && (!versions['*'] || versions['*'] <= mine)) deleted = false;
         for (const [k, v] of Object.entries(cols)) {
-          if (!versions[k] || versions[k] <= mine) {
+          const prev = versions[k];
+          const wins = !prev || prev <= mine;
+          // A real conflict: this device edited k without having seen someone else's later value of k.
+          const other = stampUser(prev);
+          if (cur && base && k in base && !NO_CONFLICT.has(k) && other && other !== user.id && !same(base[k], cur.data[k]) && !same(v, cur.data[k])) {
+            conflicts.push({ tbl: ch.tbl, id, col: k, otherUser: other, actorWon: wins, after: { ...data, [k]: wins ? v : data[k] } });
+          }
+          if (wins) {
             data[k] = v;
             versions[k] = mine;
           }
@@ -64,8 +80,10 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes }) 
         [clinicId, ch.tbl, id, data, versions, deleted, seq],
       );
       lastSeq = Number(seq);
+      if (NOTIFY_TABLES.has(ch.tbl) && ch.op === 'upsert') events.push({ tbl: ch.tbl, id, isNew: !before, before, after: data, cols });
     }
-    return { rejected, reverts, seq: lastSeq };
+    const notifications = events.length || conflicts.length ? await createNotifications(c, clinicId, user, events, conflicts) : [];
+    return { rejected, reverts, seq: lastSeq, notifications };
   });
 }
 

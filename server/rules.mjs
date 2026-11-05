@@ -7,19 +7,23 @@ const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_
 const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
+const OWN_USER_COLS = new Set(['notify_off', 'updated_at']);
 
 /**
  * @param {'ADMIN'|'DOCTOR'|'ASSISTANT'} role
  * @param {{tbl:string, op:'upsert'|'delete', cols:Record<string,unknown>}} change
  * @param {Record<string,unknown>|null} before current server row (null if new)
+ * @param {string} [userId] the person making the change
  * @returns {string|null} reason it is refused, or null if allowed
  */
-export function refuse(role, change, before) {
+export function refuse(role, change, before, userId) {
   const { tbl, op, cols } = change;
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
   if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
   if (role === 'ADMIN') return null;
+  // Anyone may change their own notification choices (the bell's on/off switches).
+  if (tbl === 'users' && before && change.id === userId && op === 'upsert' && Object.keys(cols).every((c) => OWN_USER_COLS.has(c))) return null;
   if (ADMIN_ONLY.has(tbl)) return 'admins only';
   if (CLINICAL.has(tbl) && role === 'ASSISTANT') {
     const onlyReminder = tbl === 'vaccinations' && before && op === 'upsert' && Object.keys(cols).every((c) => ASSISTANT_VACCINATION_COLS.has(c));

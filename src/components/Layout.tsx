@@ -6,6 +6,8 @@ import { Icon } from './ui';
 import { UpdateBanner } from './Updates';
 import { SyncBadge } from './SyncBadge';
 import { signOutSync } from '../sync/engine';
+import { dropPushSubscription } from '../sync/notify';
+import { NotificationAnnouncer, NotificationBell } from './Notifications';
 
 export function Layout() {
   const { t, user, setUser, isAdmin, canVisit, locale, setLocale, theme, setTheme } = useApp();
@@ -58,7 +60,10 @@ export function Layout() {
             </button>
           )}
           <div className="side-foot">
-            <SyncBadge />
+            <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+              <SyncBadge />
+              <NotificationBell />
+            </div>
             <div className="who">
               <b>{user?.name}</b>
               <span className="muted">{t(`roles.${user?.role}`)}</span>
@@ -67,9 +72,11 @@ export function Layout() {
             <button className="linkbtn" onClick={() => setTheme(nextTheme[theme])}>
               {t('app.theme')}: {t(`app.theme${theme[0].toUpperCase()}${theme.slice(1)}`)}
             </button>
-            <button className="linkbtn" onClick={() => { signOutSync(); setUser(null); nav('/'); }}>{t('app.logout')}</button>
+            <button className="linkbtn" onClick={async () => { await dropPushSubscription(); signOutSync(); setUser(null); nav('/'); }}>{t('app.logout')}</button>
           </div>
         </aside>
+        <NotificationAnnouncer />
+        <div className="mobile-bell"><NotificationBell floating /></div>
         <main className="main">
           <div key={pathname} className="route-enter">
             <Outlet />

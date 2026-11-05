@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import { WebSocketServer } from 'ws';
 import { createPool, migrate } from './db.mjs';
 import { applyChanges, bootstrapRows, pullSince } from './sync.mjs';
+import { sendPush, setupPush } from './notify.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -23,8 +24,10 @@ if (!process.env.DATABASE_URL) {
 const pool = createPool(process.env.DATABASE_URL);
 
 // ---------------------------------------------------------------- startup
+let vapidPublic = null;
 async function bootstrapServer() {
   await migrate(pool);
+  vapidPublic = await setupPush(pool);
   let clinic = (await pool.query('SELECT * FROM clinics ORDER BY created_at LIMIT 1')).rows[0];
   if (!clinic) {
     const id = crypto.randomUUID();
@@ -113,6 +116,13 @@ const sockets = new Map(); // clinicId -> Set<ws>
 function broadcast(clinicId, msg, exceptDevice) {
   for (const ws of sockets.get(clinicId) || []) if (ws.readyState === 1 && ws.deviceId !== exceptDevice) ws.send(JSON.stringify(msg));
 }
+/** Ping every open app (incl. desktop apps in the tray) of the people notified, then push to their phones/browsers. */
+function deliver(clinicId, notifications) {
+  if (!notifications.length) return;
+  const users = new Set(notifications.map((n) => n.user_id));
+  for (const ws of sockets.get(clinicId) || []) if (ws.readyState === 1 && users.has(ws.userId)) ws.send(JSON.stringify({ type: 'notify' }));
+  sendPush(pool, notifications).catch((e) => console.warn('push', e.message));
+}
 
 // ---------------------------------------------------------------- routes
 async function api(req, res, url) {
@@ -147,7 +157,8 @@ async function api(req, res, url) {
     if (!Array.isArray(changes) || changes.length > 2000) return send(res, 400, { error: 'changes must be an array of at most 2000' });
     const r = await applyChanges(pool, { clinicId: s.clinicId, user: s.user, deviceId: s.deviceId, changes });
     if (r.seq) broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
-    return send(res, 200, r);
+    deliver(s.clinicId, r.notifications);
+    return send(res, 200, { rejected: r.rejected, reverts: r.reverts, seq: r.seq });
   }
   if (p === '/api/sync/pull' && req.method === 'GET') {
     const since = Math.max(0, Number(url.searchParams.get('since') || 0));
@@ -162,6 +173,37 @@ async function api(req, res, url) {
     if (r.error) return send(res, 409, r);
     if (done) broadcast(s.clinicId, { type: 'changed' });
     return send(res, 200, r);
+  }
+  if (p === '/api/notifications' && req.method === 'GET') {
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 50)));
+    const items = (await pool.query(
+      'SELECT id, kind, event, data, created_at, read_at FROM notifications WHERE clinic_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT $3',
+      [s.clinicId, s.user.id, limit],
+    )).rows;
+    const unread = Number((await pool.query('SELECT COUNT(*) n FROM notifications WHERE clinic_id = $1 AND user_id = $2 AND read_at IS NULL', [s.clinicId, s.user.id])).rows[0].n);
+    return send(res, 200, { items, unread });
+  }
+  if (p === '/api/notifications/read' && req.method === 'POST') {
+    const { ids, all } = await readJson(req);
+    if (all) await pool.query('UPDATE notifications SET read_at = now() WHERE clinic_id = $1 AND user_id = $2 AND read_at IS NULL', [s.clinicId, s.user.id]);
+    else if (Array.isArray(ids) && ids.length) await pool.query('UPDATE notifications SET read_at = now() WHERE clinic_id = $1 AND user_id = $2 AND id = ANY($3::uuid[]) AND read_at IS NULL', [s.clinicId, s.user.id, ids.slice(0, 500)]);
+    return send(res, 200, { ok: true });
+  }
+  if (p === '/api/push/key' && req.method === 'GET') return send(res, 200, { publicKey: vapidPublic });
+  if (p === '/api/push/subscribe' && req.method === 'POST') {
+    const { subscription } = await readJson(req);
+    const endpoint = subscription?.endpoint;
+    if (typeof endpoint !== 'string' || !/^https?:\/\//.test(endpoint) || !subscription.keys?.p256dh || !subscription.keys?.auth) return send(res, 400, { error: 'invalid subscription' });
+    await pool.query(
+      'INSERT INTO push_subscriptions (endpoint, clinic_id, user_id, keys) VALUES ($1,$2,$3,$4) ON CONFLICT (endpoint) DO UPDATE SET clinic_id = EXCLUDED.clinic_id, user_id = EXCLUDED.user_id, keys = EXCLUDED.keys',
+      [endpoint, s.clinicId, s.user.id, { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth }],
+    );
+    return send(res, 200, { ok: true });
+  }
+  if (p === '/api/push/unsubscribe' && req.method === 'POST') {
+    const { endpoint } = await readJson(req);
+    await pool.query('DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2', [String(endpoint ?? ''), s.user.id]);
+    return send(res, 200, { ok: true });
   }
   return send(res, 404, { error: 'not found' });
 }
@@ -211,6 +253,7 @@ server.on('upgrade', async (req, socket, head) => {
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.deviceId = s.deviceId;
+    ws.userId = s.user.id;
     ws.alive = true;
     ws.on('pong', () => (ws.alive = true));
     const set = sockets.get(s.clinicId) || new Set();

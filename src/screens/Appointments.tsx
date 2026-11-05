@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import {
@@ -20,6 +20,10 @@ export function Appointments() {
   const date = sp.get('date') || today();
   const openId = sp.get('open');
   const [editing, setEditing] = useState<{ id?: string; at?: string } | null>(openId ? { id: openId } : null);
+  // A notification clicked while this screen is already open changes ?open= without remounting it.
+  useEffect(() => {
+    if (openId) setEditing({ id: openId });
+  }, [openId]);
   const nav = (patch: Record<string, string | null>) => {
     const n = new URLSearchParams(sp);
     for (const [k, v] of Object.entries(patch)) v == null ? n.delete(k) : n.set(k, v);

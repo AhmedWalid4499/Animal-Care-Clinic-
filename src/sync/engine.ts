@@ -66,6 +66,13 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number) {
     clearTimeout(t);
   }
 }
+/** Authenticated call to the clinic server as the signed-in person (used by notifications). */
+export function apiCall<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return call<T>(path, init);
+}
+export const isOnlineLinked = () => getState('enabled') === '1' && !!currentToken();
+export const currentUserId = () => userId;
+
 async function call<T>(path: string, init: RequestInit = {}, token = currentToken(), ms = 30_000): Promise<T> {
   const url = serverUrl();
   if (!url) throw new ApiError(0, 'no server');
@@ -127,6 +134,7 @@ export async function onlineLogin(email: string, password: string): Promise<User
     setState('clinic_name', reply.clinic.name);
   }
   setState('enabled', '1');
+  setState('session_user', reply.user.id);
   await flush();
   await syncNow();
   startLive();
@@ -136,6 +144,7 @@ export async function onlineLogin(email: string, password: string): Promise<User
 /** After an offline sign-in: sync as that user if they have signed in online on this device before. */
 export function resumeSync(id: string) {
   userId = id;
+  if (getState('enabled') === '1') setState('session_user', id);
   if (getState('enabled') === '1' && currentToken()) {
     void syncNow();
     startLive();
@@ -146,12 +155,31 @@ export function signOutSync() {
   const token = currentToken();
   if (token) void call('/api/logout', { method: 'POST' }, token).catch(() => {});
   if (userId) setState(`token:${userId}`, null);
+  setState('session_user', null);
   userId = null;
   stopLive();
+  liveHandlers.forEach((h) => h({ type: 'signedOut' }));
   setStatus({ state: serverUrl() ? 'signedOut' : 'off' });
+  void flush();
 }
 
 export const clinicName = () => getState('clinic_name');
+
+/** Who stayed signed in on this device (until they press Sign out), so a laptop in the tray keeps notifying after a restart. */
+export function rememberedUser(): User | null {
+  const id = getState('enabled') === '1' ? getState('session_user') : null;
+  return id ? get<User>('SELECT * FROM users WHERE id = ? AND is_active = 1', [id]) ?? null : null;
+}
+
+// Live messages from the server other than "changed" (e.g. "notify") go to these handlers.
+type LiveMessage = { type: string; [k: string]: unknown };
+const liveHandlers = new Set<(m: LiveMessage) => void>();
+export function onLive(h: (m: LiveMessage) => void) {
+  liveHandlers.add(h);
+  return () => {
+    liveHandlers.delete(h);
+  };
+}
 
 // ---------------------------------------------------------------- first link: this device has the clinic's data
 const USER_FKS: [string, string][] = [['visits', 'vet_id'], ['invoices', 'created_by'], ['payments', 'received_by'], ['attachments', 'uploaded_by'], ['audit_log', 'user_id']];
@@ -266,8 +294,18 @@ function connect() {
   sock.onopen = () => {
     retry = 2000;
     void syncNow();
+    liveHandlers.forEach((h) => h({ type: 'connected' }));
   };
-  sock.onmessage = () => void syncNow();
+  sock.onmessage = (ev) => {
+    let m: LiveMessage = { type: 'changed' };
+    try {
+      m = JSON.parse(String(ev.data));
+    } catch {
+      /* plain ping */
+    }
+    if (m.type === 'changed' || m.type === 'hello') void syncNow();
+    liveHandlers.forEach((h) => h(m));
+  };
   sock.onclose = () => {
     if (ws === sock) ws = null;
     if (liveWanted) setTimeout(connect, (retry = Math.min(retry * 2, 30_000)));
