@@ -17,6 +17,8 @@ export function notificationText(n: ClinicNotification, t: T, fmt: Formatters): 
   const vars: Record<string, string> = {
     by: String(d.by ?? ''), pet: String(d.pet ?? ''), owner: String(d.owner ?? ''), number: String(d.number ?? ''), label: String(d.label ?? ''), complaint: String(d.complaint ?? ''),
     at: d.at ? `${fmt.weekday(String(d.at))} ${fmt.time(String(d.at))}` : '',
+    other_pet: String(d.other_pet ?? ''),
+    other_at: d.other_at ? `${fmt.weekday(String(d.other_at))} ${fmt.time(String(d.other_at))}` : '',
     amount: d.amount != null ? fmt.money(Number(d.amount)) : '',
   };
   return t(`notify.${n.kind}.${n.event}`, vars).replace(/\(\s*\)/g, '').replace(/[:：]\s*$/, '').trim();

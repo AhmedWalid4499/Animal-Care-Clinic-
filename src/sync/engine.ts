@@ -7,12 +7,13 @@ import { recomputeInvoices } from '../db/repo';
 import { DEFAULT_LOGINS, seedBase } from '../db/seed';
 import type { User } from '../db/types';
 import { platform } from '../lib/platform';
-import { ackOutbox, applyRemote, clearSyncedTables, getState, outboxCount, pendingChanges, setState, snapshotRows, type RemoteRow } from './local';
+import { ackOutbox, applyRemote, clearSyncedTables, getState, outboxCount, outboxUsers, pendingChanges, setState, snapshotRows, type RemoteRow } from './local';
 
 export type SyncState = 'off' | 'syncing' | 'synced' | 'offline' | 'signedOut' | 'error';
-export interface SyncStatus { state: SyncState; pending: number; lastSync: string | null; error: string | null; rejected: number }
+/** waitingFor = people whose offline changes wait on this device until they sign in here again. */
+export interface SyncStatus { state: SyncState; pending: number; lastSync: string | null; error: string | null; rejected: number; waitingFor: string[] }
 
-let status: SyncStatus = { state: 'off', pending: 0, lastSync: null, error: null, rejected: 0 };
+let status: SyncStatus = { state: 'off', pending: 0, lastSync: null, error: null, rejected: 0, waitingFor: [] };
 const listeners = new Set<() => void>();
 function setStatus(p: Partial<SyncStatus>) {
   status = { ...status, ...p, pending: outboxCount() };
@@ -73,10 +74,34 @@ export function apiCall<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const isOnlineLinked = () => getState('enabled') === '1' && !!currentToken();
 export const currentUserId = () => userId;
 
+// The device clock can be wrong; the server's clock decides which of two edits is later. Measured on every reply.
+let clockOffset = Number(getStateSafe('clock_offset') ?? 0);
+function getStateSafe(key: string) {
+  try {
+    return getState(key);
+  } catch {
+    return null; // database not open yet
+  }
+}
+function noteServerTime(r: Response, sentAt: number) {
+  const s = r.headers.get('X-Server-Time');
+  if (!s) return;
+  const now = Date.now();
+  const server = new Date(s).getTime() + (now - sentAt) / 2;
+  if (!Number.isFinite(server)) return;
+  const next = Math.round(server - now);
+  if (Math.abs(next - clockOffset) > 1000) {
+    clockOffset = next;
+    setState('clock_offset', String(next));
+  }
+}
+export const clockOffsetMs = () => clockOffset;
+
 async function call<T>(path: string, init: RequestInit = {}, token = currentToken(), ms = 30_000): Promise<T> {
   const url = serverUrl();
   if (!url) throw new ApiError(0, 'no server');
   let r: Response;
+  const sentAt = Date.now();
   try {
     r = await fetchWithTimeout(`${url}${path}`, {
       ...init,
@@ -85,6 +110,7 @@ async function call<T>(path: string, init: RequestInit = {}, token = currentToke
   } catch {
     throw new ApiError(0, 'unreachable');
   }
+  noteServerTime(r, sentAt);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new ApiError(r.status, (body as { error?: string }).error ?? `HTTP ${r.status}`);
   return body as T;
@@ -93,6 +119,11 @@ async function call<T>(path: string, init: RequestInit = {}, token = currentToke
 // ---------------------------------------------------------------- session
 let userId: string | null = null;
 const currentToken = () => (userId ? getState(`token:${userId}`) : null);
+/** The signed-in person on this device; every change they make is queued under their id. */
+function setUserId(id: string | null) {
+  userId = id;
+  setState('actor', id);
+}
 function deviceId() {
   let d = getState('device_id');
   if (!d) {
@@ -119,7 +150,12 @@ export async function onlineLogin(email: string, password: string): Promise<User
     throw e;
   }
   setState('device_id', reply.deviceId);
-  userId = reply.user.id;
+  setUserId(reply.user.id);
+  pendingLogin = null;
+  // An earlier sign-in kept only to send offline changes: send them with the new one, end the old one.
+  const old = getState(`token:${reply.user.id}`);
+  if (old && getState(`logout_pending:${reply.user.id}`)) void call('/api/logout', { method: 'POST' }, old).catch(() => {});
+  setState(`logout_pending:${reply.user.id}`, null);
   setState(`token:${reply.user.id}`, reply.token);
   if (getState('clinic_id') !== reply.clinic.id) {
     if (reply.needsBootstrap) {
@@ -142,21 +178,59 @@ export async function onlineLogin(email: string, password: string): Promise<User
 }
 
 /** After an offline sign-in: sync as that user if they have signed in online on this device before. */
-export function resumeSync(id: string) {
-  userId = id;
+export function resumeSync(id: string, password?: string) {
+  setUserId(id);
   if (getState('enabled') === '1') setState('session_user', id);
   if (getState('enabled') === '1' && currentToken()) {
     void syncNow();
     startLive();
+  } else if (getState('enabled') === '1' && password) {
+    // Signed in without the server (no connection): sign in there too as soon as it can be reached,
+    // so this person's changes go out under their own name. The password is kept in memory only.
+    const u = get<User>('SELECT email FROM users WHERE id = ?', [id]);
+    if (u) {
+      pendingLogin = { email: u.email, password };
+      setStatus({ state: 'offline' });
+      startPendingLogin();
+    }
   } else if (serverUrl()) setStatus({ state: 'signedOut' });
+}
+
+// ---- sign in online in the background after an offline sign-in
+let pendingLogin: { email: string; password: string } | null = null;
+let pendingTimer: ReturnType<typeof setInterval> | null = null;
+function startPendingLogin() {
+  pendingTimer ??= setInterval(() => void tryPendingLogin(), 15_000);
+}
+async function tryPendingLogin() {
+  if (!pendingLogin) {
+    if (pendingTimer) clearInterval(pendingTimer);
+    pendingTimer = null;
+    return;
+  }
+  const { email, password } = pendingLogin;
+  try {
+    const r = await onlineLogin(email, password);
+    if (r !== 'unreachable') pendingLogin = null;
+  } catch {
+    pendingLogin = null; // the password changed meanwhile: they sign in again by hand
+    setStatus({ state: 'signedOut' });
+  }
 }
 
 export function signOutSync() {
   const token = currentToken();
-  if (token) void call('/api/logout', { method: 'POST' }, token).catch(() => {});
-  if (userId) setState(`token:${userId}`, null);
+  // Changes this person made that the server hasn't got yet: keep their sign-in on this device until they are
+  // sent (by whoever signs in next, or by the next sync), then finish the sign-out on the server.
+  const unsent = userId ? outboxCount(userId) : 0;
+  if (token && unsent) setState(`logout_pending:${userId}`, '1');
+  else {
+    if (token) void call('/api/logout', { method: 'POST' }, token).catch(() => {});
+    if (userId) setState(`token:${userId}`, null);
+  }
+  pendingLogin = null;
   setState('session_user', null);
-  userId = null;
+  setUserId(null);
   stopLive();
   liveHandlers.forEach((h) => h({ type: 'signedOut' }));
   setStatus({ state: serverUrl() ? 'signedOut' : 'off' });
@@ -170,6 +244,7 @@ export function signOutSync() {
 let revokedNotice = false;
 function deviceRevoked() {
   if (userId) setState(`token:${userId}`, null);
+  if (userId) setState(`logout_pending:${userId}`, null);
   setState('session_user', null);
   stopLive();
   setStatus({ state: 'signedOut', error: null });
@@ -235,8 +310,23 @@ async function uploadThisDevice(serverUser: User) {
 let running = false;
 let again = false;
 
+/** A sign-in to send these changes with: the person's own, or (changes from before v0.1.9) the current one. */
+function tokenFor(u: string | null) {
+  if (u === null) return currentToken();
+  return getState(`token:${u}`) ?? null;
+}
+function waitingNames(): string[] {
+  return outboxUsers()
+    .filter((u) => u !== null && !tokenFor(u))
+    .map((u) => get<{ name: string }>('SELECT name FROM users WHERE id = ?', [u])?.name ?? '?');
+}
+
 export async function syncNow(): Promise<void> {
-  if (getState('enabled') !== '1' || !currentToken()) return;
+  if (getState('enabled') !== '1') return;
+  if (!currentToken()) {
+    if (pendingLogin) void tryPendingLogin();
+    return;
+  }
   if (running) {
     again = true;
     return;
@@ -244,16 +334,45 @@ export async function syncNow(): Promise<void> {
   running = true;
   setStatus({ state: 'syncing', error: null });
   try {
-    // push my changes
-    for (;;) {
-      const { changes, lastSeq } = pendingChanges(500);
-      if (!lastSeq) break;
-      if (changes.length) {
-        const r = await call<{ rejected: { tbl: string; id: string; reason: string }[]; reverts: RemoteRow[] }>('/api/sync/push', { method: 'POST', body: JSON.stringify({ changes }) });
-        ackOutbox(lastSeq);
-        if (r.reverts.length) applyRemote(r.reverts);
-        if (r.rejected.length) setStatus({ rejected: status.rejected + r.rejected.length, error: r.rejected[0].reason });
-      } else ackOutbox(lastSeq);
+    // push: each person's changes under their own sign-in, so the server checks their role, not whoever is here now
+    let failedRows = 0;
+    for (const u of outboxUsers()) {
+      const token = tokenFor(u);
+      if (!token) continue; // waits until that person signs in on this device again
+      const tried = new Set<number>();
+      try {
+        for (;;) {
+          const { changes, seqs } = pendingChanges(500, u, clockOffset);
+          const fresh = seqs.filter((s) => !tried.has(s));
+          if (!fresh.length) break;
+          seqs.forEach((s) => tried.add(s));
+          if (!changes.length) {
+            ackOutbox(seqs);
+            continue;
+          }
+          const r = await call<{ rejected: { tbl: string; id: string; reason: string }[]; reverts: RemoteRow[]; failed?: { tbl: string; id: string }[] }>(
+            '/api/sync/push', { method: 'POST', body: JSON.stringify({ changes, cursor: Number(getState('cursor') ?? 0) }) }, token);
+          // A change the server could not store stays queued (and is tried again later); it no longer holds up the rest.
+          ackOutbox(seqs, r.failed ?? []);
+          failedRows += r.failed?.length ?? 0;
+          if (r.reverts.length) applyRemote(r.reverts);
+          if (r.rejected.length) setStatus({ rejected: status.rejected + r.rejected.length, error: r.rejected[0].reason });
+        }
+      } catch (e) {
+        if ((e as ApiError).status === 401 && u !== userId && u !== null) {
+          // That person's sign-in here was ended (password reset, device signed out): their changes wait for them.
+          setState(`token:${u}`, null);
+          setState(`logout_pending:${u}`, null);
+          continue;
+        }
+        throw e;
+      }
+      // Signed out while offline: now that their changes are sent, finish the sign-out on the server.
+      if (u && u !== userId && getState(`logout_pending:${u}`) && !outboxCount(u)) {
+        await call('/api/logout', { method: 'POST' }, token).catch(() => {});
+        setState(`token:${u}`, null);
+        setState(`logout_pending:${u}`, null);
+      }
     }
     // pull everyone's
     let since = Number(getState('cursor') ?? 0);
@@ -269,7 +388,7 @@ export async function syncNow(): Promise<void> {
       setState('cursor', String(since));
       if (!r.more) break;
     }
-    setStatus({ state: 'synced', lastSync: new Date().toISOString() });
+    setStatus({ state: 'synced', lastSync: new Date().toISOString(), waitingFor: waitingNames(), ...(failedRows ? { error: `${failedRows} change(s) could not be stored by the server; trying again later` } : {}) });
   } catch (e) {
     const err = e as ApiError;
     if (err.status === 401) deviceRevoked(); else setStatus({ state: err.status === 0 ? 'offline' : 'error', error: err.message });
@@ -342,6 +461,9 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     connect();
     void syncNow();
+  });
+  window.addEventListener('focus', () => {
+    if (pendingLogin) void tryPendingLogin();
   });
   window.addEventListener('offline', () => setStatus({ state: 'offline' }));
 }

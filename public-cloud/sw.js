@@ -1,7 +1,44 @@
 // Service worker for the clinic web app (cloud build only). Shows push notifications when the app is
 // closed or in the background, and opens the right screen when one is clicked (docs/CLOUD-PLAN.md, Phase 3).
-self.addEventListener('install', () => self.skipWaiting());
+// It also keeps the app itself on the device, so the phone/browser app opens without a connection (Phase 2):
+// the records are already in the browser's own database.
+const SHELL = 'clinic-shell-v1';
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icon-192.png'])).catch(() => {}).then(() => self.skipWaiting()));
+});
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname === '/health') return;
+  if (req.mode === 'navigate') {
+    // The page: fresh from the server when it answers (so updates arrive), the kept copy when it doesn't.
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) caches.open(SHELL).then((c) => c.put('/', res.clone()));
+          return res;
+        })
+        .catch(() => caches.match('/').then((r) => r || Response.error())),
+    );
+    return;
+  }
+  // Scripts, styles, fonts, icons: their names change with every version, so a kept copy is always right.
+  e.respondWith(
+    caches.match(req).then(
+      (hit) =>
+        hit ||
+        fetch(req).then((res) => {
+          if (res.ok && (url.pathname.startsWith('/assets/') || /\.(png|webmanifest|woff2?)$/.test(url.pathname))) {
+            const copy = res.clone();
+            caches.open(SHELL).then((c) => c.put(req, copy));
+          }
+          return res;
+        }),
+    ),
+  );
+});
 
 self.addEventListener('push', (e) => {
   let d = {};

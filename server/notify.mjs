@@ -14,7 +14,7 @@ export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue'];
  * @param {{tbl:string,id:string,isNew:boolean,before:object|null,after:object,cols:object}[]} events accepted changes
  * @param {{tbl:string,id:string,col:string,otherUser:string,actorWon:boolean,after:object}[]} conflicts
  */
-export async function createNotifications(c, clinicId, actor, events, conflicts) {
+export async function createNotifications(c, clinicId, actor, events, conflicts, { seenSeq = null, firstSeq = 0 } = {}) {
   const users = (await c.query(
     "SELECT id, data->>'locale' AS locale, data->>'role' AS role, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
     [clinicId],
@@ -46,9 +46,20 @@ export async function createNotifications(c, clinicId, actor, events, conflicts)
     const a = e.after;
     if (e.tbl === 'appointments') {
       const base = { appointment_id: e.id, pet_id: a.pet_id, at: a.scheduled_at, type: a.type, ...(await pet(a.pet_id)) };
+      const placed = e.isNew || ('scheduled_at' in e.cols && e.before?.scheduled_at !== a.scheduled_at);
       if (e.isNew) everyoneElse('appointment', 'booked', base);
       else if ('scheduled_at' in e.cols && e.before?.scheduled_at !== a.scheduled_at) everyoneElse('appointment', 'moved', { ...base, from: e.before?.scheduled_at });
       else if ('status' in e.cols && e.before?.status !== a.status) everyoneElse('appointment', String(a.status).toLowerCase(), base);
+      // Double booking that no device could warn about (booked on two devices without a connection): the other
+      // booking reached the server after this device last synced. Tell both people.
+      if (placed && a.status === 'SCHEDULED' && seenSeq !== null && a.scheduled_at) {
+        for (const o of await unseenOverlaps(c, clinicId, e.id, a, seenSeq, firstSeq)) {
+          const other = { ...(await pet(o.data.pet_id)) };
+          add(actor.id, 'appointment', 'overlap', { ...base, other_pet: other.pet, other_at: o.data.scheduled_at, other_id: o.id });
+          const booker = stampUser(o.versions?.scheduled_at);
+          if (booker && booker !== actor.id) add(booker, 'appointment', 'overlap', { appointment_id: o.id, pet_id: o.data.pet_id, at: o.data.scheduled_at, ...other, other_pet: base.pet, other_at: a.scheduled_at, other_id: e.id });
+        }
+      }
     } else if (e.tbl === 'visits') {
       // Pre-diagnosis (Phase 5): a patient joins the vet's queue → tell the vets (Admins and Doctors).
       const stage = a.stage ?? 'DONE'; // devices older than schema v4 send no stage
@@ -78,6 +89,21 @@ export async function createNotifications(c, clinicId, actor, events, conflicts)
   return out;
 }
 
+const stampUser = (s) => (s ? s.split('|')[2] || null : null);
+/** Scheduled appointments overlapping `a` that arrived after `seenSeq` (not from this same push). */
+async function unseenOverlaps(c, clinicId, id, a, seenSeq, firstSeq) {
+  const start = new Date(a.scheduled_at);
+  if (Number.isNaN(start.getTime())) return [];
+  const end = new Date(start.getTime() + Number(a.duration_min || 20) * 60_000);
+  return (await c.query(
+    `SELECT id, data, versions FROM rows WHERE clinic_id = $1 AND tbl = 'appointments' AND NOT deleted AND id <> $2
+       AND data->>'status' = 'SCHEDULED' AND seq > $3 AND ($6 = 0 OR seq < $6)
+       AND (data->>'scheduled_at')::timestamptz < $5
+       AND (data->>'scheduled_at')::timestamptz + make_interval(mins => COALESCE(NULLIF(data->>'duration_min', '')::int, 20)) > $4`,
+    [clinicId, id, seenSeq, start.toISOString(), end.toISOString(), firstSeq],
+  )).rows;
+}
+
 async function hasAppointmentToday(c, clinicId, petId) {
   const r = await c.query(
     `SELECT 1 FROM rows WHERE clinic_id = $1 AND tbl = 'appointments' AND NOT deleted AND data->>'pet_id' = $2
@@ -104,6 +130,7 @@ const T = {
       no_show: '{pet} was marked no-show ({at})',
       done: '{by} marked {pet}’s appointment done',
       scheduled: '{by} reopened {pet}’s appointment ({at})',
+      overlap: 'Double booking: {pet} ({at}) overlaps {other_pet} ({other_at}); they were booked on two devices without a connection',
     },
     visit: { recorded: '{by} recorded a visit for {pet} ({owner})' },
     payment: { recorded: '{by} recorded a payment of {amount} for {owner} ({number})' },
@@ -119,6 +146,7 @@ const T = {
       no_show: '{pet} لم يحضر موعده ({at})',
       done: '{by} أنهى موعد {pet}',
       scheduled: '{by} أعاد فتح موعد {pet} ({at})',
+      overlap: 'حجز مزدوج: {pet} ({at}) يتداخل مع {other_pet} ({other_at})؛ حُجزا على جهازين دون اتصال',
     },
     visit: { recorded: '{by} سجّل زيارة لـ {pet} ({owner})' },
     payment: { recorded: '{by} سجّل دفعة {amount} من {owner} ({number})' },
@@ -146,7 +174,7 @@ export function pushText(n) {
   const L = T[n.locale === 'en' ? 'en' : 'ar'];
   const tpl = L[n.kind]?.[n.event] ?? '';
   const amount = n.data.amount != null ? new Intl.NumberFormat(n.locale === 'en' ? 'en-GB' : 'ar-EG-u-nu-latn', { style: 'currency', currency: 'EGP' }).format(Number(n.data.amount) / 100) : '';
-  const vars = { ...n.data, at: fmtWhen(n.data.at, n.locale), amount, label: n.data.label ?? '' };
+  const vars = { ...n.data, at: fmtWhen(n.data.at, n.locale), other_at: fmtWhen(n.data.other_at, n.locale), amount, label: n.data.label ?? '' };
   const body = tpl.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '') + '').replace(/\(\s*\)/g, '').replace(/[:：]\s*$/, '').trim();
   return { title: L.title[n.kind] ?? 'Animal Care Clinic', body, url: urlFor(n), tag: n.id, id: n.id };
 }

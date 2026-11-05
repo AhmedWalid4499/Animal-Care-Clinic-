@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -233,7 +233,8 @@ CREATE TABLE sync_outbox (
   op TEXT NOT NULL CHECK (op IN ('upsert','delete')),
   old_row TEXT,
   new_row TEXT,
-  at TEXT NOT NULL
+  at TEXT NOT NULL,
+  user_id TEXT
 );
 CREATE TABLE sync_state (key TEXT PRIMARY KEY, value TEXT);
 
@@ -281,6 +282,8 @@ export const MIGRATIONS: Record<number, string> = {
     CREATE INDEX IF NOT EXISTS visits_stage ON visits(stage);
     ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
   `,
+  // v5 (5 Nov 2026, Phase 2): each queued change remembers who made it, so it is sent under that person's sign-in.
+  5: `ALTER TABLE sync_outbox ADD COLUMN user_id TEXT;`,
 };
 
 /** Tables included in the one-click export, in dependency order. */

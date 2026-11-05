@@ -250,6 +250,7 @@ export function InvoiceDetail() {
         {inv.status !== 'VOID' && <button className="btn" onClick={() => nav(`/invoices/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
         <button className="btn" onClick={() => nav(`/invoices/${id}/print`)}><Icon name="print" /> {t('invoices.printReceipt')}</button>
       </PageHead>
+      {inv.number.startsWith('TMP-') && <p className="note warn temp-number">{t('invoices.tempNumber')}</p>}
       <div className="row" style={{ marginBottom: 10 }}>
         <a href={`#/owners/${inv.owner_id}`}>{inv.owner_name}</a>
         {inv.pet_id && <>· <a href={`#/pets/${inv.pet_id}`}>{inv.pet_name}</a></>}
@@ -366,6 +367,7 @@ export function InvoicePrint() {
             <div>
               <b>{t('invoices.receipt')} <span className="ltr">{inv.number}</span></b>
               <div>{fmt.dateTime(inv.issued_at)}</div>
+              {inv.number.startsWith('TMP-') && <div className="temp-number" style={{ fontSize: 9 }}>{t('invoices.tempNumber')}</div>}
             </div>
             <div style={{ textAlign: 'end' }}>
               <div>{inv.owner_name}</div>
