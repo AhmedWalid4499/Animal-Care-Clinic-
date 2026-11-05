@@ -4,8 +4,8 @@ import { useSyncExternalStore } from 'react';
 import { apiCall, isOnlineLinked, onLive } from './engine';
 import { isDesktop } from '../lib/platform';
 
-export type NotifyKind = 'appointment' | 'visit' | 'payment' | 'conflict';
-export const NOTIFY_KINDS: NotifyKind[] = ['appointment', 'visit', 'payment', 'conflict'];
+export type NotifyKind = 'appointment' | 'visit' | 'payment' | 'conflict' | 'queue';
+export const NOTIFY_KINDS: NotifyKind[] = ['queue', 'appointment', 'visit', 'payment', 'conflict'];
 export interface ClinicNotification {
   id: string; kind: NotifyKind; event: string; created_at: string; read_at: string | null;
   data: Record<string, string | number | undefined>;
@@ -81,6 +81,7 @@ export function routeFor(n: ClinicNotification): string {
   if (n.kind === 'appointment') return `#/appointments?view=day&date=${day(d.at)}&open=${d.appointment_id}`;
   if (n.kind === 'visit') return `#/pets/${d.pet_id}`;
   if (n.kind === 'payment') return `#/invoices/${d.invoice_id}`;
+  if (n.kind === 'queue') return '#/';
   if (d.tbl === 'appointments') return `#/appointments?open=${d.id}`;
   if (d.owner_id) return `#/owners/${d.owner_id}`;
   if (d.pet_id) return `#/pets/${d.pet_id}`;
@@ -91,7 +92,7 @@ export function routeFor(n: ClinicNotification): string {
 onLive((m) => {
   if (m.type === 'notify') void refreshNotifications(true);
   else if (m.type === 'connected') void refreshNotifications(false).then(() => void syncPushSubscription());
-  else if (m.type === 'signedOut') {
+  else if (m.type === 'signedOut' || m.type === 'revoked') {
     items = [];
     unread = 0;
     seen.clear();

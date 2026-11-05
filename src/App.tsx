@@ -8,10 +8,13 @@ import { OwnerDetail } from './screens/OwnerDetail';
 import { PetFormPage } from './screens/PetForm';
 import { PetRecord, PetSummaryPrint } from './screens/PetRecord';
 import { VisitFormPage, VisitPickPet } from './screens/VisitForm';
+import { IntakeFormPage } from './screens/IntakeForm';
 import { Appointments } from './screens/Appointments';
 import { InvoicesList, InvoiceFormPage, InvoiceDetail, InvoicePrint } from './screens/Invoices';
 import { Settings } from './screens/Settings';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
+import { ForcedPasswordChange } from './components/Account';
+import { onLive } from './sync/engine';
 
 function AdminOnly({ children }: { children: ReactNode }) {
   const { isAdmin, t } = useApp();
@@ -27,8 +30,11 @@ function ClinicalOnly({ children }: { children: ReactNode }) {
 
 /** Routes follow CLAUDE.md "Screens → routes". HashRouter because the desktop app loads from file://. */
 export function App({ firstRun }: { firstRun: boolean }) {
-  const { user } = useApp();
+  const { user, setUser } = useApp();
+  // The server signed this device out (Admin, password reset, deactivated): back to the sign-in screen.
+  useEffect(() => onLive((m) => m.type === 'revoked' && setUser(null)), [setUser]);
   if (!user) return <Login firstRun={firstRun} />;
+  if (user.must_change_password) return <ForcedPasswordChange />;
   return (
     <HashRouter>
       <Routes>
@@ -45,6 +51,9 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
           <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
+          <Route path="intake/new" element={<ClinicalOnly><VisitPickPet intake /></ClinicalOnly>} />
+          <Route path="pets/:petId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />
+          <Route path="visits/:visitId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />
           <Route path="appointments" element={<Appointments />} />
           <Route path="invoices" element={<InvoicesList />} />
           <Route path="invoices/new" element={<InvoiceFormPage />} />

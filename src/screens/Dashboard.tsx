@@ -5,6 +5,7 @@ import { appointmentsBetween, dashboardCounts, dueVaccinations, getSettings, mar
 import { addDays, daysBetween, startOfDayIso, today } from '../lib/dates';
 import { Badge, Icon, StatusBadge, WaButton, speciesEmoji } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { QueueSection } from './IntakeForm';
 
 export function Dashboard() {
   const { t, fmt, canVisit, locale } = useApp();
@@ -22,9 +23,14 @@ export function Dashboard() {
     <div className="page">
       <PageHead title={`${t('dashboard.title')} · ${fmt.weekday(d)}`} sub={t('dashboard.stats', counts)}>
         {canVisit && (
-          <button className="btn primary" onClick={() => nav('/visits/new')}>
-            <Icon name="plus" /> {t('nav.newVisit')}
-          </button>
+          <>
+            <button className="btn" onClick={() => nav('/intake/new')}>
+              <Icon name="clipboard" /> {t('nav.intake')}
+            </button>
+            <button className="btn primary" onClick={() => nav('/visits/new')}>
+              <Icon name="plus" /> {t('nav.newVisit')}
+            </button>
+          </>
         )}
       </PageHead>
 
@@ -48,6 +54,8 @@ export function Dashboard() {
           ))}
         </ul>
       )}
+
+      <QueueSection />
 
       <div className="cols" style={{ marginTop: 26 }}>
         <section className="section">

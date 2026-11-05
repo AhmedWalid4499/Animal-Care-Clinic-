@@ -403,6 +403,9 @@ await app.close();
   db.run("INSERT INTO users_v1 SELECT id, name, email, password_hash, CASE role WHEN 'ADMIN' THEN 'VET' ELSE 'ASSISTANT' END, locale, is_active, created_at, updated_at FROM users");
   db.run('DROP TABLE users');
   db.run('ALTER TABLE users_v1 RENAME TO users');
+  // Version 0.1 visits had no pre-diagnosis columns (schema v4).
+  db.run('DROP INDEX IF EXISTS visits_stage');
+  for (const c of ['stage', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', 'intake_by', 'intake_at']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
@@ -421,7 +424,7 @@ const afterRelaunch = counts(openDbFile());
     const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
     const roles = db2.exec('SELECT role, COUNT(*) FROM users GROUP BY role')[0].values.map((r) => `${r[0]}×${r[1]}`).join(', ');
     const settingsLink = await win.locator('.nav a[href="#/settings"]').count();
-    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '3' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
+    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '4' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
       `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
   }
   check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',

@@ -4,7 +4,7 @@ import { all, audit, get, insert, nowIso, run, tx, update, uuid } from './core';
 import { addDays, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, User, VaccineType, Vaccination, Visit, VisitType,
+  Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -29,10 +29,32 @@ export function saveNotifyOff(userId: string, off: string[]) {
 export const listUsers = () => all<User>('SELECT * FROM users ORDER BY role DESC, name');
 /** People who can be the vet on a visit: active Admins and Doctors. */
 export const listVets = () => all<User>("SELECT * FROM users WHERE is_active = 1 AND role IN ('ADMIN','DOCTOR') ORDER BY role = 'ADMIN' DESC, name");
+/** A temporary password that is easy to read out or type: no 0/O, 1/l/I. */
+export function tempPassword(): string {
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const r = crypto.getRandomValues(new Uint8Array(8));
+  const s = Array.from(r, (b) => abc[b % abc.length]).join('');
+  return `${s.slice(0, 4)}-${s.slice(4)}`;
+}
+/** Admin: a new temporary password; the person must choose their own at the next sign-in (and is signed out elsewhere). */
+export function resetPassword(id: string): string {
+  const pw = tempPassword();
+  tx(() => update('users', id, { password_hash: bcrypt.hashSync(pw, 10), must_change_password: 1 }));
+  return pw;
+}
+/** The signed-in person sets their own password (first sign-in, after a reset, or any time). */
+export function changeOwnPassword(id: string, password: string) {
+  tx(() => update('users', id, { password_hash: bcrypt.hashSync(password, 10), must_change_password: 0 }));
+  return get<User>('SELECT * FROM users WHERE id = ?', [id])!;
+}
+/** A password given by the Admin (new user, or typed in the user dialog) is temporary: the person replaces it. */
 export function saveUser(d: { name: string; email: string; role: Role; locale: 'ar' | 'en'; is_active: boolean; password?: string }, id?: string) {
   return tx(() => {
     const values: Record<string, unknown> = { name: d.name.trim(), email: d.email.trim(), role: d.role, locale: d.locale, is_active: d.is_active ? 1 : 0 };
-    if (d.password) values.password_hash = bcrypt.hashSync(d.password, 10);
+    if (d.password) {
+      values.password_hash = bcrypt.hashSync(d.password, 10);
+      values.must_change_password = 1;
+    }
     if (id) {
       const remainingAdmins = get<{ n: number }>("SELECT COUNT(*) n FROM users WHERE role='ADMIN' AND is_active=1 AND id <> ?", [id])!.n;
       if ((d.role !== 'ADMIN' || !d.is_active) && remainingAdmins === 0) throw new Error('ONE_ADMIN_MINIMUM');
@@ -202,13 +224,13 @@ export function dashboardCounts() {
 }
 
 // ---------------------------------------------------------------- visits
-export interface VisitRow extends Visit { vet_name: string | null }
+export interface VisitRow extends Visit { vet_name: string | null; intake_by_name: string | null }
 export interface VaccinationRow extends Vaccination { vaccine: string; interval_days: number }
 export interface VisitFull extends VisitRow { prescriptions: Prescription[]; vaccinations: VaccinationRow[]; attachments: Attachment[] }
 
 export function petVisits(petId: string): VisitFull[] {
   const visits = all<VisitRow>(
-    'SELECT v.*, u.name vet_name FROM visits v LEFT JOIN users u ON u.id = v.vet_id WHERE v.pet_id = ? ORDER BY v.visited_at DESC',
+    'SELECT v.*, u.name vet_name, ib.name intake_by_name FROM visits v LEFT JOIN users u ON u.id = v.vet_id LEFT JOIN users ib ON ib.id = v.intake_by WHERE v.pet_id = ? ORDER BY v.visited_at DESC',
     [petId],
   );
   const rx = all<Prescription>('SELECT r.* FROM prescriptions r JOIN visits v ON v.id = r.visit_id WHERE v.pet_id = ? ORDER BY r.created_at', [petId]);
@@ -223,7 +245,7 @@ export function petVisits(petId: string): VisitFull[] {
 }
 export function getVisit(id: string): (VisitFull & { pet_name: string }) | undefined {
   const v = get<VisitRow & { pet_name: string }>(
-    'SELECT v.*, u.name vet_name, p.name pet_name FROM visits v JOIN pets p ON p.id = v.pet_id LEFT JOIN users u ON u.id = v.vet_id WHERE v.id = ?',
+    'SELECT v.*, u.name vet_name, ib.name intake_by_name, p.name pet_name FROM visits v JOIN pets p ON p.id = v.pet_id LEFT JOIN users u ON u.id = v.vet_id LEFT JOIN users ib ON ib.id = v.intake_by WHERE v.id = ?',
     [id],
   );
   if (!v) return undefined;
@@ -263,6 +285,49 @@ export interface VisitInput {
   prescriptions: { drug: string; dose: string; frequency: string; duration_days: number | null; instructions: string }[];
   vaccinations: { id?: string; vaccine_type_id: string; administered_at: string; next_due_at: string; batch_no: string }[];
   appointment_id?: string | null;
+  /** The pre-diagnosis, when this visit started with one (the vet may correct it). */
+  intake?: IntakeFields;
+}
+
+// ---------------------------------------------------------------- pre-diagnosis (Phase 5)
+export interface IntakeFields { urgency: Urgency; history: string; heart_rate: number | null; resp_rate: number | null; intake_notes: string }
+export interface IntakeInput extends IntakeFields {
+  pet_id: string; type: VisitType; complaint: string; weight_kg: number | null; temperature_c: number | null; appointment_id?: string | null;
+}
+const intakeValues = (d: IntakeFields) => ({
+  urgency: d.urgency, history: blank(d.history), heart_rate: d.heart_rate, resp_rate: d.resp_rate, intake_notes: blank(d.intake_notes),
+});
+/** A Doctor records the intake; the patient joins the "Waiting for the vet" queue. */
+export function saveIntake(d: IntakeInput, userId: string | null, id?: string): string {
+  return tx(() => {
+    const values = { pet_id: d.pet_id, type: d.type, complaint: blank(d.complaint), weight_kg: d.weight_kg, temperature_c: d.temperature_c, ...intakeValues(d) };
+    if (id) {
+      update('visits', id, values);
+      return id;
+    }
+    const at = nowIso();
+    const visitId = insert('visits', { ...values, stage: 'WAITING', vet_id: null, visited_at: at, intake_by: userId, intake_at: at });
+    if (d.appointment_id) update('appointments', d.appointment_id, { visit_id: visitId });
+    return visitId;
+  });
+}
+export interface QueueRow {
+  id: string; pet_id: string; pet_name: string; species: string; owner_name: string; complaint: string | null; urgency: Urgency | null;
+  stage: VisitStage; intake_at: string | null; intake_by_name: string | null; vet_id: string | null; vet_name: string | null;
+}
+/** Patients waiting for the vet (or with one), emergencies first, then in arrival order. */
+export const waitingQueue = () =>
+  all<QueueRow>(
+    `SELECT v.id, v.pet_id, p.name pet_name, p.species, o.full_name owner_name, v.complaint, v.urgency, v.stage, v.intake_at, v.vet_id,
+       ib.name intake_by_name, u.name vet_name
+     FROM visits v JOIN pets p ON p.id = v.pet_id JOIN owners o ON o.id = p.owner_id
+       LEFT JOIN users ib ON ib.id = v.intake_by LEFT JOIN users u ON u.id = v.vet_id
+     WHERE v.stage IN ('WAITING','WITH_VET')
+     ORDER BY CASE v.urgency WHEN 'EMERGENCY' THEN 0 WHEN 'SOON' THEN 1 ELSE 2 END, COALESCE(v.intake_at, v.visited_at)`,
+  );
+/** The vet takes the patient from the queue (others then see "with Dr X"). */
+export function takePatient(visitId: string, userId: string) {
+  tx(() => update('visits', visitId, { stage: 'WITH_VET', vet_id: userId }));
 }
 
 /**
@@ -277,7 +342,8 @@ export function saveVisit(d: VisitInput, id?: string): string {
     const values = {
       pet_id: d.pet_id, vet_id: d.vet_id, visited_at: d.visited_at, type: d.type, complaint: blank(d.complaint),
       weight_kg: d.weight_kg, temperature_c: d.temperature_c, diagnosis: blank(d.diagnosis),
-      treatment_notes: blank(d.treatment_notes), follow_up_at: d.follow_up_at,
+      treatment_notes: blank(d.treatment_notes), follow_up_at: d.follow_up_at, stage: 'DONE',
+      ...(d.intake ? intakeValues(d.intake) : {}),
     };
     const visitId = id ?? insert('visits', values);
     if (id) update('visits', id, values);
@@ -316,6 +382,10 @@ export function saveVisit(d: VisitInput, id?: string): string {
     }
 
     if (d.appointment_id) update('appointments', d.appointment_id, { status: 'DONE', visit_id: visitId });
+    // Completing a visit that started as a pre-diagnosis: its appointment (if any) is done now.
+    if (before && before.stage !== 'DONE') {
+      for (const a of all<Appointment>("SELECT * FROM appointments WHERE visit_id = ? AND status = 'SCHEDULED'", [visitId])) update('appointments', a.id, { status: 'DONE' });
+    }
     return visitId;
   });
 }

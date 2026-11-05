@@ -7,7 +7,8 @@ const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_
 const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
-const OWN_USER_COLS = new Set(['notify_off', 'updated_at']);
+// Everyone may change these on their own user row: the bell's on/off switches, and their own password.
+const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_password', 'updated_at']);
 
 /**
  * @param {'ADMIN'|'DOCTOR'|'ASSISTANT'} role
@@ -22,7 +23,6 @@ export function refuse(role, change, before, userId) {
   if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
   if (role === 'ADMIN') return null;
-  // Anyone may change their own notification choices (the bell's on/off switches).
   if (tbl === 'users' && before && change.id === userId && op === 'upsert' && Object.keys(cols).every((c) => OWN_USER_COLS.has(c))) return null;
   if (ADMIN_ONLY.has(tbl)) return 'admins only';
   if (CLINICAL.has(tbl) && role === 'ASSISTANT') {

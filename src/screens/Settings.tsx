@@ -4,8 +4,8 @@ import * as XLSX from 'xlsx';
 import { strToU8, zipSync } from 'fflate';
 import { useApp, useQuery } from '../lib/app';
 import {
-  getSettings, importOwnersPets, listPriceItems, listUsers, listVaccineTypes, savePriceItem, saveSettings, saveUser, saveVaccineType,
-  tableRows, type ImportRow,
+  getSettings, importOwnersPets, listPriceItems, listUsers, listVaccineTypes, resetPassword, savePriceItem, saveSettings, saveUser, saveVaccineType,
+  tableRows, tempPassword, type ImportRow,
 } from '../db/repo';
 import { exportBytes, restoreFrom } from '../db/core';
 import { EXPORT_TABLES } from '../db/schema';
@@ -15,9 +15,12 @@ import { Confirm, Dialog, Field, Icon, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { SyncPanel } from '../components/SyncBadge';
 import { UpdatesSection } from '../components/Updates';
+import { InviteDialog } from '../components/Account';
+import { DevicesTab } from '../components/Devices';
+import { serverUrl } from '../sync/engine';
 import { PRICE_CATEGORIES, ROLES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
-type Tab = 'clinic' | 'prices' | 'vaccines' | 'users' | 'data';
+type Tab = 'clinic' | 'prices' | 'vaccines' | 'users' | 'devices' | 'data';
 
 export function Settings() {
   const { t } = useApp();
@@ -27,7 +30,7 @@ export function Settings() {
     <div className="page">
       <PageHead title={t('settings.title')} />
       <div className="tabs" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['clinic', 'prices', 'vaccines', 'users', 'data'] as Tab[]).map((k) => (
+        {(['clinic', 'prices', 'vaccines', 'users', ...(serverUrl() ? ['devices'] : []), 'data'] as Tab[]).map((k) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>{t(`settings.${k}`)}</button>
         ))}
       </div>
@@ -36,6 +39,7 @@ export function Settings() {
         {tab === 'prices' && <PricesTab />}
         {tab === 'vaccines' && <VaccinesTab />}
         {tab === 'users' && <UsersTab />}
+        {tab === 'devices' && <DevicesTab />}
         {tab === 'data' && <DataTab />}
       </div>
     </div>
@@ -202,8 +206,10 @@ function UsersTab() {
   const { t } = useApp();
   const rows = useQuery(listUsers);
   const [edit, setEdit] = useState<Partial<User> | null>(null);
+  const [invite, setInvite] = useState<{ person: Pick<User, 'name' | 'email' | 'role'>; password: string } | null>(null);
   return (
     <>
+      <p className="muted small" style={{ marginTop: 0 }}>{t('settings.roleHint')}</p>
       <div className="row end" style={{ marginBottom: 10 }}>
         <button className="btn primary" onClick={() => setEdit({ name: '', email: '', role: 'ASSISTANT', locale: 'ar', is_active: 1 })}><Icon name="plus" /> {t('settings.addUser')}</button>
       </div>
@@ -214,21 +220,24 @@ function UsersTab() {
           {rows.map((u) => (
             <tr key={u.id} className={`link ${u.is_active ? '' : 'greyed'}`} onClick={() => setEdit(u)}>
               <td><b>{u.name}</b></td><td className="ltr">{u.email}</td><td>{t(`roles.${u.role}`)}</td><td>{u.locale === 'ar' ? 'العربية' : 'English'}</td>
-              <td>{u.is_active ? t('common.active') : t('common.inactive')}</td>
+              <td>{u.is_active ? t('common.active') : t('common.inactive')}{u.is_active && u.must_change_password ? <span className="muted small"> · {t('settings.mustChange')}</span> : null}</td>
             </tr>
           ))}
         </tbody>
       </table>
       </div>
-      {edit && <UserDialog item={edit} onClose={() => setEdit(null)} />}
+      {edit && <UserDialog item={edit} onClose={() => setEdit(null)} onInvite={(person, password) => { setEdit(null); setInvite({ person, password }); }} />}
+      {invite && <InviteDialog person={invite.person} password={invite.password} onClose={() => setInvite(null)} />}
     </>
   );
 }
 
-function UserDialog({ item, onClose }: { item: Partial<User>; onClose: () => void }) {
+function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose: () => void; onInvite: (person: Pick<User, 'name' | 'email' | 'role'>, password: string) => void }) {
   const { t, toast } = useApp();
-  const [f, setF] = useState({ ...item, password: '' });
+  // A new person gets a temporary password (shown, so it can be sent); they choose their own at first sign-in.
+  const [f, setF] = useState({ ...item, password: item.id ? '' : tempPassword() });
   const [err, setErr] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   return (
     <Dialog
       title={t('settings.users')}
@@ -237,7 +246,9 @@ function UserDialog({ item, onClose }: { item: Partial<User>; onClose: () => voi
         <button className="btn primary" disabled={!f.name || !f.email} onClick={() => {
           try {
             saveUser({ name: f.name!, email: f.email!, role: f.role as Role, locale: f.locale as 'ar' | 'en', is_active: !!f.is_active, password: f.password || undefined }, item.id);
-            toast(t('app.saved')); onClose();
+            toast(t('app.saved'));
+            if (f.password) onInvite({ name: f.name!, email: f.email!, role: f.role as Role }, f.password);
+            else onClose();
           } catch (e) {
             const m = String((e as Error).message);
             setErr(m.includes('ONE_ADMIN') ? t('settings.oneVet') : m.includes('PASSWORD') ? t('settings.passwordRequired') : m.includes('UNIQUE') ? `${t('settings.email')} ✗` : m);
@@ -258,11 +269,31 @@ function UserDialog({ item, onClose }: { item: Partial<User>; onClose: () => voi
             <option value="ar">العربية</option><option value="en">English</option>
           </select>
         </Field>
-        <Field label={item.id ? t('settings.passwordNew') : t('settings.password')} className="span2">
-          <input type="password" className="ltr" value={f.password} minLength={8} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="new-password" />
-        </Field>
+        {item.id ? (
+          <div className="span2 row">
+            <button type="button" className="btn" onClick={() => setConfirmReset(true)}>{t('settings.resetPassword')}</button>
+            {!!item.must_change_password && <span className="muted small">{t('settings.mustChange')}</span>}
+          </div>
+        ) : (
+          <Field label={t('settings.tempPassword')} hint={t('settings.mustChange')} className="span2">
+            <input type="text" name="temp-password" className="ltr" value={f.password} minLength={8} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="off" spellCheck={false} />
+          </Field>
+        )}
         <label className="check"><input type="checkbox" checked={!!f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked ? 1 : 0 })} /> {t('common.active')}</label>
       </div>
+      {confirmReset && item.id && (
+        <Confirm
+          title={t('settings.resetPassword')}
+          body={t('settings.resetConfirm', { name: item.name ?? '' })}
+          confirmLabel={t('settings.resetPassword')}
+          danger
+          onClose={() => setConfirmReset(false)}
+          onConfirm={() => {
+            const pw = resetPassword(item.id!);
+            onInvite({ name: item.name!, email: item.email!, role: item.role as Role }, pw);
+          }}
+        />
+      )}
     </Dialog>
   );
 }

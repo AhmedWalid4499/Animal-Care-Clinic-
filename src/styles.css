@@ -410,3 +410,21 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
   .sheet-wrap { background: none; padding: 0; display: block; }
   .sheet.a5 { width: auto; min-height: 0; padding: 0; box-shadow: none; }
 }
+
+/* ---- pre-diagnosis & the vet's queue (Phase 5) ---- */
+.section.queue { margin-top: 26px; }
+.section.queue li.urgency-EMERGENCY { box-shadow: inset 3px 0 0 var(--bad); }
+[dir="rtl"] .section.queue li.urgency-EMERGENCY { box-shadow: inset -3px 0 0 var(--bad); }
+.section.queue li.urgency-SOON { box-shadow: inset 3px 0 0 var(--warn); }
+[dir="rtl"] .section.queue li.urgency-SOON { box-shadow: inset -3px 0 0 var(--warn); }
+.seg.urgency button.on.u-EMERGENCY { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.seg.urgency button.on.u-SOON { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--ink); }
+.seg.urgency button { padding: 9px 16px; }
+.intake-box { border-inline-start: 3px solid var(--accent); padding-inline-start: 14px; }
+
+/* ---- accounts (Phase 5) ---- */
+.password-pane { width: min(420px, 100%); margin: 0 auto; }
+.password-form { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.temp-pw { display: flex; align-items: baseline; gap: 10px; padding: 10px 12px; background: var(--accent-soft); border-radius: var(--radius); margin-bottom: 10px; }
+.temp-pw b { font-size: 20px; letter-spacing: .06em; user-select: all; }
+.invite-text { white-space: pre-wrap; font: inherit; font-size: 13px; color: var(--ink-2); background: var(--bg-2); border-radius: var(--radius); padding: 10px 12px; margin: 0; max-height: 40vh; overflow: auto; user-select: all; }

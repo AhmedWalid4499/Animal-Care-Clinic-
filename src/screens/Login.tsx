@@ -4,7 +4,7 @@ import { useApp, useQuery } from '../lib/app';
 import { auditLogin, getSettings, login } from '../db/repo';
 import { DEFAULT_LOGINS } from '../db/seed';
 import { Icon } from '../components/ui';
-import { checkServer, normaliseUrl, onlineLogin, rememberedUser, resumeSync, serverFixed, serverUrl, setServerUrl } from '../sync/engine';
+import { checkServer, normaliseUrl, onlineLogin, rememberedUser, resumeSync, serverFixed, serverUrl, setServerUrl, takeRevokedNotice } from '../sync/engine';
 
 const LAST_EMAIL = 'login:lastEmail';
 const FEATURES = ['search', 'vaccines', 'receipts'] as const;
@@ -87,7 +87,7 @@ export function Login({ firstRun }: { firstRun: boolean }) {
   const [error, setError] = useState(false);
   const [shake, setShake] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(() => (takeRevokedNotice() ? t('sync.revoked') : null));
   const [server, setServer] = useState<string | null>(serverUrl);
   const [editServer, setEditServer] = useState(false);
   const [serverInput, setServerInput] = useState('');

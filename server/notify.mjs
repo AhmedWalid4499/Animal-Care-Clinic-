@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import webpush from 'web-push';
 
-export const KINDS = ['appointment', 'visit', 'payment', 'conflict'];
+export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue'];
 
 // ---------------------------------------------------------------- what happened → notifications
 /**
@@ -16,7 +16,7 @@ export const KINDS = ['appointment', 'visit', 'payment', 'conflict'];
  */
 export async function createNotifications(c, clinicId, actor, events, conflicts) {
   const users = (await c.query(
-    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
+    "SELECT id, data->>'locale' AS locale, data->>'role' AS role, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
     [clinicId],
   )).rows;
   const byId = new Map(users.map((u) => [u.id, u]));
@@ -49,9 +49,17 @@ export async function createNotifications(c, clinicId, actor, events, conflicts)
       if (e.isNew) everyoneElse('appointment', 'booked', base);
       else if ('scheduled_at' in e.cols && e.before?.scheduled_at !== a.scheduled_at) everyoneElse('appointment', 'moved', { ...base, from: e.before?.scheduled_at });
       else if ('status' in e.cols && e.before?.status !== a.status) everyoneElse('appointment', String(a.status).toLowerCase(), base);
-    } else if (e.tbl === 'visits' && e.isNew && (await hasAppointmentToday(c, clinicId, a.pet_id))) {
-      // Only for a pet booked today (the front desk is waiting for it); other visits would just be noise.
-      everyoneElse('visit', 'recorded', { visit_id: e.id, pet_id: a.pet_id, type: a.type, ...(await pet(a.pet_id)) });
+    } else if (e.tbl === 'visits') {
+      // Pre-diagnosis (Phase 5): a patient joins the vet's queue → tell the vets (Admins and Doctors).
+      const stage = a.stage ?? 'DONE'; // devices older than schema v4 send no stage
+      const stageChanged = e.isNew || ('stage' in e.cols && (e.before?.stage ?? 'DONE') !== stage);
+      if (stage === 'WAITING' && stageChanged) {
+        const data = { visit_id: e.id, pet_id: a.pet_id, urgency: a.urgency, complaint: a.complaint ?? '', ...(await pet(a.pet_id)) };
+        users.forEach((u) => u.id !== actor.id && (u.role === 'ADMIN' || u.role === 'DOCTOR') && add(u.id, 'queue', a.urgency === 'EMERGENCY' ? 'emergency' : 'waiting', data));
+      } else if (stage === 'DONE' && stageChanged && (await hasAppointmentToday(c, clinicId, a.pet_id))) {
+        // A finished visit, only for a pet booked today (the front desk is waiting for it); others would be noise.
+        everyoneElse('visit', 'recorded', { visit_id: e.id, pet_id: a.pet_id, type: a.type, ...(await pet(a.pet_id)) });
+      }
     } else if (e.tbl === 'payments' && e.isNew) {
       const inv = (await c.query("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'invoices' AND id = $2", [clinicId, a.invoice_id])).rows[0]?.data;
       const owner = inv ? (await c.query("SELECT data->>'full_name' AS n FROM rows WHERE clinic_id = $1 AND tbl = 'owners' AND id = $2", [clinicId, inv.owner_id])).rows[0]?.n : null;
@@ -87,7 +95,8 @@ async function nameOf(c, clinicId, userId) {
 // ---------------------------------------------------------------- push text (the app renders its own from i18n)
 const T = {
   en: {
-    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced' },
+    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced', queue: 'Waiting for the vet' },
+    queue: { waiting: '{by} sent {pet} ({owner}) to the vet: {complaint}', emergency: '🚨 Emergency: {pet} ({owner}) is waiting for the vet: {complaint}' },
     appointment: {
       booked: '{by} booked {pet} ({owner}) for {at}',
       moved: '{by} moved {pet}’s appointment to {at}',
@@ -101,7 +110,8 @@ const T = {
     conflict: { replaced: '{by} changed {label} after you; your edit was replaced', kept: 'Your change to {label} was not applied: {by} changed it later' },
   },
   ar: {
-    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل' },
+    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل', queue: 'في انتظار الطبيب' },
+    queue: { waiting: '{by} أرسل {pet} ({owner}) إلى الطبيب: {complaint}', emergency: '🚨 حالة طارئة: {pet} ({owner}) في انتظار الطبيب: {complaint}' },
     appointment: {
       booked: '{by} حجز موعداً لـ {pet} ({owner}) يوم {at}',
       moved: '{by} غيّر موعد {pet} إلى {at}',
@@ -128,6 +138,7 @@ export function urlFor(n) {
   if (n.kind === 'appointment') return `/#/appointments?view=day&date=${d.at ? cairoDate(d.at) : ''}&open=${d.appointment_id}`;
   if (n.kind === 'visit') return `/#/pets/${d.pet_id}`;
   if (n.kind === 'payment') return `/#/invoices/${d.invoice_id}`;
+  if (n.kind === 'queue') return '/#/';
   if (n.kind === 'conflict') return d.tbl === 'appointments' ? `/#/appointments?open=${d.id}` : d.owner_id ? `/#/owners/${d.owner_id}` : d.pet_id ? `/#/pets/${d.pet_id}` : '/#/';
   return '/#/';
 }
@@ -136,7 +147,7 @@ export function pushText(n) {
   const tpl = L[n.kind]?.[n.event] ?? '';
   const amount = n.data.amount != null ? new Intl.NumberFormat(n.locale === 'en' ? 'en-GB' : 'ar-EG-u-nu-latn', { style: 'currency', currency: 'EGP' }).format(Number(n.data.amount) / 100) : '';
   const vars = { ...n.data, at: fmtWhen(n.data.at, n.locale), amount, label: n.data.label ?? '' };
-  const body = tpl.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '') + '').replace(/\(\s*\)/g, '').trim();
+  const body = tpl.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? '') + '').replace(/\(\s*\)/g, '').replace(/[:：]\s*$/, '').trim();
   return { title: L.title[n.kind] ?? 'Animal Care Clinic', body, url: urlFor(n), tag: n.id, id: n.id };
 }
 
