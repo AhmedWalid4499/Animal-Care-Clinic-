@@ -5,7 +5,7 @@ import { all, get, markChanged, rawDb } from '../db/core';
 import { SYNC_TABLES } from '../db/schema';
 
 export type SyncRow = Record<string, unknown>;
-export interface OutboxEntry { seq: number; tbl: string; row_id: string; op: 'upsert' | 'delete'; old_row: string | null; new_row: string | null; at: string }
+export interface OutboxEntry { seq: number; tbl: string; row_id: string; op: 'upsert' | 'delete'; old_row: string | null; new_row: string | null; at: string; user_id: string | null }
 /** One change as sent to the server: only the columns that changed (all of them for a new row). */
 /** base = the values this device saw before its edit, so the server can tell a real conflict from a later edit. */
 export interface Change { tbl: string; id: string; op: 'upsert' | 'delete'; cols: SyncRow; base?: SyncRow; at: string }
@@ -24,6 +24,8 @@ export function tableColumns(tbl: string): string[] {
 
 const WHEN = `(SELECT value FROM sync_state WHERE key = 'enabled') = '1' AND (SELECT value FROM sync_state WHERE key = 'applying') IS NULL`;
 const NOW = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`;
+// Who is signed in on this device right now (set by the sync engine); every queued change carries it.
+const ACTOR = `(SELECT value FROM sync_state WHERE key = 'actor')`;
 
 /** (Re)create the capture triggers. Runs on every open, so new columns are always included. */
 export function ensureSyncTriggers() {
@@ -36,11 +38,11 @@ export function ensureSyncTriggers() {
     d.run(`DROP TRIGGER IF EXISTS sync_${t}_upd`);
     d.run(`DROP TRIGGER IF EXISTS sync_${t}_del`);
     d.run(`CREATE TRIGGER sync_${t}_ins AFTER INSERT ON ${t} WHEN ${WHEN} BEGIN
-      INSERT INTO sync_outbox (tbl, row_id, op, old_row, new_row, at) VALUES ('${t}', NEW.id, 'upsert', NULL, ${obj('NEW')}, ${NOW}); END`);
+      INSERT INTO sync_outbox (tbl, row_id, op, old_row, new_row, at, user_id) VALUES ('${t}', NEW.id, 'upsert', NULL, ${obj('NEW')}, ${NOW}, ${ACTOR}); END`);
     d.run(`CREATE TRIGGER sync_${t}_upd AFTER UPDATE ON ${t} WHEN ${WHEN} BEGIN
-      INSERT INTO sync_outbox (tbl, row_id, op, old_row, new_row, at) VALUES ('${t}', NEW.id, 'upsert', ${obj('OLD')}, ${obj('NEW')}, ${NOW}); END`);
+      INSERT INTO sync_outbox (tbl, row_id, op, old_row, new_row, at, user_id) VALUES ('${t}', NEW.id, 'upsert', ${obj('OLD')}, ${obj('NEW')}, ${NOW}, ${ACTOR}); END`);
     d.run(`CREATE TRIGGER sync_${t}_del AFTER DELETE ON ${t} WHEN ${WHEN} BEGIN
-      INSERT INTO sync_outbox (tbl, row_id, op, old_row, new_row, at) VALUES ('${t}', OLD.id, 'delete', ${obj('OLD')}, NULL, ${NOW}); END`);
+      INSERT INTO sync_outbox (tbl, row_id, op, old_row, new_row, at, user_id) VALUES ('${t}', OLD.id, 'delete', ${obj('OLD')}, NULL, ${NOW}, ${ACTOR}); END`);
   }
 }
 
@@ -53,17 +55,26 @@ export function setState(key: string, value: string | null) {
   else rawDb().run('INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, value]);
 }
 
-export function outboxCount(): number {
+export function outboxCount(userId?: string): number {
+  if (userId !== undefined) return get<{ n: number }>('SELECT COUNT(*) n FROM sync_outbox WHERE user_id IS ?', [userId])?.n ?? 0;
   return get<{ n: number }>('SELECT COUNT(*) n FROM sync_outbox')?.n ?? 0;
 }
+/** People with changes waiting on this device (null = made before anyone was recorded, e.g. older versions). */
+export function outboxUsers(): (string | null)[] {
+  return all<{ user_id: string | null }>('SELECT user_id FROM sync_outbox GROUP BY user_id ORDER BY MIN(seq)').map((r) => r.user_id);
+}
 
-/** Oldest pending changes, turned into column-level changes for the server. */
-export function pendingChanges(limit = 500): { changes: Change[]; lastSeq: number } {
-  const rows = all<OutboxEntry>('SELECT * FROM sync_outbox ORDER BY seq LIMIT ?', [limit]);
+/** Oldest pending changes (of one person, if given), turned into column-level changes for the server. */
+export function pendingChanges(limit = 500, userId?: string | null, clockOffsetMs = 0): { changes: Change[]; lastSeq: number; seqs: number[] } {
+  const rows = userId === undefined
+    ? all<OutboxEntry>('SELECT * FROM sync_outbox ORDER BY seq LIMIT ?', [limit])
+    : all<OutboxEntry>('SELECT * FROM sync_outbox WHERE user_id IS ? ORDER BY seq LIMIT ?', [userId, limit]);
+  // Edit times come from this device's clock; shift them by its measured difference from the server's clock.
+  const fix = (at: string) => (Math.abs(clockOffsetMs) < 2000 ? at : new Date(new Date(at).getTime() + clockOffsetMs).toISOString());
   const changes: Change[] = [];
   for (const r of rows) {
     if (r.op === 'delete') {
-      changes.push({ tbl: r.tbl, id: r.row_id, op: 'delete', cols: {}, at: r.at });
+      changes.push({ tbl: r.tbl, id: r.row_id, op: 'delete', cols: {}, at: fix(r.at) });
       continue;
     }
     const next = JSON.parse(r.new_row ?? '{}') as SyncRow;
@@ -76,13 +87,29 @@ export function pendingChanges(limit = 500): { changes: Change[]; lastSeq: numbe
         if (prev) base[k] = prev[k];
       }
     }
-    if (Object.keys(cols).length) changes.push({ tbl: r.tbl, id: r.row_id, op: 'upsert', cols, ...(prev ? { base } : {}), at: r.at });
+    if (Object.keys(cols).length) changes.push({ tbl: r.tbl, id: r.row_id, op: 'upsert', cols, ...(prev ? { base } : {}), at: fix(r.at) });
   }
-  return { changes, lastSeq: rows.length ? rows[rows.length - 1].seq : 0 };
+  return { changes, lastSeq: rows.length ? rows[rows.length - 1].seq : 0, seqs: rows.map((r) => r.seq) };
 }
 
-export function ackOutbox(uptoSeq: number) {
-  rawDb().run('DELETE FROM sync_outbox WHERE seq <= ?', [uptoSeq]);
+/** The server accepted (or refused) these; changes it could not store stay queued and are tried again. */
+export function ackOutbox(seqs: number[], keepRows: { tbl: string; id: string }[] = []) {
+  const keep = new Set(keepRows.map((k) => `${k.tbl}:${k.id}`));
+  const d = rawDb();
+  if (!keep.size) {
+    for (let i = 0; i < seqs.length; i += 500) {
+      const part = seqs.slice(i, i + 500);
+      d.run(`DELETE FROM sync_outbox WHERE seq IN (${part.map(() => '?').join(',')})`, part);
+    }
+    return;
+  }
+  for (const s of seqs) {
+    if (keep.size) {
+      const r = get<{ tbl: string; row_id: string }>('SELECT tbl, row_id FROM sync_outbox WHERE seq = ?', [s]);
+      if (r && keep.has(`${r.tbl}:${r.row_id}`)) continue;
+    }
+    d.run('DELETE FROM sync_outbox WHERE seq = ?', [s]);
+  }
 }
 
 /** Columns with local edits not yet accepted by the server; a pulled row must not overwrite them. */

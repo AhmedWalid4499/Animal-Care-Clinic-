@@ -141,7 +141,7 @@ export function Login({ firstRun }: { firstRun: boolean }) {
         if (u) {
           remember(u.email);
           setUser(u);
-          resumeSync(u.id);
+          resumeSync(u.id, serverUrl() ? password : undefined);
           return;
         }
         fail(serverUrl() && !getSettingsRowExists() ? t('login.firstSignInOnline') : null);

@@ -87,12 +87,13 @@ async function adminRecovery(clinicId, email) {
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 function send(res, status, body, headers = {}) {
   const json = body === undefined ? '' : JSON.stringify(body);
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...cors, ...headers });
+  // X-Server-Time: devices measure how far their clock is off (edit times decide which of two edits wins).
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Server-Time': new Date().toISOString(), ...cors, ...headers });
   res.end(json);
 }
 // The desktop app calls from file:// (origin "null") and the web app from its own origin; auth is a bearer
 // token, never a cookie, so allowing any origin does not expose a session.
-const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
+const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Expose-Headers': 'X-Server-Time' };
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -209,13 +210,14 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true });
   }
   if (p === '/api/sync/push' && req.method === 'POST') {
-    const { changes } = await readJson(req);
+    const { changes, cursor } = await readJson(req);
     if (!Array.isArray(changes) || changes.length > 2000) return send(res, 400, { error: 'changes must be an array of at most 2000' });
-    const r = await applyChanges(pool, { clinicId: s.clinicId, user: s.user, deviceId: s.deviceId, changes });
+    const seenSeq = Number.isFinite(Number(cursor)) && cursor !== undefined && cursor !== null ? Number(cursor) : null;
+    const r = await applyChanges(pool, { clinicId: s.clinicId, user: s.user, deviceId: s.deviceId, changes, seenSeq });
     if (r.seq) broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
     deliver(s.clinicId, r.notifications);
     await endSessionsAfter(s, changes, r.rejected);
-    return send(res, 200, { rejected: r.rejected, reverts: r.reverts, seq: r.seq });
+    return send(res, 200, { rejected: r.rejected, reverts: r.reverts, failed: r.failed, seq: r.seq });
   }
   if (p === '/api/sync/pull' && req.method === 'GET') {
     const since = Math.max(0, Number(url.searchParams.get('since') || 0));

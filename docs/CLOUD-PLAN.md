@@ -4,7 +4,8 @@ Status, 5 Nov 2026:
 - **Phase 1 live** at `https://animal-care-clinic-production.up.railway.app`; the first laptop syncs.
 - **Phase 3 (notifications) built and tested locally.** `scripts/sync-test.mjs` passes 18/18 against Postgres 16 with two desktop apps and a fake phone push service; results are in `docs/acceptance/SYNC-TEST.md`.
 - **Phase 5 built and tested locally** (devices, temporary passwords / reset / invite, pre-diagnosis queue): `scripts/sync-test.mjs` passes 23/23.
-- **Next:** Phase 2 (offline robustness), then Phase 4.
+- **Phase 2 (offline) built and tested locally:** `scripts/sync-test.mjs` passes 31/31, including two laptops working with the server unreachable and ending identical.
+- **Next:** Phase 4 (files on the volume, nightly off-site backup, phone install).
 - Open points are at the end.
 
 ## What Ahmed asked for
@@ -120,7 +121,19 @@ How Phase 3 is built:
 
 Known limits, handled in later phases:
 - File bytes (X-rays, lab PDFs) stay on the laptop that added them until Phase 4.
-- A laptop's clock decides which of two edits to the same field wins. Windows/Mac keep clocks in sync over the internet, which is enough for one clinic.
+- A laptop's clock decided which of two edits to the same field wins. Since Phase 2 the device corrects its edit times by its measured difference from the server's clock, and the server caps edit times from the future.
+
+How Phase 2 is built:
+
+| Piece | Where | Notes |
+|---|---|---|
+| Who made each change | `sync_outbox.user_id` (schema v5), `src/sync/engine.ts` | Every queued change remembers who was signed in. Each person's changes are sent with their own sign-in, so the server checks their role (a Doctor's offline visit is not refused because the receptionist signed in next). Signing out with unsent changes keeps that person's sign-in on the laptop just long enough to send them, then ends it on the server. Changes of someone with no sign-in left on the laptop wait for them; Settings → Data & backup says whose. |
+| Signing in offline | `resumeSync` | Works with the password stored on the laptop (any clinic user once the laptop has synced). The app keeps the typed password in memory only and signs in to the server by itself when it answers, then sends the work. |
+| One bad change | `server/sync.mjs` | Each change runs in its own savepoint. A change the server can't store (e.g. text Postgres refuses) is reported back as `failed` and stays queued; the rest of the batch goes in. |
+| Clocks | `X-Server-Time` header, `clock_offset` | Devices measure their clock's difference on every reply and shift queued edit times by it; the server caps edit times at now + 1 min. |
+| Double booking offline | `server/notify.mjs` | The device sends how far it had synced; an overlapping booking the server got after that is reported to both people ("Double booking … booked on two devices without a connection"). |
+| Web / phone app offline | `public-cloud/sw.js` | The service worker keeps the app on the device; the records are already in the browser's database. |
+| Temporary invoice numbers | `Invoices.tsx` | An invoice made offline shows, and prints, "Temporary number: the final number is given when this device syncs". |
 
 ## Server (Railway)
 

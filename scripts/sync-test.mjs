@@ -14,6 +14,8 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const { _electron: electron } = require('playwright');
 const pg = require('pg');
+const initSqlJs = require('sql.js/dist/sql-asm.js');
+const SQL = await initSqlJs();
 
 const out = path.resolve(process.argv[2] || 'sync-test-out');
 fs.rmSync(out, { recursive: true, force: true });
@@ -199,6 +201,7 @@ await step('live: B → A', async () => {
 });
 
 let doctorId = null;
+let deskTemp = null;
 const DOCTOR_PW = 'Doctor-own-2026';
 let inviteText = '';
 await step('admin adds users', async () => {
@@ -505,6 +508,7 @@ await step('phase5: password reset', async () => {
   await A.win.locator('.dialog .btn.danger').click(); // confirm
   await A.win.waitForSelector('.dialog .temp-pw b');
   const temp = (await A.win.locator('.dialog .temp-pw b').innerText()).trim();
+  deskTemp = temp;
   await A.win.keyboard.press('Escape');
   const oldSession = await until(async () => (await api('/api/notifications', null, tokens.desk)).status === 401, 10_000, 300);
   const oldPw = (await api('/api/login', { email: 'desk@test.local', password: 'Welcome2026!', deviceId: 'test-desk-3' })).status;
@@ -552,6 +556,186 @@ await step('phase5: sign out a device', async () => {
   check('device-revoke', 'The Admin signs out a lost laptop: it goes back to the sign-in screen at once and needs the password again',
     !!out1.v && msg.length > 0 && again === 'in',
     `laptop B back at sign-in after ${ms} ms with "${msg}"; signed in again with the password: ${again === 'in'}`);
+});
+
+// ---------------------------------------------------------------- Phase 2: offline robustness
+const tomorrow = (() => {
+  const d = new Date(Date.now() + 86400_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+})();
+async function editOwner(d, id, { phone, address, notes }) {
+  await go(d, `#/owners/${id}/edit`);
+  await d.win.waitForSelector('form textarea');
+  if (phone) await d.win.getByLabel(/^\s*(الهاتف|Phone)\s*$/).fill(phone);
+  if (address) await d.win.getByLabel(/العنوان|Address/).fill(address);
+  if (notes) await d.win.locator('form textarea').fill(notes);
+  await d.win.locator('.actionbar .btn.primary').click();
+  await d.win.waitForFunction((x) => location.hash === `#/owners/${x}`, id);
+}
+async function newInvoice(d, ownerName) {
+  await go(d, '#/invoices/new');
+  await d.win.locator('input[type=search]').first().fill(ownerName);
+  await d.win.locator('.picker button').first().click();
+  await d.win.locator('select').nth(1).selectOption({ index: 1 });
+  await d.win.locator('.actionbar .btn.primary').click();
+  await d.win.waitForSelector('.pagehead h1');
+  return (await d.win.locator('.pagehead h1').innerText()).trim();
+}
+async function book(d, petName, time) {
+  await go(d, `#/appointments?view=day&date=${tomorrow}`);
+  await d.win.locator('.slot.add').first().click();
+  await d.win.locator('.dialog input[type=search]').fill(petName);
+  await d.win.locator('.picker button').first().click();
+  await d.win.locator('.dialog input[type=datetime-local]').fill(`${tomorrow}T${time}`);
+  await d.win.locator('.dialog footer .btn.primary').click();
+  await d.win.waitForSelector('.dialog', { state: 'detached', timeout: 5000 });
+}
+/** Every synced table of a device's database file, as comparable text. */
+function snapshot(dataDir) {
+  const db = new SQL.Database(fs.readFileSync(path.join(dataDir, 'clinic.sqlite')));
+  const out = {};
+  for (const t of ['users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccinations', 'appointments', 'invoices', 'invoice_items', 'payments', 'price_items', 'vaccine_types', 'clinic_settings']) {
+    const r = db.exec(`SELECT * FROM ${t} ORDER BY id`)[0];
+    out[t] = r ? JSON.stringify(r.values) : '[]';
+  }
+  db.close();
+  return out;
+}
+const localState = (dataDir, sql) => {
+  const db = new SQL.Database(fs.readFileSync(path.join(dataDir, 'clinic.sqlite')));
+  const r = db.exec(sql)[0]?.values ?? [];
+  db.close();
+  return r;
+};
+
+await step('phase2: both laptops offline', async () => {
+  const owners = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'owners' AND NOT deleted AND data->>'status' = 'ACTIVE' AND data->>'full_name' NOT LIKE 'Load Owner%' ORDER BY id LIMIT 2")).rows;
+  const [X, Y] = owners;
+  const pets = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY id DESC LIMIT 2")).rows;
+  await stopServer(); // the clinic's internet is down: both laptops carry on
+  await editOwner(A, X.id, { phone: '01011112222' });
+  await editOwner(B, X.id, { address: 'Address typed on laptop B' });
+  await editOwner(A, Y.id, { notes: 'Note from laptop A' });
+  await sleep(1100);
+  await editOwner(B, Y.id, { notes: 'Note from laptop B (later)' });
+  const tmpA = await newInvoice(A, X.data.full_name);
+  const tmpB = await newInvoice(B, Y.data.full_name);
+  await book(A, pets[0].data.name, '15:00');
+  await book(B, pets[1].data.name, '15:10'); // overlaps; neither laptop can know
+  await go(B, `#/pets/${pets[1].id}/visits/new`);
+  await B.win.locator('.actionbar .btn.primary').click(); // pet, date and type are enough
+  await B.win.waitForSelector('.dialog');
+  await B.win.keyboard.press('Escape');
+  await B.win.screenshot({ path: path.join(out, 'B-offline-waiting.png') });
+  // The doctor signs out with the internet still down; then the receptionist signs in on the same laptop.
+  await signOut(B);
+  await sleep(500);
+  const kept = localState(B.dataDir, `SELECT COUNT(*) FROM sync_outbox WHERE user_id = '${doctorId}'`)[0][0];
+  await startServer();
+  await A.win.locator('.sync-badge').click();
+  const deskWay = await signIn(B, 'desk@test.local', deskTemp, { newPassword: 'Desk-own-2026' });
+  // Both laptops and the server settle on the same data.
+  const settled = await until(async () => {
+    await A.win.locator('.sync-badge').click().catch(() => {});
+    await sleep(800);
+    const a = snapshot(A.dataDir);
+    const b = snapshot(B.dataDir);
+    const diff = Object.keys(a).filter((t) => a[t] !== b[t]);
+    return diff.length === 0 && localState(A.dataDir, 'SELECT COUNT(*) FROM sync_outbox')[0][0] === 0 && localState(B.dataDir, 'SELECT COUNT(*) FROM sync_outbox')[0][0] === 0 && { a };
+  }, 60_000, 1000);
+  const x = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [X.id])).rows[0].data;
+  const y = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [Y.id])).rows[0].data;
+  const tmpLeft = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'invoices' AND data->>'number' LIKE 'TMP-%'")).rows[0].n);
+  const dupNumbers = Number((await pool.query("SELECT COUNT(*) - COUNT(DISTINCT data->>'number') d FROM rows WHERE tbl = 'invoices'")).rows[0].d);
+  const visit = (await pool.query("SELECT versions FROM rows WHERE tbl = 'visits' AND data->>'pet_id' = $1 ORDER BY seq DESC LIMIT 1", [pets[1].id])).rows[0];
+  const visitBy = visit ? String(visit.versions.pet_id).split('|')[2] : null;
+  const doctorTokenLeft = localState(B.dataDir, `SELECT COUNT(*) FROM sync_state WHERE key = 'token:${doctorId}'`)[0][0];
+  const overlapAdmin = (await notesFor('admin')).filter((n) => n.event === 'overlap').length;
+  const docToken = (await api('/api/login', { email: 'doctor@test.local', password: DOCTOR_PW, deviceId: 'test-phone-2' })).body.token;
+  const overlapDoctor = (await api('/api/notifications?limit=50', null, docToken)).body.items.filter((n) => n.event === 'overlap').length;
+  const tables = settled.v ? Object.keys(settled.v.a).length : 0;
+  check('offline-both', 'Both laptops work with no internet; after reconnecting they end with the same data (Phase 2 "done when")',
+    !!settled.v && x.phone === '01011112222' && x.address === 'Address typed on laptop B' && y.notes === 'Note from laptop B (later)' && tmpLeft === 0 && dupNumbers === 0 && tmpA.startsWith('TMP-') && tmpB.startsWith('TMP-'),
+    `${settled.v ? `laptops A and B identical in all ${tables} tables after ${Math.round(settled.ms / 1000)} s` : 'laptops still differ after 60 s'}; owner X: phone from A + address from B (both kept); owner Y notes: "${y.notes}" (the later edit); offline invoices ${tmpA} / ${tmpB} got real numbers, none left temporary, no duplicates`);
+  check('offline-author', 'Changes made offline go out under the person who made them, even if someone else signs in next',
+    kept > 0 && deskWay === 'changed' && visitBy === doctorId && Number(doctorTokenLeft) === 0,
+    `doctor signed out with ${kept} changes unsent; the receptionist signed in on that laptop; the doctor's visit reached the server as the doctor's (an Assistant may not record visits): ${visitBy === doctorId}; the doctor's sign-in on that laptop was ended after sending: ${Number(doctorTokenLeft) === 0}`);
+  check('offline-overlap', 'A double booking made on two laptops without internet is reported to both people after sync',
+    overlapAdmin >= 1 && overlapDoctor >= 1, `"Double booking" notices: admin ${overlapAdmin}, doctor ${overlapDoctor}`);
+});
+
+await step('phase2: one bad change', async () => {
+  // A note pasted with an invisible NUL character: Postgres refuses it. The other changes must still go in.
+  const ids = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  const mk = (id, name) => ({ tbl: 'owners', id, op: 'upsert', at: nowIso(), cols: { id, full_name: name, phone: '01099990000', status: 'ACTIVE', created_at: nowIso(), updated_at: nowIso() } });
+  const r = await api('/api/sync/push', { changes: [mk(ids[0], 'Good Owner 1'), mk(ids[1], 'Bad \u0000 Owner'), mk(ids[2], 'Good Owner 2')] }, tokens.admin);
+  const stored = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'owners' AND id = ANY($1)", [ids])).rows[0].n);
+  check('bad-change', 'One change the server cannot store no longer blocks the rest; it stays queued on the device',
+    r.status === 200 && r.body.failed?.length === 1 && r.body.failed[0].id === ids[1] && stored === 2,
+    `push answered ${r.status}; could not store: ${r.body.failed?.map((f) => f.id === ids[1] ? 'the NUL owner' : f.id).join(', ')}; stored: ${stored} of the 2 good ones`);
+});
+
+await step('phase2: device clock', async () => {
+  // A laptop whose clock is set to 2099 must not win every later edit.
+  const res = await fetch(`${SERVER}/health`);
+  const id = (await pool.query("SELECT id FROM rows WHERE tbl = 'owners' AND data->>'full_name' = 'Good Owner 1'")).rows[0].id;
+  await api('/api/sync/push', { changes: [{ tbl: 'owners', id, op: 'upsert', at: '2099-01-01T00:00:00.000Z', cols: { notes: 'from a laptop in 2099', updated_at: nowIso() } }] }, tokens.admin);
+  await sleep(100);
+  await api('/api/sync/push', { changes: [{ tbl: 'owners', id, op: 'upsert', at: new Date(Date.now() + 120_000).toISOString(), cols: { notes: 'a normal later edit', updated_at: nowIso() } }] }, tokens.admin);
+  const row = (await pool.query("SELECT data, versions FROM rows WHERE tbl = 'owners' AND id = $1", [id])).rows[0];
+  const pushRes = await fetch(`${SERVER}/api/notifications`, { headers: { Authorization: `Bearer ${tokens.admin}` } });
+  const serverTime = pushRes.headers.get('x-server-time');
+  check('clock', 'A device clock set in the future cannot win every edit; devices are told the server time to correct their own',
+    row.data.notes === 'a normal later edit' && !row.versions.notes.startsWith('2099') && !!serverTime && res.ok,
+    `stored edit time capped (${row.versions.notes.slice(0, 19)}), so the later edit won: "${row.data.notes}"; server time sent to devices: ${serverTime}`);
+});
+
+await step('phase2: web app offline', async () => {
+  // The phone/browser app opens with no connection and shows the records it already has.
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(SERVER);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForSelector('form button.signin');
+  await page.locator('input[type=email]').fill(ADMIN.email);
+  await page.locator('input[type=password]').fill(ADMIN.password);
+  await page.locator('form button.signin').click();
+  await page.waitForSelector('.searchbox', { timeout: 30_000 });
+  await sleep(1500);
+  await stopServer();
+  const t0 = Date.now();
+  await page.reload();
+  const ok = await page.waitForSelector('.searchbox', { timeout: 15_000 }).then(() => true).catch(() => false);
+  await page.evaluate(() => (location.hash = '#/owners'));
+  await sleep(500);
+  const n = await page.locator('tbody tr.link').count();
+  await page.screenshot({ path: path.join(out, 'web-offline.png') });
+  await browser.close();
+  await startServer();
+  check('web-offline', 'The phone / browser app opens without a connection and shows the clinic’s records', ok && n > 0,
+    ok ? `with the server unreachable the app reopened in ${Date.now() - t0} ms, signed in, ${n} owners listed` : 'did not open offline');
+});
+
+await step('phase2: sign in while offline', async () => {
+  // The Admin signs in on laptop A while the internet is down, works, and the app signs in to the server by itself later.
+  await stopServer();
+  await signOut(A);
+  const way = await signIn(A, ADMIN.email, ADMIN.password);
+  await go(A, '#/owners/new');
+  await A.win.getByLabel(/الاسم الكامل|Full name/).fill('Signed In Offline');
+  await A.win.getByLabel(/^\s*(الهاتف|Phone)\s*$/).fill('01090000009');
+  await A.win.locator('.actionbar .btn.primary').click();
+  await sleep(800);
+  const badgeOffline = (await A.win.locator('.sync-badge').innerText()).trim();
+  await startServer();
+  const r = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'owners' AND data->>'full_name' = 'Signed In Offline'")).rowCount === 1, 60_000, 500);
+  const synced = await until(async () => (await A.win.locator('.sync-badge.synced').count()) > 0, 20_000, 300);
+  check('offline-signin', 'Signing in with no internet works; the app signs in to the server by itself when it is back and sends the work',
+    way === 'in' && !!r.v && !!synced.v,
+    `signed in offline (badge: "${badgeOffline}"); the new owner reached the server ${r.v ? `${Math.round(r.ms / 1000)} s after it came back` : 'NOT within 60 s'}; laptop A synced again: ${!!synced.v}`);
 });
 
 await step('offline then back', async () => {
@@ -616,6 +800,6 @@ await pool.end();
 
 const failed = results.filter((r) => !r.pass);
 fs.writeFileSync(path.join(out, 'sync-test.json'), JSON.stringify(results, null, 2));
-fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync, notifications and Phase 5 test (Phases 1, 3 and 5)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
+fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync, offline, notifications and Phase 5 test (Phases 1, 2, 3 and 5)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
 console.log(`\n${results.length - failed.length}/${results.length} passed → ${out}`);
 process.exitCode = failed.length ? 1 : 0;

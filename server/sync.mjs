@@ -17,15 +17,43 @@ const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
  * Returns { rejected: [{tbl,id,reason}], reverts: RemoteRow[], seq } where reverts carry the server's
  * current version of every refused row so the device can undo its local edit.
  */
-export async function applyChanges(pool, { clinicId, user, deviceId, changes }) {
+export async function applyChanges(pool, { clinicId, user, deviceId, changes, seenSeq = null }) {
   return inTx(pool, async (c) => {
     const rejected = [];
     const reverts = [];
     const events = [];
     const conflicts = [];
+    // Changes the server could not store (e.g. text Postgres refuses): the rest of the batch still goes in, and
+    // the device keeps these queued instead of one bad change blocking everything behind it.
+    const failed = [];
     let lastSeq = 0;
+    let firstSeq = 0;
+    const now = Date.now();
     for (const ch of changes) {
       if (!ch || typeof ch.tbl !== 'string' || ch.id == null || !['upsert', 'delete'].includes(ch.op)) continue;
+      await c.query('SAVEPOINT one_change');
+      const eventsBefore = events.length;
+      const conflictsBefore = conflicts.length;
+      try {
+        const seq = await applyOne(c, ch);
+        if (seq) {
+          lastSeq = seq;
+          firstSeq ||= seq;
+        }
+        await c.query('RELEASE SAVEPOINT one_change');
+      } catch (e) {
+        await c.query('ROLLBACK TO SAVEPOINT one_change');
+        events.length = eventsBefore;
+        conflicts.length = conflictsBefore;
+        failed.push({ tbl: ch.tbl, id: String(ch.id), error: String(e.message).slice(0, 200) });
+        console.warn('push: could not store', ch.tbl, ch.id, e.message);
+      }
+    }
+    const notifications = events.length || conflicts.length ? await createNotifications(c, clinicId, user, events, conflicts, { seenSeq, firstSeq }) : [];
+    return { rejected, reverts, failed, seq: lastSeq, notifications };
+
+    /** One change; returns its new server sequence number, or 0 if refused. */
+    async function applyOne(c, ch) {
       const id = String(ch.id);
       const cols = ch.cols && typeof ch.cols === 'object' ? ch.cols : {};
       const cur = (await c.query('SELECT data, versions, deleted, seq FROM rows WHERE clinic_id = $1 AND tbl = $2 AND id = $3 FOR UPDATE', [clinicId, ch.tbl, id])).rows[0];
@@ -38,9 +66,11 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes }) 
       if (reason) {
         rejected.push({ tbl: ch.tbl, id, reason });
         reverts.push({ tbl: ch.tbl, id, data: before, deleted: !before, seq: cur?.seq ?? 0 });
-        continue;
+        return 0;
       }
-      const at = typeof ch.at === 'string' ? ch.at : new Date().toISOString();
+      // An edit time from the future (a device clock set wrong) would win every later edit: cap it at now.
+      const atMs = typeof ch.at === 'string' ? Date.parse(ch.at) : NaN;
+      const at = new Date(Number.isFinite(atMs) ? Math.min(atMs, now + 60_000) : now).toISOString();
       const mine = stamp(at, deviceId, user.id);
       const base = ch.base && typeof ch.base === 'object' ? ch.base : null;
       const data = { ...(cur?.data ?? {}) };
@@ -79,11 +109,9 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes }) 
          ON CONFLICT (clinic_id, tbl, id) DO UPDATE SET data = EXCLUDED.data, versions = EXCLUDED.versions, deleted = EXCLUDED.deleted, seq = EXCLUDED.seq`,
         [clinicId, ch.tbl, id, data, versions, deleted, seq],
       );
-      lastSeq = Number(seq);
       if (NOTIFY_TABLES.has(ch.tbl) && ch.op === 'upsert') events.push({ tbl: ch.tbl, id, isNew: !before, before, after: data, cols });
+      return Number(seq);
     }
-    const notifications = events.length || conflicts.length ? await createNotifications(c, clinicId, user, events, conflicts) : [];
-    return { rejected, reverts, seq: lastSeq, notifications };
   });
 }
 

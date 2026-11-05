@@ -14,7 +14,7 @@ export function SyncBadge() {
             : s.state === 'error' ? t('sync.error', { e: s.error ?? '' })
               : t('sync.off');
   return (
-    <button type="button" className={`sync-badge linkbtn ${s.state}`} onClick={() => void syncNow()} title={clinicName() ?? ''}>
+    <button type="button" className={`sync-badge linkbtn ${s.state}`} onClick={() => void syncNow()} title={[clinicName(), s.waitingFor.length ? t('sync.waitingFor', { names: s.waitingFor.join(', ') }) : ''].filter(Boolean).join('\n')}>
       <span className="dot" aria-hidden="true" />
       <span>{label}{s.pending > 0 && s.state !== 'syncing' ? ` · ${t('sync.waiting', { n: s.pending })}` : ''}</span>
     </button>
@@ -40,6 +40,7 @@ export function SyncPanel() {
             <div><span>{t('common.status')}</span><b>{s.pending > 0 ? t('sync.waiting', { n: s.pending }) : <SyncBadge />}</b></div>
           </div>
           {s.rejected > 0 && s.error && <p className="note warn" style={{ marginTop: 10 }}>{t('sync.rejected', { e: s.error })}</p>}
+          {s.waitingFor.length > 0 && <p className="note warn" style={{ marginTop: 10 }}>{t('sync.waitingFor', { names: s.waitingFor.join(', ') })}</p>}
           <div className="row" style={{ marginTop: 10 }}>
             <button className="btn" onClick={() => void syncNow()}>{t('sync.now')}</button>
           </div>
