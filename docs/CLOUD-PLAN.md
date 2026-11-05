@@ -1,8 +1,9 @@
 # Cloud plan — shared, live, offline-capable
 
-Status, 4 Nov 2026:
-- **Phase 1 built and tested locally.** `scripts/sync-test.mjs` passes 11/11 against Postgres 16 with two desktop apps; results are in `docs/acceptance/SYNC-TEST.md`.
-- **Next:** Railway Stage 2 (`docs/RAILWAY-SETUP.md`), then Phases 2–4.
+Status, 5 Nov 2026:
+- **Phase 1 live** at `https://animal-care-clinic-production.up.railway.app`; the first laptop syncs.
+- **Phase 3 (notifications) built and tested locally.** `scripts/sync-test.mjs` passes 18/18 against Postgres 16 with two desktop apps and a fake phone push service; results are in `docs/acceptance/SYNC-TEST.md`.
+- **Next:** Phase 2 (offline robustness), Phase 4, then Phase 5.
 - Open points are at the end.
 
 ## What Ahmed asked for
@@ -92,7 +93,17 @@ Notifications reach people even when the app is closed:
 | Laptop or phone switched off or asleep | — | Nothing can arrive. Notifications wait on the server and show at the next sync, newest first |
 
 - **Bell:** a list in the header ("Reception booked Max for Thu 10:00"); read/unread is kept per user and synced.
-- **Triggers:** someone else books, moves, cancels or marks no-show an appointment; a visit is recorded for a pet with an appointment today; a payment is recorded; something you edited was overwritten. Each user can turn kinds off in their profile.
+- **Triggers:** someone else books, moves, cancels or marks no-show an appointment; a visit is recorded for a pet with an appointment today; a payment is recorded; something you edited was overwritten. Each user can turn kinds off in the bell panel.
+
+How Phase 3 is built:
+
+| Piece | File | Notes |
+|---|---|---|
+| What becomes a notification | `server/notify.mjs` | Runs inside the same transaction as the accepted changes (`server/sync.mjs`). Never to the person who did it. Stored per user in `notifications`; text in the reader's language. |
+| Delivery | `server/index.mjs` | A WebSocket ping to that user's open apps (bell + toast within a second), and Web Push (VAPID keys made once and kept in `server_meta`) to their browsers/phones. Dead push subscriptions (404/410) are dropped. |
+| Bell | `src/components/Notifications.tsx`, `src/sync/notify.ts` | Unread count, list, mark read, per-kind on/off (`users.notify_off`, schema v3; the server lets each person change only that on their own row). |
+| Desktop tray | `electron/main.cjs` | Closing the window hides it to the tray; "Quit" in the tray menu stops it. Starts with Windows/Mac, hidden (installed app only). A system notification opens the right screen. On by default; switch in the bell panel. A linked laptop stays signed in across restarts so it can notify straight after start-up. |
+| Phone / browser | `public-cloud/sw.js`, `manifest.webmanifest` | Service worker for push while the app is closed; installable web app. |
 - **Wording:** in the reader's language (AR/EN), with the pet and owner name, and who did it.
 
 ## How Phase 1 is built
@@ -108,7 +119,6 @@ Notifications reach people even when the app is closed:
 
 Known limits, handled in later phases:
 - File bytes (X-rays, lab PDFs) stay on the laptop that added them until Phase 4.
-- Notifications and the tray come in Phase 3.
 - A laptop's clock decides which of two edits to the same field wins. Windows/Mac keep clocks in sync over the internet, which is enough for one clinic.
 
 ## Server (Railway)

@@ -48,6 +48,13 @@ function Boot() {
   );
 }
 
+// Cloud build: service worker for push notifications while the app is closed (public-cloud/sw.js).
+if (__CLOUD__ && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {
+    /* no push on this browser */
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Boot />

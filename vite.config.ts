@@ -16,9 +16,20 @@ const csp: Plugin = {
 };
 
 // Cloud build (--mode cloud): the web app the clinic server serves at its own address (phone, browser).
+// It is installable (manifest) and has a service worker for push notifications (public-cloud/).
+const cloudHead: Plugin = {
+  name: 'cloud-head',
+  transformIndexHtml(html) {
+    return html.replace(
+      '</head>',
+      '  <link rel="manifest" href="/manifest.webmanifest" />\n    <meta name="theme-color" content="#2e6f73" />\n    <link rel="apple-touch-icon" href="/icon-192.png" />\n  </head>',
+    );
+  },
+};
 export default defineConfig(({ mode }) => ({
+  publicDir: mode === 'cloud' ? 'public-cloud' : false,
   base: mode === 'cloud' ? '/' : './',
-  plugins: mode === 'web' ? [react(), viteSingleFile()] : mode === 'cloud' ? [react()] : [react(), csp],
+  plugins: mode === 'web' ? [react(), viteSingleFile()] : mode === 'cloud' ? [react(), cloudHead] : [react(), csp],
   define: { __WEB_DEMO__: JSON.stringify(mode === 'web'), __CLOUD__: JSON.stringify(mode === 'cloud') },
   build: {
     outDir: mode === 'web' ? 'dist-web' : mode === 'cloud' ? 'dist-cloud' : 'dist',

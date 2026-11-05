@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   openExternal: (url) => ipcRenderer.invoke('shell:external', url),
   showDataFolder: () => ipcRenderer.invoke('shell:showData'),
   backupNow: (label) => ipcRenderer.invoke('db:backupNow', label),
+  showWindow: () => ipcRenderer.invoke('app:showWindow'),
+  isForeground: () => ipcRenderer.invoke('app:isForeground'),
+  getBackground: () => ipcRenderer.invoke('app:getBackground'),
+  setBackground: (on) => ipcRenderer.invoke('app:setBackground', !!on),
   print: () => ipcRenderer.invoke('app:print'),
   // Automatic updates (electron/updater.cjs)
   updateGet: () => ipcRenderer.invoke('update:get'),

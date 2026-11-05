@@ -58,7 +58,7 @@ WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in 
 Scope sign-off 8 Nov · Prototype 13 Nov · Data sheet 22 Nov · Handover 29 Nov 2026 · Fix window to 29 Dec.
 
 ## Open items (fill in, then delete this section)
-- [ ] Cloud move: plan in `docs/CLOUD-PLAN.md` (local-first sync via Railway on Ahmed's account, offline, roles Admin/Doctor/Assistant, notifications incl. app closed, `clinic_id` for later clinics). Railway steps in `docs/RAILWAY-SETUP.md`. **Phase 1 live (5 Nov 2026):** server at `https://animal-care-clinic-production.up.railway.app` (Ahmed's Railway, EU West, Hobby), first laptop connected and synced. Next: Phases 2–4 + the 'Still open' answers
+- [ ] Cloud move: plan in `docs/CLOUD-PLAN.md` (local-first sync via Railway on Ahmed's account, offline, roles Admin/Doctor/Assistant, notifications incl. app closed, `clinic_id` for later clinics). Railway steps in `docs/RAILWAY-SETUP.md`. **Phase 1 live (5 Nov 2026):** server at `https://animal-care-clinic-production.up.railway.app` (Ahmed's Railway, EU West, Hobby), first laptop connected and synced. **Phase 3 (notifications: bell, tray, Web Push) built**, `server/notify.mjs` + `src/sync/notify.ts`. Next: Phases 2, 4, 5 + the 'Still open' answers
 - [x] Clinic name, logo (`src/assets/clinic-logo.png`), phone 01227007428, Giza — seeded in `src/db/seed.ts` (`CLINIC`)
 - [ ] Confirm: brand colour = logo teal `#2e6f73`; WhatsApp number = phone; full street address; Arabic clinic name
 - [ ] Confirm spelling: logo says "Dr. Waleed ElBoargi", scope says "El-Bourgy"; Arabic spelling used in the how-to is "وليد البرجي"

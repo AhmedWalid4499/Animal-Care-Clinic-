@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -25,6 +25,7 @@ CREATE TABLE users (
   role TEXT NOT NULL CHECK (role IN ('ADMIN','DOCTOR','ASSISTANT')),
   locale TEXT NOT NULL DEFAULT 'ar' CHECK (locale IN ('ar','en')),
   is_active INTEGER NOT NULL DEFAULT 1,
+  notify_off TEXT,
   ${ts}
 );
 
@@ -258,6 +259,8 @@ export const MIGRATIONS: Record<number, string> = {
     );
     CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT);
   `,
+  // v3 (5 Nov 2026): per-user notification choices — comma-separated kinds the user turned off.
+  3: `ALTER TABLE users ADD COLUMN notify_off TEXT;`,
 };
 
 /** Tables included in the one-click export, in dependency order. */

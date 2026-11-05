@@ -1,7 +1,7 @@
 // Electron main process — Animal Care Clinic desktop app (Windows and macOS, same code).
 // Owns the disk: the SQLite database file, daily backups, file save/open dialogs.
 // The renderer (React) never touches Node; it talks to this file through electron/preload.cjs.
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, Notification } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -49,6 +49,64 @@ function isExternal(url) {
   return /^(https?:|mailto:|tel:|whatsapp:)/i.test(url);
 }
 
+// ---- background mode: keep running in the tray so notifications keep coming (docs/CLOUD-PLAN.md, Phase 3)
+const ICON = path.join(__dirname, '..', 'build', 'icon.png');
+const settingsFile = () => path.join(app.getPath('userData'), 'desktop-settings.json');
+function readSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(settingsFile(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+function writeSettings(patch) {
+  const next = { ...readSettings(), ...patch };
+  fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
+  fs.writeFileSync(settingsFile(), JSON.stringify(next));
+}
+let background = false; // set when the app is ready (needs userData)
+let quitting = false;
+let tray = null;
+let mainWin = null;
+const startHidden = process.argv.includes('--hidden');
+app.on('before-quit', () => {
+  quitting = true;
+});
+function showMain() {
+  if (!mainWin) return;
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.show();
+  mainWin.focus();
+}
+function applyLoginItem() {
+  // Start with Windows / macOS (hidden, straight to the tray). Only for the installed app.
+  if (!app.isPackaged || process.platform === 'linux' || process.env.PORTABLE_EXECUTABLE_DIR) return;
+  app.setLoginItemSettings({ openAtLogin: background, openAsHidden: true, args: ['--hidden'] });
+}
+function syncTray() {
+  if (!background) {
+    tray?.destroy();
+    tray = null;
+    return;
+  }
+  if (tray) return;
+  tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
+  tray.setToolTip('Animal Care Clinic');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Animal Care Clinic · فتح', click: showMain },
+    { type: 'separator' },
+    { label: 'Quit · خروج', click: () => { quitting = true; app.quit(); } },
+  ]));
+  tray.on('click', showMain);
+}
+function hideToTray(win) {
+  win.hide();
+  if (!readSettings().hideNoticeShown && Notification.isSupported()) {
+    new Notification({ title: 'Animal Care Clinic', body: 'Still running in the tray; notifications keep coming. · يعمل في الخلفية وتستمر الإشعارات.' }).show();
+    writeSettings({ hideNoticeShown: true });
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1320,
@@ -58,7 +116,7 @@ function createWindow() {
     title: 'Animal Care Clinic',
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
-    show: !isSmoke,
+    show: !isSmoke && !startHidden,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -78,6 +136,13 @@ function createWindow() {
     if (!url.startsWith('file://')) {
       e.preventDefault();
       if (isExternal(url)) shell.openExternal(url);
+    }
+  });
+
+  win.on('close', (e) => {
+    if (!quitting && background) {
+      e.preventDefault();
+      hideToTray(win);
     }
   });
 
@@ -106,6 +171,17 @@ ipcMain.handle('db:backupNow', (_e, label) => {
   const target = path.join(backupDir, `clinic-${safe}-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`);
   fs.copyFileSync(dbPath, target);
   return target;
+});
+
+ipcMain.handle('app:showWindow', () => showMain());
+ipcMain.handle('app:isForeground', () => !!mainWin && mainWin.isVisible() && !mainWin.isMinimized() && mainWin.isFocused());
+ipcMain.handle('app:getBackground', () => background);
+ipcMain.handle('app:setBackground', (_e, on) => {
+  background = !!on;
+  writeSettings({ background });
+  syncTray();
+  applyLoginItem();
+  return background;
 });
 
 ipcMain.handle('db:load', () => (fs.existsSync(dbPath) ? fs.readFileSync(dbPath) : null));
@@ -195,7 +271,12 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
     updater.init({ dataDir, dbPath, backupDir, noAutoCheck: isSmoke });
     // Windows: no menu bar. macOS always shows one, and without it ⌘C/⌘V/⌘Z/⌘A/⌘Q stop working.
     Menu.setApplicationMenu(isMac ? Menu.buildFromTemplate(macMenu()) : null);
+    if (process.platform === 'win32') app.setAppUserModelId('com.animalcareclinic.tracker'); // needed for Windows notifications
+    background = !isSmoke && process.env.CLINIC_BACKGROUND !== '0' && (readSettings().background ?? true);
     const win = createWindow();
+    mainWin = win;
+    syncTray();
+    applyLoginItem();
     if (isSmoke) {
       // CI check: load the UI, wait for the login screen, exit 0.
       win.webContents.once('did-finish-load', () => {
@@ -208,12 +289,7 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
       });
     }
   });
-  app.on('second-instance', () => {
-    const [w] = BrowserWindow.getAllWindows();
-    if (w) {
-      if (w.isMinimized()) w.restore();
-      w.focus();
-    }
-  });
+  app.on('second-instance', () => showMain());
+  app.on('activate', () => showMain()); // macOS: Dock icon click brings the hidden window back
   app.on('window-all-closed', () => app.quit());
 }

@@ -7,7 +7,8 @@ import { SYNC_TABLES } from '../db/schema';
 export type SyncRow = Record<string, unknown>;
 export interface OutboxEntry { seq: number; tbl: string; row_id: string; op: 'upsert' | 'delete'; old_row: string | null; new_row: string | null; at: string }
 /** One change as sent to the server: only the columns that changed (all of them for a new row). */
-export interface Change { tbl: string; id: string; op: 'upsert' | 'delete'; cols: SyncRow; at: string }
+/** base = the values this device saw before its edit, so the server can tell a real conflict from a later edit. */
+export interface Change { tbl: string; id: string; op: 'upsert' | 'delete'; cols: SyncRow; base?: SyncRow; at: string }
 /** One row as the server sends it back. */
 export interface RemoteRow { tbl: string; id: string; data: SyncRow | null; deleted: boolean; seq: number }
 
@@ -68,8 +69,14 @@ export function pendingChanges(limit = 500): { changes: Change[]; lastSeq: numbe
     const next = JSON.parse(r.new_row ?? '{}') as SyncRow;
     const prev = r.old_row ? (JSON.parse(r.old_row) as SyncRow) : null;
     const cols: SyncRow = {};
-    for (const [k, v] of Object.entries(next)) if (!prev || prev[k] !== v) cols[k] = v;
-    if (Object.keys(cols).length) changes.push({ tbl: r.tbl, id: r.row_id, op: 'upsert', cols, at: r.at });
+    const base: SyncRow = {};
+    for (const [k, v] of Object.entries(next)) {
+      if (!prev || prev[k] !== v) {
+        cols[k] = v;
+        if (prev) base[k] = prev[k];
+      }
+    }
+    if (Object.keys(cols).length) changes.push({ tbl: r.tbl, id: r.row_id, op: 'upsert', cols, ...(prev ? { base } : {}), at: r.at });
   }
   return { changes, lastSeq: rows.length ? rows[rows.length - 1].seq : 0 };
 }
