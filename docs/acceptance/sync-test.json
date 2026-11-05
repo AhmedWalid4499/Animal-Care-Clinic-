@@ -21,13 +21,13 @@
     "id": "live-ab",
     "criterion": "A change on one laptop appears on the other within 2 s",
     "pass": true,
-    "evidence": "new owner visible on laptop B after 558 ms"
+    "evidence": "new owner visible on laptop B after 592 ms"
   },
   {
     "id": "live-ba",
     "criterion": "And back the other way",
     "pass": true,
-    "evidence": "visible on laptop A after 557 ms"
+    "evidence": "visible on laptop A after 570 ms"
   },
   {
     "id": "users",
@@ -63,19 +63,19 @@
     "id": "notify-live",
     "criterion": "An assistant books an appointment: the doctor and the admin are notified at once, the assistant is not",
     "pass": true,
-    "evidence": "doctor's bell after 94 ms: \"Reception حجز موعداً لـ Max (Mona Hassan) يوم الجمعة، 6 نوفمبر 11:00 ص\"; admin's bell: yes; assistant notified about own booking: 0"
+    "evidence": "doctor's bell after 169 ms: \"Reception حجز موعداً لـ Kiwi (Omar Farouk) يوم الجمعة، 6 نوفمبر 12:00 م\"; admin's bell: yes; assistant notified about own booking: 0"
   },
   {
     "id": "notify-push",
     "criterion": "The same booking is pushed to the doctor’s phone even with the app closed (encrypted, signed); dead phones are forgotten",
     "pass": true,
-    "evidence": "push decrypted on the \"phone\": موعد — \"Reception حجز موعداً لـ Max (Mona Hassan) يوم الجمعة، 6 نوفمبر، 1:00 م\" → /#/appointments?view=day&date=2026-11-06&open=354240e6-792a-4fb6-96cb-160f3053d241; signed: true; uninstalled phone removed: yes"
+    "evidence": "push decrypted on the \"phone\": موعد — \"Reception حجز موعداً لـ Kiwi (Omar Farouk) يوم الجمعة، 6 نوفمبر، 2:00 م\" → /#/appointments?view=day&date=2026-11-06&open=12e85df4-45f5-4363-b091-841198729bd2; signed: true; uninstalled phone removed: yes"
   },
   {
     "id": "notify-tray",
     "criterion": "Closing the window keeps the app in the tray; a change still raises a system notification that opens the appointment",
     "pass": true,
-    "evidence": "after X: 1 window, visible=false; system notification: موعد — \"Reception غيّر موعد Max إلى الجمعة، 6 نوفمبر 12:00 م\"; clicked → window visible=true, #/appointments?view=day&date=2026-11-06, appointment open: true"
+    "evidence": "after X: 1 window, visible=false; system notification: موعد — \"Reception غيّر موعد Kiwi إلى الجمعة، 6 نوفمبر 1:00 م\"; clicked → window visible=true, #/appointments?view=day&date=2026-11-06, appointment open: true"
   },
   {
     "id": "notify-conflict",
@@ -93,7 +93,7 @@
     "id": "notify-visit",
     "criterion": "A visit recorded for a pet booked today tells the front desk; other visits do not",
     "pass": true,
-    "evidence": "assistant notified about visits for: Max (booked today: Max, walk-in: Bella)"
+    "evidence": "assistant notified about visits for: Max (booked today: Max, walk-in: بندق)"
   },
   {
     "id": "notify-read",
@@ -111,19 +111,19 @@
     "id": "password-reset",
     "criterion": "The Admin resets a password: the old one stops working, the person is signed out everywhere and must choose a new one",
     "pass": true,
-    "evidence": "temporary password d2md-duq2; old session signed out: true; old password → 401; temporary password → 200, must choose a new one: 1"
+    "evidence": "temporary password z4uv-e49d; old session signed out: true; old password → 401; temporary password → 200, must choose a new one: 1"
   },
   {
     "id": "devices-10",
     "criterion": "Ten more devices sync the same records at once, and all appear in Settings → Devices",
     "pass": true,
-    "evidence": "each of the 10 devices sees 10/10/10/10/10/10/10/10/10/10 of the 10 new owners (99 ms for all pushes and pulls); laptop A shows them: true; devices listed: 16"
+    "evidence": "each of the 10 devices sees 10/10/10/10/10/10/10/10/10/10 of the 10 new owners (123 ms for all pushes and pulls); laptop A shows them: true; devices listed: 16"
   },
   {
     "id": "device-revoke",
     "criterion": "The Admin signs out a lost laptop: it goes back to the sign-in screen at once and needs the password again",
     "pass": true,
-    "evidence": "laptop B back at sign-in after 196 ms with \"سجّل المدير خروج هذا الجهاز. سجّل الدخول مرة أخرى.\"; signed in again with the password: true"
+    "evidence": "laptop B back at sign-in after 233 ms with \"سجّل المدير خروج هذا الجهاز. سجّل الدخول مرة أخرى.\"; signed in again with the password: true"
   },
   {
     "id": "offline",
@@ -136,5 +136,11 @@
     "criterion": "After restarting, the laptop is still signed in to its clinic server and keeps everyone’s records",
     "pass": true,
     "evidence": "signed in again automatically as Admin, synced; owners: 18; after Sign out the sign-in screen shows server 127.0.0.1:8788"
+  },
+  {
+    "id": "admin-recovery",
+    "criterion": "A lost Admin password can be reset once from Railway; the Admin must then choose a new one",
+    "pass": true,
+    "evidence": "old password → 401, old sessions signed out (401); reset password (email typed in capitals with spaces) → 200, must choose a new one: 1; new password after another restart → 200; reset password used again → 401"
   }
 ]

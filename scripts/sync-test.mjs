@@ -79,8 +79,8 @@ const pushService = https.createServer({ key: fs.readFileSync(path.join(certDir,
 });
 await new Promise((r) => pushService.listen(PUSH_PORT, '127.0.0.1', r));
 let server = null;
-function startServer() {
-  server = spawn(process.execPath, ['server/index.mjs'], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem') }, stdio: ['ignore', 'pipe', 'pipe'] });
+function startServer(extraEnv = {}) {
+  server = spawn(process.execPath, ['server/index.mjs'], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   server.stderr.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   return until(async () => (await fetch(`${SERVER}/health`)).ok, 15_000);
@@ -585,6 +585,28 @@ await step('restart keeps sync', async () => {
   check('restart', 'After restarting, the laptop is still signed in to its clinic server and keeps everyone’s records', host.includes('127.0.0.1') && n >= 8 && !!synced.v && who.length > 0,
     `signed in again automatically as ${who}, ${synced.v ? 'synced' : 'not synced'}; owners: ${n}; after Sign out the sign-in screen shows server ${host}`);
   await A2.close();
+});
+
+await step('admin password recovery', async () => {
+  // The Admin lost their password: ADMIN_RESET_PASSWORD in Railway, restart.
+  const RESET = 'Recovery-2026x';
+  await stopServer();
+  await startServer({ ADMIN_RESET_PASSWORD: RESET });
+  const oldPw = (await api('/api/login', { ...ADMIN, deviceId: 'rec-1' })).status;
+  const oldSession = (await api('/api/notifications', null, tokens.admin)).status;
+  const withReset = await api('/api/login', { email: `  ${ADMIN.email.toUpperCase()} `, password: RESET, deviceId: 'rec-1' });
+  // The Admin chooses a new password (what the app does on the "Choose your password" screen).
+  const bcrypt = require('bcryptjs');
+  const at = nowIso();
+  const own = (await api('/api/sync/push', { changes: [{ tbl: 'users', id: withReset.body.user.id, op: 'upsert', at, cols: { password_hash: bcrypt.hashSync('Admin-own-2026', 10), must_change_password: 0, updated_at: at } }] }, withReset.body.token)).body;
+  // A later restart with the variable still set must not reset it again.
+  await stopServer();
+  await startServer({ ADMIN_RESET_PASSWORD: RESET });
+  const after = (await api('/api/login', { email: ADMIN.email, password: 'Admin-own-2026', deviceId: 'rec-2' })).status;
+  const resetAgain = (await api('/api/login', { email: ADMIN.email, password: RESET, deviceId: 'rec-2' })).status;
+  check('admin-recovery', 'A lost Admin password can be reset once from Railway; the Admin must then choose a new one',
+    oldPw === 401 && oldSession === 401 && withReset.status === 200 && Number(withReset.body.user?.must_change_password) === 1 && own.rejected?.length === 0 && after === 200 && resetAgain === 401,
+    `old password → ${oldPw}, old sessions signed out (${oldSession}); reset password (email typed in capitals with spaces) → ${withReset.status}, must choose a new one: ${withReset.body.user?.must_change_password}; new password after another restart → ${after}; reset password used again → ${resetAgain}`);
 });
 
 await B.app.close().catch(() => {});

@@ -56,6 +56,18 @@ The desktop app needs version 0.1.6 or later, which installs itself through auto
    - Its old local records are saved first as a backup file in its data folder.
 4. **Check it works.** The sidebar shows a green dot with **Synced** and the time. Add something on one laptop, and it appears on the others within a second or two.
 
+## Can't sign in?
+
+- **The test logins** (`waleed@clinic.local` / `vet12345`, `assistant@clinic.local` / `assist123`) only work on a laptop that is not connected to the clinic server. The server switches them off when the first laptop connects.
+- **"Too many attempts. Wait a few minutes."** After 10 wrong passwords in 5 minutes from the clinic's internet address, sign-in is refused, even with the right password. Wait 5 minutes.
+- **Admin password lost** (or the one in Railway no longer works because it was changed in the app):
+  1. Railway → app service → **Variables** → **New Variable**: `ADMIN_RESET_PASSWORD` = a new temporary password, at least 8 characters. Check that `ADMIN_EMAIL` is your email.
+  2. Railway redeploys by itself. Wait until the deployment shows **Active**.
+  3. Sign in with `ADMIN_EMAIL` and that temporary password. The app asks you to choose your own password.
+  4. Delete `ADMIN_RESET_PASSWORD` from the variables. It works only once per value: a later restart doesn't reset the password again.
+
+  The reset also makes that account an active Admin again, and signs it out on every other device.
+
 ## Backups
 
 | Layer | Where | Plan needed |
