@@ -21,13 +21,13 @@
     "id": "live-ab",
     "criterion": "A change on one laptop appears on the other within 2 s",
     "pass": true,
-    "evidence": "new owner visible on laptop B after 579 ms"
+    "evidence": "new owner visible on laptop B after 570 ms"
   },
   {
     "id": "live-ba",
     "criterion": "And back the other way",
     "pass": true,
-    "evidence": "visible on laptop A after 557 ms"
+    "evidence": "visible on laptop A after 573 ms"
   },
   {
     "id": "users",
@@ -63,19 +63,19 @@
     "id": "notify-live",
     "criterion": "An assistant books an appointment: the doctor and the admin are notified at once, the assistant is not",
     "pass": true,
-    "evidence": "doctor's bell after 105 ms: \"Reception حجز موعداً لـ Rocky (Karim Adel) يوم الجمعة، 6 نوفمبر 1:00 م\"; admin's bell: yes; assistant notified about own booking: 0"
+    "evidence": "doctor's bell after 162 ms: \"Reception حجز موعداً لـ Kiwi (Omar Farouk) يوم الجمعة، 6 نوفمبر 1:00 م\"; admin's bell: yes; assistant notified about own booking: 0"
   },
   {
     "id": "notify-push",
     "criterion": "The same booking is pushed to the doctor’s phone even with the app closed (encrypted, signed); dead phones are forgotten",
     "pass": true,
-    "evidence": "push decrypted on the \"phone\": موعد — \"Reception حجز موعداً لـ Rocky (Karim Adel) يوم الجمعة، 6 نوفمبر، 3:00 م\" → /#/appointments?view=day&date=2026-11-06&open=a80f3d35-3575-466b-b05e-4cf4cb3b04e6; signed: true; uninstalled phone removed: yes"
+    "evidence": "push decrypted on the \"phone\": موعد — \"Reception حجز موعداً لـ Kiwi (Omar Farouk) يوم الجمعة، 6 نوفمبر، 3:00 م\" → /#/appointments?view=day&date=2026-11-06&open=1ae1ac88-72c0-4673-96ea-7c0e3ead0fd9; signed: true; uninstalled phone removed: yes"
   },
   {
     "id": "notify-tray",
     "criterion": "Closing the window keeps the app in the tray; a change still raises a system notification that opens the appointment",
     "pass": true,
-    "evidence": "after X: 1 window, visible=false; system notification: موعد — \"Reception غيّر موعد Rocky إلى الجمعة، 6 نوفمبر 2:00 م\"; clicked → window visible=true, #/appointments?view=day&date=2026-11-06, appointment open: true"
+    "evidence": "after X: 1 window, visible=false; system notification: موعد — \"Reception غيّر موعد Kiwi إلى الجمعة، 6 نوفمبر 2:00 م\"; clicked → window visible=true, #/appointments?view=day&date=2026-11-06, appointment open: true"
   },
   {
     "id": "notify-conflict",
@@ -93,7 +93,7 @@
     "id": "notify-visit",
     "criterion": "A visit recorded for a pet booked today tells the front desk; other visits do not",
     "pass": true,
-    "evidence": "assistant notified about visits for: Bella (booked today: Bella, walk-in: Max)"
+    "evidence": "assistant notified about visits for: بندق (booked today: بندق, walk-in: Max)"
   },
   {
     "id": "notify-read",
@@ -111,25 +111,25 @@
     "id": "password-reset",
     "criterion": "The Admin resets a password: the old one stops working, the person is signed out everywhere and must choose a new one",
     "pass": true,
-    "evidence": "temporary password jwqb-498u; old session signed out: true; old password → 401; temporary password → 200, must choose a new one: 1"
+    "evidence": "temporary password qdy3-xzvw; old session signed out: true; old password → 401; temporary password → 200, must choose a new one: 1"
   },
   {
     "id": "devices-10",
     "criterion": "Ten more devices sync the same records at once, and all appear in Settings → Devices",
     "pass": true,
-    "evidence": "each of the 10 devices sees 10/10/10/10/10/10/10/10/10/10 of the 10 new owners (101 ms for all pushes and pulls); laptop A shows them: true; devices listed: 16"
+    "evidence": "each of the 10 devices sees 10/10/10/10/10/10/10/10/10/10 of the 10 new owners (97 ms for all pushes and pulls); laptop A shows them: true; devices listed: 16"
   },
   {
     "id": "device-revoke",
     "criterion": "The Admin signs out a lost laptop: it goes back to the sign-in screen at once and needs the password again",
     "pass": true,
-    "evidence": "laptop B back at sign-in after 240 ms with \"سجّل المدير خروج هذا الجهاز. سجّل الدخول مرة أخرى.\"; signed in again with the password: true"
+    "evidence": "laptop B back at sign-in after 230 ms with \"سجّل المدير خروج هذا الجهاز. سجّل الدخول مرة أخرى.\"; signed in again with the password: true"
   },
   {
     "id": "offline-both",
     "criterion": "Both laptops work with no internet; after reconnecting they end with the same data (Phase 2 \"done when\")",
     "pass": true,
-    "evidence": "laptops A and B identical in all 13 tables after 3 s; owner X: phone from A + address from B (both kept); owner Y notes: \"Note from laptop B (later)\" (the later edit); offline invoices TMP-78f0-MW3K3LHX / TMP-e2c8-MW3K3LTN got real numbers, none left temporary, no duplicates"
+    "evidence": "laptops A and B identical in all 13 tables after 3 s; owner X: phone from A + address from B (both kept); owner Y notes: \"Note from laptop B (later)\" (the later edit); offline invoices TMP-294e-MW3KSN21 / TMP-118b-MW3KSNDN got real numbers, none left temporary, no duplicates"
   },
   {
     "id": "offline-author",
@@ -153,13 +153,37 @@
     "id": "clock",
     "criterion": "A device clock set in the future cannot win every edit; devices are told the server time to correct their own",
     "pass": true,
-    "evidence": "stored edit time capped (2026-11-05T13:04:31), so the later edit won: \"a normal later edit\"; server time sent to devices: 2026-11-05T13:03:31.204Z"
+    "evidence": "stored edit time capped (2026-11-05T13:23:59), so the later edit won: \"a normal later edit\"; server time sent to devices: 2026-11-05T13:22:59.286Z"
   },
   {
     "id": "web-offline",
     "criterion": "The phone / browser app opens without a connection and shows the clinic’s records",
     "pass": true,
-    "evidence": "with the server unreachable the app reopened in 1533 ms, signed in, 19 owners listed"
+    "evidence": "with the server unreachable the app reopened in 1323 ms, signed in, 19 owners listed"
+  },
+  {
+    "id": "files",
+    "criterion": "A file added on one laptop is kept on the server’s volume and opens on the other laptop (also offline)",
+    "pass": true,
+    "evidence": "300 KB X-ray from laptop A: on the server volume, same bytes: true; downloaded on laptop B in the background: true; opened on B, same bytes: true"
+  },
+  {
+    "id": "backup",
+    "criterion": "The nightly backup copies every record off-site (and the files once), keeps one on the volume, and the Admin can download one",
+    "pass": true,
+    "evidence": "backup of 2026-11-05: 202 of 202 records in the off-site bucket (signed requests), the X-ray copied too: true; volume copies: db-2026-11-05.json.gz; Admin download holds 202 records; an Assistant asking for a backup → 403"
+  },
+  {
+    "id": "restore",
+    "criterion": "Restore tested (SCOPE §7.7): a new server is rebuilt from the off-site backup; laptops give back the work done since, and stay signed in",
+    "pass": true,
+    "evidence": "database and volume replaced by empty ones; server rebuilt from the bucket with 202 records (backup had 202; 204 before the disaster) in 2 s; the owner added after the backup came back from laptop A: true; the X-ray restored from the bucket: true; laptops identical again: true; Admin sign-in → 200; laptops still signed in: 2/2"
+  },
+  {
+    "id": "install",
+    "criterion": "The web app can be installed on an Android phone (SCOPE §7.8): manifest, icons, offline service worker",
+    "pass": true,
+    "evidence": "Chrome's installability errors: none; manifest errors: 0; http://127.0.0.1:8788/manifest.webmanifest"
   },
   {
     "id": "offline-signin",
@@ -177,7 +201,7 @@
     "id": "restart",
     "criterion": "After restarting, the laptop is still signed in to its clinic server and keeps everyone’s records",
     "pass": true,
-    "evidence": "signed in again automatically as Admin, synced; owners: 21; after Sign out the sign-in screen shows server 127.0.0.1:8788"
+    "evidence": "signed in again automatically as Admin, synced; owners: 22; after Sign out the sign-in screen shows server 127.0.0.1:8788"
   },
   {
     "id": "admin-recovery",

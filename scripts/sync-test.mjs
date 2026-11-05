@@ -1,4 +1,4 @@
-// Cloud sync + notifications + Phase 5 test (docs/CLOUD-PLAN.md, Phases 1, 3 and 5): a local Postgres + the clinic server +
+// Cloud sync end-to-end test (docs/CLOUD-PLAN.md, Phases 1–5): a local Postgres + the clinic server +
 // two desktop apps + a fake push service standing in for a phone.
 // Usage: npm run build && npm run build:cloud && xvfb-run -a node scripts/sync-test.mjs [outDir]
 // Needs a local Postgres you can reach with TEST_DATABASE_URL (default postgres://clinic:clinic@127.0.0.1:5432/clinic_sync_test,
@@ -62,6 +62,17 @@ if (process.env.RESET_DB !== '0') {
   execFileSync('su', ['postgres', '-c', `psql -qc 'DROP DATABASE IF EXISTS ${name}' && psql -qc 'CREATE DATABASE ${name} OWNER clinic'`], { stdio: 'inherit' });
 }
 const pool = new pg.Pool({ connectionString: DB });
+pool.on('error', () => {}); // the restore check drops the database under the pool
+
+// A fake S3-compatible bucket (standing in for Cloudflare R2) for the nightly off-site backup; it checks signatures.
+const S3rver = require('s3rver');
+const S3_PORT = 8791;
+const s3dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-s3-'));
+const s3 = new S3rver({ port: S3_PORT, address: '127.0.0.1', directory: s3dir, silent: true, configureBuckets: [{ name: 'clinic-backups' }] });
+await s3.run();
+const S3_ENV = { BACKUP_S3_ENDPOINT: `http://127.0.0.1:${S3_PORT}`, BACKUP_S3_BUCKET: 'clinic-backups', BACKUP_S3_KEY_ID: 'S3RVER', BACKUP_S3_SECRET: 'S3RVER', BACKUP_S3_REGION: 'us-east-1' };
+// The server's volume (FILES_DIR=/data on Railway). The restore check swaps it for an empty one (volume lost too).
+let filesDirNow = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-volume-'));
 
 // A fake push service (what Google/Apple/Mozilla run for real phones and browsers). web-push only speaks https,
 // so it gets a throwaway self-signed certificate that the clinic server is told to trust.
@@ -82,7 +93,7 @@ const pushService = https.createServer({ key: fs.readFileSync(path.join(certDir,
 await new Promise((r) => pushService.listen(PUSH_PORT, '127.0.0.1', r));
 let server = null;
 function startServer(extraEnv = {}) {
-  server = spawn(process.execPath, ['server/index.mjs'], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(process.execPath, ['server/index.mjs'], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   server.stderr.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   return until(async () => (await fetch(`${SERVER}/health`)).ok, 15_000);
@@ -719,6 +730,125 @@ await step('phase2: web app offline', async () => {
     ok ? `with the server unreachable the app reopened in ${Date.now() - t0} ms, signed in, ${n} owners listed` : 'did not open offline');
 });
 
+// ---------------------------------------------------------------- Phase 4: files on the server, backup, restore, install
+const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+let xray = null;
+await step('phase4: files', async () => {
+  // Laptop A adds an X-ray to a pet; it goes to the server's volume and appears on laptop B.
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY id LIMIT 1")).rows[0];
+  const bytes = crypto.randomBytes(300 * 1024);
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-file-')), 'xray-left-leg.png');
+  fs.writeFileSync(file, bytes);
+  await A.app.evaluate(({ dialog }, p) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  }, file);
+  await go(A, `#/pets/${pet.id}?tab=files`);
+  await A.win.locator('.btn.primary', { hasText: /رفع|Upload/ }).click();
+  const up = await until(async () => (await pool.query("SELECT f.id, f.sha256 FROM files f JOIN rows r ON r.id = f.id AND r.tbl = 'attachments' WHERE r.data->>'file_name' = 'xray-left-leg.png'")).rows[0], 20_000, 300);
+  xray = { id: up.v?.id, sha: sha(bytes), pet: pet.id };
+  const onVolume = up.v ? sha(fs.readFileSync(path.join(filesDirNow, 'files', (await pool.query('SELECT clinic_id FROM files WHERE id = $1', [up.v.id])).rows[0].clinic_id, up.v.id))) : null;
+  // Laptop B downloads it in the background (small enough to keep for offline use), and opens it.
+  const onB = await until(async () => {
+    const r = localState(B.dataDir, `SELECT hex(data) FROM attachment_blobs WHERE attachment_id = '${xray.id}'`)[0];
+    return r && sha(Buffer.from(r[0], 'hex')) === xray.sha;
+  }, 30_000, 500);
+  await B.app.evaluate(({ shell }) => {
+    globalThis.__opened = null;
+    shell.openPath = async (p) => {
+      globalThis.__opened = p;
+      return '';
+    };
+  });
+  await go(B, `#/pets/${pet.id}?tab=files`);
+  await B.win.locator('.list li.link', { hasText: 'xray-left-leg.png' }).click();
+  const opened = await until(async () => B.app.evaluate(() => globalThis.__opened), 10_000, 200);
+  const openedSha = opened.v ? sha(fs.readFileSync(opened.v)) : null;
+  await B.win.screenshot({ path: path.join(out, 'B-files.png') });
+  check('files', 'A file added on one laptop is kept on the server’s volume and opens on the other laptop (also offline)',
+    up.v?.sha256 === xray.sha && onVolume === xray.sha && !!onB.v && openedSha === xray.sha,
+    `300 KB X-ray from laptop A: on the server volume, same bytes: ${onVolume === xray.sha}; downloaded on laptop B in the background: ${!!onB.v}; opened on B, same bytes: ${openedSha === xray.sha}`);
+});
+
+let backupRows = 0;
+await step('phase4: nightly backup', async () => {
+  const r = await api('/api/backup/run', {}, tokens.admin);
+  const { s3Get } = await import(path.resolve('server/s3.mjs'));
+  const cfg = { endpoint: S3_ENV.BACKUP_S3_ENDPOINT, bucket: S3_ENV.BACKUP_S3_BUCKET, accessKeyId: 'S3RVER', secretAccessKey: 'S3RVER', region: 'us-east-1' };
+  const day = r.body.day;
+  const offsite = await s3Get(cfg, `db/backup-${day}.json.gz`);
+  const zlib = require('node:zlib');
+  const data = offsite ? JSON.parse(zlib.gunzipSync(offsite).toString('utf8')) : { rows: [] };
+  backupRows = data.rows.length;
+  const serverRows = Number((await pool.query('SELECT COUNT(*) n FROM rows')).rows[0].n);
+  const fileOff = xray?.id ? await s3Get(cfg, `files/${data.clinics?.[0]?.id}/${xray.id}`) : null;
+  const local = fs.readdirSync(path.join(filesDirNow, 'backups')).filter((f) => f.endsWith('.json.gz'));
+  const dl = await fetch(`${SERVER}/api/backup/download`, { headers: { Authorization: `Bearer ${tokens.admin}` } });
+  const dlRows = dl.ok ? JSON.parse(zlib.gunzipSync(Buffer.from(await dl.arrayBuffer())).toString('utf8')).rows.length : 0;
+  const deskDenied = (await api('/api/backup/run', {}, (await api('/api/login', { email: 'desk@test.local', password: 'Desk-own-2026', deviceId: 'test-desk-bk' })).body.token)).status;
+  check('backup', 'The nightly backup copies every record off-site (and the files once), keeps one on the volume, and the Admin can download one',
+    r.body.ok && r.body.offsite && backupRows === serverRows && !!fileOff && sha(fileOff) === xray?.sha && local.length >= 1 && dlRows === serverRows && deskDenied === 403,
+    `backup of ${day}: ${backupRows} of ${serverRows} records in the off-site bucket (signed requests), the X-ray copied too: ${!!fileOff && sha(fileOff) === xray?.sha}; volume copies: ${local.join(', ')}; Admin download holds ${dlRows} records; an Assistant asking for a backup → ${deskDenied}`);
+});
+
+await step('phase4: restore', async () => {
+  // Work done after the backup, then disaster: the database AND the volume are lost.
+  await go(A, '#/owners/new');
+  await A.win.getByLabel(/الاسم الكامل|Full name/).fill('After Backup Owner');
+  await A.win.getByLabel(/^\s*(الهاتف|Phone)\s*$/).fill('01090000077');
+  await A.win.locator('.actionbar .btn.primary').click();
+  await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'owners' AND data->>'full_name' = 'After Backup Owner'")).rowCount === 1, 10_000);
+  const before = Number((await pool.query('SELECT COUNT(*) n FROM rows')).rows[0].n);
+  await stopServer();
+  const name = new URL(DB).pathname.slice(1);
+  execFileSync('su', ['postgres', '-c', `psql -qc 'DROP DATABASE ${name} WITH (FORCE)' && psql -qc 'CREATE DATABASE ${name} OWNER clinic'`], { stdio: 'inherit' });
+  filesDirNow = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-volume-new-'));
+  // A new database and volume on Railway, RESTORE_FROM=latest: the server loads the off-site backup.
+  const t0 = Date.now();
+  await startServer({ RESTORE_FROM: 'latest' });
+  const restored = Number((await pool.query('SELECT COUNT(*) n FROM rows')).rows[0].n);
+  const lostOnServer = (await pool.query("SELECT 1 FROM rows WHERE tbl = 'owners' AND data->>'full_name' = 'After Backup Owner'")).rowCount === 0;
+  // The laptops notice the restore and give back what is newer than the backup.
+  await A.win.locator('.sync-badge').click().catch(() => {});
+  const back = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'owners' AND data->>'full_name' = 'After Backup Owner'")).rowCount === 1, 60_000, 500);
+  const file = await until(async () => {
+    const r = await fetch(`${SERVER}/api/files/${xray.id}`, { headers: { Authorization: `Bearer ${tokens.admin}` } });
+    return r.ok && sha(Buffer.from(await r.arrayBuffer())) === xray.sha;
+  }, 20_000, 500);
+  const same = await until(async () => {
+    await A.win.locator('.sync-badge').click().catch(() => {});
+    await B.win.locator('.sync-badge').click().catch(() => {});
+    await sleep(800);
+    const a = snapshot(A.dataDir);
+    const b = snapshot(B.dataDir);
+    return Object.keys(a).every((t) => a[t] === b[t]);
+  }, 60_000, 1000);
+  const login = (await api('/api/login', { ...ADMIN, deviceId: 'after-restore' })).status;
+  const stillSignedIn = [A, B].length - ((await A.win.locator('form button.signin').count()) + (await B.win.locator('form button.signin').count()));
+  check('restore', 'Restore tested (SCOPE §7.7): a new server is rebuilt from the off-site backup; laptops give back the work done since, and stay signed in',
+    restored === backupRows && lostOnServer && !!back.v && !!file.v && !!same.v && login === 200 && stillSignedIn === 2,
+    `database and volume replaced by empty ones; server rebuilt from the bucket with ${restored} records (backup had ${backupRows}; ${before} before the disaster) in ${Math.round((Date.now() - t0) / 1000)} s; the owner added after the backup came back from laptop A: ${!!back.v}; the X-ray restored from the bucket: ${!!file.v}; laptops identical again: ${!!same.v}; Admin sign-in → ${login}; laptops still signed in: ${stillSignedIn}/2`);
+});
+
+await step('phase4: phone install', async () => {
+  // Chrome's own installability check (what Android uses before offering "Install app").
+  const { chromium } = require('playwright');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-phone-'));
+  const ctx = await chromium.launchPersistentContext(dir, { viewport: { width: 390, height: 800 }, userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36' });
+  const page = ctx.pages()[0] ?? (await ctx.newPage());
+  await page.goto(SERVER);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();
+  await page.waitForSelector('form button.signin');
+  const cdp = await ctx.newCDPSession(page);
+  const manifest = await cdp.send('Page.getAppManifest');
+  const errors = (await cdp.send('Page.getInstallabilityErrors')).installabilityErrors.map((e) => e.errorId);
+  await page.screenshot({ path: path.join(out, 'phone-sign-in.png') });
+  await ctx.close();
+  check('install', 'The web app can be installed on an Android phone (SCOPE §7.8): manifest, icons, offline service worker',
+    errors.length === 0 && manifest.errors.length === 0 && /"display": "standalone"/.test(manifest.data),
+    `Chrome's installability errors: ${errors.length ? errors.join(', ') : 'none'}; manifest errors: ${manifest.errors.length}; ${manifest.url}`);
+});
+
 await step('phase2: sign in while offline', async () => {
   // The Admin signs in on laptop A while the internet is down, works, and the app signs in to the server by itself later.
   await stopServer();
@@ -796,10 +926,11 @@ await step('admin password recovery', async () => {
 await B.app.close().catch(() => {});
 await stopServer().catch(() => {});
 pushService.close();
+await s3.close().catch(() => {});
 await pool.end();
 
 const failed = results.filter((r) => !r.pass);
 fs.writeFileSync(path.join(out, 'sync-test.json'), JSON.stringify(results, null, 2));
-fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync, offline, notifications and Phase 5 test (Phases 1, 2, 3 and 5)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
+fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync end-to-end test (Phases 1–5)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
 console.log(`\n${results.length - failed.length}/${results.length} passed → ${out}`);
 process.exitCode = failed.length ? 1 : 0;

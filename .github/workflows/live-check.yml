@@ -1,0 +1,25 @@
+name: Live check
+
+# Looks at the real clinic server (Railway) without changing any record: health, web app, installable on
+# Android, and, with the LIVE_EMAIL / LIVE_PASSWORD secrets (an Admin), sign-in, sync and last night's backup.
+# Daily after the nightly backup, and from the Actions tab (Run workflow).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *' # 06:17 Cairo time
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save --no-package-lock playwright@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/live-check.mjs
+        env:
+          LIVE_URL: ${{ vars.LIVE_URL }}
+          LIVE_EMAIL: ${{ secrets.LIVE_EMAIL }}
+          LIVE_PASSWORD: ${{ secrets.LIVE_PASSWORD }}

@@ -14,6 +14,7 @@ import { today } from '../lib/dates';
 import { Confirm, Dialog, Field, Icon, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { SyncPanel } from '../components/SyncBadge';
+import { ServerBackupPanel } from '../components/ServerBackup';
 import { UpdatesSection } from '../components/Updates';
 import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
@@ -376,6 +377,7 @@ function DataTab() {
   return (
     <div style={{ maxWidth: 760 }}>
       <SyncPanel />
+      <ServerBackupPanel />
       <div className="form-section">
         <h2>{t('settings.export')}</h2>
         <p className="muted small">{t('settings.exportHint')}</p>

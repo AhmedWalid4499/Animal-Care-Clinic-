@@ -73,8 +73,48 @@ The desktop app needs version 0.1.6 or later, which installs itself through auto
 | Layer | Where | Plan needed |
 |---|---|---|
 | Full copy on every laptop | Each desktop app keeps the whole database locally, plus its daily backup file (last 14) | none |
-| Nightly export kept away from Railway | The server exports Postgres and the files every night to an S3-style bucket (Cloudflare R2 or Backblaze B2, small free tiers) or Google Drive, keeping 30 days. Restore tested once before handover (SCOPE §7.7) | Hobby is enough; the bucket choice comes in Phase 4 |
-| Railway scheduled backups + point-in-time recovery | Postgres and volume **Backups** tab | **Pro** ($20/month incl. $20 usage). Optional; worth it before go-live if you want one-click restores |
+| Nightly copy on the server's volume | Every night after 02:00 (Cairo) the server saves the whole database to `/data/backups` (last 14) | Hobby is enough |
+| Nightly copy kept away from Railway | The same backup goes to a storage bucket (Cloudflare R2 below; Backblaze B2 or AWS S3 also work), last 30 days, plus every file (X-ray, lab PDF) once. Restore tested by `scripts/sync-test.mjs` (SCOPE §7.7) | Hobby; R2 is free up to 10 GB |
+| Railway scheduled backups + point-in-time recovery | Postgres and volume **Backups** tab | **Pro** ($20/month incl. $20 usage). Optional |
+
+The app shows the state in **Settings → Data & backup → Clinic server backup**: last backup, whether it is kept off-site, and whether files are on the volume. **Back up now** and **Download a copy** are there too (Admin only).
+
+### Set up the off-site bucket (Cloudflare R2, about 10 minutes, once)
+
+1. Sign in at [dash.cloudflare.com](https://dash.cloudflare.com) (a free account is fine) → **R2 Object Storage**. The first time, Cloudflare asks you to turn R2 on and may ask for a payment card even for the free tier.
+2. **Create bucket** → name `animal-care-clinic-backups` → location: **Automatic** (or Eastern Europe) → **Create**.
+3. Back on the R2 page → **Manage API tokens** (or **API** → **Manage API tokens**) → **Create API token** → permissions **Object Read & Write** → apply to **Specific bucket** `animal-care-clinic-backups` → **Create**. Copy the **Access Key ID**, the **Secret Access Key** and the **S3 endpoint** (`https://<account id>.r2.cloudflarestorage.com`). The secret is shown only once.
+4. Railway → app service → **Variables** → add:
+   ```
+   BACKUP_S3_ENDPOINT=https://<account id>.r2.cloudflarestorage.com
+   BACKUP_S3_BUCKET=animal-care-clinic-backups
+   BACKUP_S3_KEY_ID=<Access Key ID>
+   BACKUP_S3_SECRET=<Secret Access Key>
+   ```
+   (`BACKUP_S3_REGION` is `auto` for R2 and can be left out.)
+5. When the deployment is **Active**: in the app, **Settings → Data & backup → Back up now**. It should say **Kept off-site: Yes, in the backup bucket**. In Cloudflare the bucket now holds `db/backup-<date>.json.gz` and a `files/` folder.
+
+### Restore after a disaster (database or volume lost)
+
+1. Railway → **+ New** → **Database** → **PostgreSQL** (a new, empty database). If the volume is gone too, add a new one at `/data`.
+2. App service → **Variables**: point `DATABASE_URL` at the new database (`${{Postgres-xxxx.DATABASE_URL}}`) and add `RESTORE_FROM=latest` (or a date such as `2026-11-05`).
+3. Wait for **Active**. The deploy log says `restored N rows … from the backup of …`; files come back from the bucket in the background.
+4. Delete `RESTORE_FROM` from the variables.
+5. Nothing to do on the laptops: they stay signed in, notice the restore, and send back anything entered after the backup was taken. Then every laptop has the same records again.
+
+### Live check (optional, from GitHub)
+
+The **Live check** job (`.github/workflows/live-check.yml`) looks at the real address every morning without changing any record: server health, the web app, installable on Android, and, with an Admin sign-in, sync and last night's backup. GitHub emails you if it fails.
+
+1. In the app, add a user **Live check** with the **Admin** role (Settings → Users) and sign in once with it to choose its password.
+2. GitHub → the repository → **Settings → Secrets and variables → Actions** → **New repository secret**: `LIVE_EMAIL` and `LIVE_PASSWORD` with that user's email and password.
+3. **Actions → Live check → Run workflow** to try it now. The summary lists each check.
+
+## Phones
+
+1. On the phone, open `https://animal-care-clinic-production.up.railway.app` in **Chrome** (Android) or **Safari** (iPhone) and sign in.
+2. **Android:** tap **Install the app** in the banner (or Chrome's ⋮ menu → **Install app**). **iPhone:** tap **Share** → **Add to Home Screen**.
+3. Open it from the home screen. It works without a connection once signed in, and the bell can turn on notifications for the phone.
 
 ## Later
 

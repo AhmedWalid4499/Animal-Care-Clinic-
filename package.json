@@ -105,6 +105,7 @@
   },
   "dependencies": {
     "@fontsource/ibm-plex-sans-arabic": "5.1.0",
+    "aws4": "1.13.2",
     "bcryptjs": "2.4.3",
     "electron-updater": "6.3.9",
     "fflate": "0.8.2",
@@ -126,6 +127,7 @@
     "@vitejs/plugin-react": "4.3.4",
     "electron": "44.7.2",
     "electron-builder": "25.1.8",
+    "s3rver": "3.7.1",
     "typescript": "5.6.3",
     "vite": "5.4.11",
     "vite-plugin-singlefile": "2.0.3"

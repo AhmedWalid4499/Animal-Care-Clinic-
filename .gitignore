@@ -8,3 +8,4 @@ release/
 acceptance-out/
 dist-cloud/
 sync-test-out/
+data-files/

@@ -8,6 +8,8 @@ import {
 } from '../db/repo';
 import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
+import { get } from '../db/core';
+import { downloadAttachment, serverUrl } from '../sync/engine';
 import { Badge, Field, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
@@ -244,6 +246,7 @@ function Files({ petId }: { petId: string }) {
   const { t, fmt, user, toast } = useApp();
   const files = useQuery(() => petAttachments(petId), [petId]);
   const [kind, setKind] = useState<AttachmentKind>('LAB');
+  const [fetching, setFetching] = useState<string | null>(null);
   const upload = async () => {
     const f = await platform.pickFile([{ name: 'Files', extensions: ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'dcm'] }, { name: 'All', extensions: ['*'] }]);
     if (!f) return;
@@ -266,16 +269,33 @@ function Files({ petId }: { petId: string }) {
       </div>
       <ul className="list">
         {files.length === 0 && <li className="empty">{t('petRecord.noFiles')}</li>}
-        {files.map((a) => (
-          <li key={a.id} className="link" onClick={() => { const b = getAttachmentBytes(a.id); if (b) platform.openFile(a.file_name, b, a.mime_type ?? 'application/octet-stream'); }}>
-            <Icon name="file" />
-            <div className="main-col">
-              <b>{a.file_name}</b>
-              <div className="sub">{t(`attachmentKind.${a.kind}`)} · {fmt.date(a.created_at)} · {Math.max(1, Math.round((a.size_bytes ?? 0) / 1024))} KB</div>
-            </div>
-            <span className="btn sm">{t('common.open')}</span>
-          </li>
-        ))}
+        {files.map((a) => {
+          // Added on another device: the bytes come from the clinic server the first time it is opened here.
+          const here = !!get('SELECT 1 FROM attachment_blobs WHERE attachment_id = ?', [a.id]);
+          const open = async () => {
+            let b = getAttachmentBytes(a.id);
+            if (!b && serverUrl()) {
+              setFetching(a.id);
+              b = await downloadAttachment(a.id).catch(() => null) ?? undefined;
+              setFetching(null);
+            }
+            if (b) platform.openFile(a.file_name, b, a.mime_type ?? 'application/octet-stream');
+            else toast(t('petRecord.fileNotHere'));
+          };
+          return (
+            <li key={a.id} className="link" onClick={() => void open()}>
+              <Icon name="file" />
+              <div className="main-col">
+                <b>{a.file_name}</b>
+                <div className="sub">
+                  {t(`attachmentKind.${a.kind}`)} · {fmt.date(a.created_at)} · {Math.max(1, Math.round((a.size_bytes ?? 0) / 1024))} KB
+                  {!here && <> · ☁ {t('petRecord.onServer')}</>}
+                </div>
+              </div>
+              <span className="btn sm">{fetching === a.id ? '…' : t('common.open')}</span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

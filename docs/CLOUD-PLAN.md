@@ -5,7 +5,7 @@ Status, 5 Nov 2026:
 - **Phase 3 (notifications) built and tested locally.** `scripts/sync-test.mjs` passes 18/18 against Postgres 16 with two desktop apps and a fake phone push service; results are in `docs/acceptance/SYNC-TEST.md`.
 - **Phase 5 built and tested locally** (devices, temporary passwords / reset / invite, pre-diagnosis queue): `scripts/sync-test.mjs` passes 23/23.
 - **Phase 2 (offline) built and tested locally:** `scripts/sync-test.mjs` passes 31/31, including two laptops working with the server unreachable and ending identical.
-- **Next:** Phase 4 (files on the volume, nightly off-site backup, phone install).
+- **Phase 4 built and tested locally:** files on the volume, nightly backup (volume + off-site bucket) with a tested restore, phone install, live check. `scripts/sync-test.mjs` passes 35/35. Ahmed's part: the R2 bucket and the live-check secrets (`docs/RAILWAY-SETUP.md`).
 - Open points are at the end.
 
 ## What Ahmed asked for
@@ -120,7 +120,18 @@ How Phase 3 is built:
 | Upgrade | `src/db/schema.ts` `MIGRATIONS[2]` | Existing installs: VET → ADMIN, sync tables added. The acceptance suite checks this on a schema-1 database. |
 
 Known limits, handled in later phases:
-- File bytes (X-rays, lab PDFs) stay on the laptop that added them until Phase 4.
+- File bytes (X-rays, lab PDFs) stayed on the laptop that added them until Phase 4.
+
+How Phase 4 is built:
+
+| Piece | Where | Notes |
+|---|---|---|
+| Files on the server | `server/files.mjs`, `PUT/GET /api/files/:id`, `src/sync/engine.ts` `syncFiles` | The attachment row syncs as before; its bytes go up once to `FILES_DIR` (the Railway volume). Other devices download files up to 10 MB (2 MB on phones) in the background, so they open offline; bigger ones download when opened. The server pings devices when a file arrives. |
+| Nightly backup | `server/backup.mjs`, `server/s3.mjs` (`aws4` signing) | After 02:00 Cairo: the whole database as gzip'd JSON (rows with their versions, file list, sign-ins, push keys) to `/data/backups` (14) and to the bucket (30 days), plus each new file once. Status, **Back up now**, **Download a copy** in Settings (Admin). |
+| Restore | `RESTORE_FROM` at boot | Loads the backup into an empty database and fetches the files. A new epoch makes every device offer back its rows stamped with their own `updated_at`; per-column last-writer-wins keeps what is newer than the backup. Tested: database and volume both lost, rebuilt, the owner added after the backup came back, laptops stayed signed in and identical. |
+| Phone install | `public-cloud/manifest.webmanifest`, `InstallPrompt.tsx` | Install banner on Android (the browser's prompt), Share → Add to Home Screen hint on iPhone. Chrome reports no installability errors. |
+| Live check | `scripts/live-check.mjs`, `.github/workflows/live-check.yml` | Read-only check of the real address, daily and on demand; with an Admin sign-in also sync, backup age/off-site and volume. |
+| Fix found on the way | `server/sync.mjs` | Resending a user row unchanged (as after a restore) ended that person's sign-ins; now only a password that really changed, or a deactivation, does. |
 - A laptop's clock decided which of two edits to the same field wins. Since Phase 2 the device corrects its edit times by its measured difference from the server's clock, and the server caps edit times from the future.
 
 How Phase 2 is built:
