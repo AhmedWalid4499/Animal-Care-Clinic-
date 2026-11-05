@@ -43,6 +43,15 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   keys jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS files (
+  clinic_id uuid NOT NULL REFERENCES clinics(id),
+  id text NOT NULL,
+  size integer NOT NULL,
+  sha256 text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  backed_up_at timestamptz,
+  PRIMARY KEY (clinic_id, id)
+);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   clinic_id uuid NOT NULL REFERENCES clinics(id),

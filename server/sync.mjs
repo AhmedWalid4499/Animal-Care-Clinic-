@@ -26,6 +26,8 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes, se
     // Changes the server could not store (e.g. text Postgres refuses): the rest of the batch still goes in, and
     // the device keeps these queued instead of one bad change blocking everything behind it.
     const failed = [];
+    // People whose password really changed (or who were deactivated) here: their other sign-ins end.
+    const endSessions = new Set();
     let lastSeq = 0;
     let firstSeq = 0;
     const now = Date.now();
@@ -50,7 +52,7 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes, se
       }
     }
     const notifications = events.length || conflicts.length ? await createNotifications(c, clinicId, user, events, conflicts, { seenSeq, firstSeq }) : [];
-    return { rejected, reverts, failed, seq: lastSeq, notifications };
+    return { rejected, reverts, failed, seq: lastSeq, notifications, endSessions: [...endSessions] };
 
     /** One change; returns its new server sequence number, or 0 if refused. */
     async function applyOne(c, ch) {
@@ -110,6 +112,7 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes, se
         [clinicId, ch.tbl, id, data, versions, deleted, seq],
       );
       if (NOTIFY_TABLES.has(ch.tbl) && ch.op === 'upsert') events.push({ tbl: ch.tbl, id, isNew: !before, before, after: data, cols });
+      if (ch.tbl === 'users' && before && (before.password_hash !== data.password_hash || (Number(before.is_active) === 1 && !Number(data.is_active)))) endSessions.add(id);
       return Number(seq);
     }
   });

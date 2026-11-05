@@ -2,11 +2,11 @@
 // download), then push local changes / pull everyone's, with a live WebSocket ping from the server.
 import { useSyncExternalStore } from 'react';
 import bcrypt from 'bcryptjs';
-import { flush, get, rawDb, subscribe, uuid } from '../db/core';
-import { recomputeInvoices } from '../db/repo';
+import { all, flush, get, markChanged, rawDb, subscribe, uuid } from '../db/core';
+import { getAttachmentBytes, recomputeInvoices } from '../db/repo';
 import { DEFAULT_LOGINS, seedBase } from '../db/seed';
 import type { User } from '../db/types';
-import { platform } from '../lib/platform';
+import { isDesktop, platform } from '../lib/platform';
 import { ackOutbox, applyRemote, clearSyncedTables, getState, outboxCount, outboxUsers, pendingChanges, setState, snapshotRows, type RemoteRow } from './local';
 
 export type SyncState = 'off' | 'syncing' | 'synced' | 'offline' | 'signedOut' | 'error';
@@ -377,7 +377,18 @@ export async function syncNow(): Promise<void> {
     // pull everyone's
     let since = Number(getState('cursor') ?? 0);
     for (;;) {
-      const r = await call<{ rows: RemoteRow[]; more: boolean; seq: number }>(`/api/sync/pull?since=${since}&limit=1000`);
+      const r = await call<{ rows: RemoteRow[]; more: boolean; seq: number; epoch?: string | null }>(`/api/sync/pull?since=${since}&limit=1000`);
+      // The server was restored from a backup since this device last synced: send back what this device has that
+      // is newer than the backup, then download everything again.
+      if (r.epoch && r.epoch !== getState('epoch')) {
+        const hadSynced = since > 0;
+        if (hadSynced) await recoverAfterRestore();
+        setState('epoch', r.epoch);
+        if (hadSynced) {
+          since = 0;
+          continue;
+        }
+      }
       applyRemote(r.rows);
       const invoices = new Set<string>();
       for (const row of r.rows) {
@@ -389,6 +400,7 @@ export async function syncNow(): Promise<void> {
       if (!r.more) break;
     }
     setStatus({ state: 'synced', lastSync: new Date().toISOString(), waitingFor: waitingNames(), ...(failedRows ? { error: `${failedRows} change(s) could not be stored by the server; trying again later` } : {}) });
+    void syncFiles();
   } catch (e) {
     const err = e as ApiError;
     if (err.status === 401) deviceRevoked(); else setStatus({ state: err.status === 0 ? 'offline' : 'error', error: err.message });
@@ -399,6 +411,97 @@ export async function syncNow(): Promise<void> {
       again = false;
       void syncNow();
     }
+  }
+}
+
+/**
+ * After a server restore: offer every local row back, stamped with when it was last changed here. The server's
+ * per-column rule keeps whichever is newer, so work done after the backup comes back and older copies change nothing.
+ */
+async function recoverAfterRestore() {
+  const rows = snapshotRows();
+  const shift = (at: string) => (Math.abs(clockOffset) < 2000 ? at : new Date(new Date(at).getTime() + clockOffset).toISOString());
+  for (let i = 0; i < rows.length; i += 500) {
+    const changes = rows.slice(i, i + 500).map((r) => ({
+      tbl: r.tbl, id: r.id, op: 'upsert' as const, cols: r.data, at: shift(String(r.data.updated_at ?? r.data.created_at ?? new Date().toISOString())),
+    }));
+    // Refusals here (e.g. an Assistant's laptop offering visits) are expected and change nothing locally.
+    await call('/api/sync/push', { method: 'POST', body: JSON.stringify({ changes }) });
+  }
+  for (const a of all<{ attachment_id: string }>('SELECT attachment_id FROM attachment_blobs')) setState(`file_sent:${a.attachment_id}`, null);
+}
+
+// ---------------------------------------------------------------- files (X-rays, lab PDFs, photos)
+// The attachment rows sync like any table; the bytes go up to the server once, and other devices download them:
+// in the background up to a size (so they open offline), or when someone opens a bigger one.
+const PREFETCH_MAX = isDesktop ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
+const notOnServer = new Map<string, number>(); // id → when the server last said "not yet"
+async function raw(path: string, init: RequestInit, token: string, ms = 120_000) {
+  const url = serverUrl();
+  if (!url) throw new ApiError(0, 'no server');
+  const sentAt = Date.now();
+  let r: Response;
+  try {
+    r = await fetchWithTimeout(`${url}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) } }, ms);
+  } catch {
+    throw new ApiError(0, 'unreachable');
+  }
+  noteServerTime(r, sentAt);
+  return r;
+}
+/** The file's bytes from the server, kept on this device. null if the server doesn't have them (yet). */
+export async function downloadAttachment(id: string): Promise<Uint8Array | null> {
+  const token = currentToken();
+  if (!token || getState('enabled') !== '1') return null;
+  const r = await raw(`/api/files/${encodeURIComponent(id)}`, { method: 'GET' }, token);
+  if (r.status === 401) {
+    deviceRevoked();
+    return null;
+  }
+  if (!r.ok) {
+    notOnServer.set(id, Date.now());
+    return null;
+  }
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  rawDb().run('INSERT OR REPLACE INTO attachment_blobs (attachment_id, data) VALUES (?, ?)', [id, bytes]);
+  setState(`file_sent:${id}`, '1');
+  markChanged();
+  await flush();
+  return bytes;
+}
+let filesRunning = false;
+export async function syncFiles() {
+  const token = currentToken();
+  if (filesRunning || !token || getState('enabled') !== '1') return;
+  filesRunning = true;
+  try {
+    // Up: files added on this device, once their record is on the server.
+    const up = all<{ id: string }>(
+      `SELECT b.attachment_id id FROM attachment_blobs b
+        WHERE NOT EXISTS (SELECT 1 FROM sync_state s WHERE s.key = 'file_sent:' || b.attachment_id)
+          AND NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.tbl = 'attachments' AND o.row_id = b.attachment_id) LIMIT 20`,
+    );
+    for (const { id } of up) {
+      const bytes = getAttachmentBytes(id);
+      if (!bytes) continue;
+      const r = await raw(`/api/files/${encodeURIComponent(id)}`, { method: 'PUT', body: bytes, headers: { 'Content-Type': 'application/octet-stream' } }, token);
+      if (r.ok) setState(`file_sent:${id}`, '1');
+    }
+    // Down: other devices' files, up to a size, so they open without a connection too.
+    const down = all<{ id: string }>(
+      `SELECT a.id FROM attachments a WHERE NOT EXISTS (SELECT 1 FROM attachment_blobs b WHERE b.attachment_id = a.id)
+        AND COALESCE(a.size_bytes, 0) <= ? ORDER BY a.created_at DESC LIMIT 20`,
+      [PREFETCH_MAX],
+    );
+    for (const { id } of down) {
+      if (Date.now() - (notOnServer.get(id) ?? 0) < 5 * 60_000) continue;
+      await downloadAttachment(id);
+    }
+  } catch {
+    /* offline: next sync */
+  } finally {
+    filesRunning = false;
+    await flush();
   }
 }
 
@@ -441,6 +544,10 @@ function connect() {
     }
     if (m.type === 'changed' || m.type === 'hello') void syncNow();
     if (m.type === 'revoked') return deviceRevoked();
+    if (m.type === 'files') {
+      notOnServer.clear();
+      void syncFiles();
+    }
     liveHandlers.forEach((h) => h(m));
   };
   sock.onclose = () => {

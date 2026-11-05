@@ -9,6 +9,7 @@ import { signOutSync } from '../sync/engine';
 import { dropPushSubscription } from '../sync/notify';
 import { NotificationAnnouncer, NotificationBell } from './Notifications';
 import { ChangePasswordDialog } from './Account';
+import { InstallPrompt } from './InstallPrompt';
 
 export function Layout() {
   const { t, user, setUser, isAdmin, canVisit, locale, setLocale, theme, setTheme } = useApp();
@@ -82,6 +83,7 @@ export function Layout() {
         {pwDialog && <ChangePasswordDialog onClose={() => setPwDialog(false)} />}
         <div className="mobile-bell"><NotificationBell floating /></div>
         <main className="main">
+          <InstallPrompt />
           <div key={pathname} className="route-enter">
             <Outlet />
           </div>

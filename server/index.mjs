@@ -11,6 +11,8 @@ import { WebSocketServer } from 'ws';
 import { createPool, migrate } from './db.mjs';
 import { applyChanges, bootstrapRows, pullSince } from './sync.mjs';
 import { sendPush, setupPush } from './notify.mjs';
+import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backup.mjs';
+import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -25,8 +27,13 @@ const pool = createPool(process.env.DATABASE_URL);
 
 // ---------------------------------------------------------------- startup
 let vapidPublic = null;
+let epoch = null; // changes when the database is restored from a backup (devices then resend what is newer)
 async function bootstrapServer() {
   await migrate(pool);
+  // Disaster recovery: an empty database and RESTORE_FROM=latest (or a date) → load the nightly backup first.
+  const from = process.env.RESTORE_FROM?.trim();
+  if (from && !(await pool.query('SELECT 1 FROM clinics LIMIT 1')).rowCount) await restore(pool, from);
+  epoch = (await pool.query("SELECT value FROM server_meta WHERE key = 'epoch'")).rows[0]?.value ?? null;
   vapidPublic = await setupPush(pool);
   let clinic = (await pool.query('SELECT * FROM clinics ORDER BY created_at LIMIT 1')).rows[0];
   if (!clinic) {
@@ -93,7 +100,7 @@ function send(res, status, body, headers = {}) {
 }
 // The desktop app calls from file:// (origin "null") and the web app from its own origin; auth is a bearer
 // token, never a cookie, so allowing any origin does not expose a session.
-const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Expose-Headers': 'X-Server-Time' };
+const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS', 'Access-Control-Expose-Headers': 'X-Server-Time' };
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -161,14 +168,13 @@ function endSockets(tokenHashes) {
     ws.close();
   }
 }
-/** After a push: a new password or a deactivated user ends that person's sessions (except the one that made the change). */
-async function endSessionsAfter(s, changes, rejected) {
-  const refused = new Set(rejected.map((r) => `${r.tbl}:${r.id}`));
-  for (const ch of changes) {
-    if (ch?.tbl !== 'users' || ch.op !== 'upsert' || refused.has(`users:${ch.id}`) || !ch.cols) continue;
-    const deactivated = 'is_active' in ch.cols && !Number(ch.cols.is_active);
-    if (!deactivated && !('password_hash' in ch.cols)) continue;
-    const r = await pool.query('DELETE FROM sessions WHERE clinic_id = $1 AND user_id = $2 AND token_hash <> $3 RETURNING token_hash', [s.clinicId, String(ch.id), s.tokenHash]);
+/**
+ * After a push: a password that really changed, or a user who was deactivated, ends that person's sessions
+ * (except the one that made the change). Resending a user row unchanged (e.g. after a restore) ends nothing.
+ */
+async function endSessionsAfter(s, userIds) {
+  for (const id of userIds) {
+    const r = await pool.query('DELETE FROM sessions WHERE clinic_id = $1 AND user_id = $2 AND token_hash <> $3 RETURNING token_hash', [s.clinicId, String(id), s.tokenHash]);
     endSockets(r.rows.map((x) => x.token_hash));
   }
 }
@@ -216,13 +222,13 @@ async function api(req, res, url) {
     const r = await applyChanges(pool, { clinicId: s.clinicId, user: s.user, deviceId: s.deviceId, changes, seenSeq });
     if (r.seq) broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
     deliver(s.clinicId, r.notifications);
-    await endSessionsAfter(s, changes, r.rejected);
+    await endSessionsAfter(s, r.endSessions);
     return send(res, 200, { rejected: r.rejected, reverts: r.reverts, failed: r.failed, seq: r.seq });
   }
   if (p === '/api/sync/pull' && req.method === 'GET') {
     const since = Math.max(0, Number(url.searchParams.get('since') || 0));
     const limit = Math.min(2000, Math.max(1, Number(url.searchParams.get('limit') || 1000)));
-    return send(res, 200, await pullSince(pool, s.clinicId, since, limit));
+    return send(res, 200, { ...(await pullSince(pool, s.clinicId, since, limit)), epoch });
   }
   if (p === '/api/sync/bootstrap' && req.method === 'POST') {
     if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
@@ -258,6 +264,37 @@ async function api(req, res, url) {
       [endpoint, s.clinicId, s.user.id, { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth }],
     );
     return send(res, 200, { ok: true });
+  }
+  // Files (Phase 4): the bytes of an attachment row, kept on the volume.
+  const fm = /^\/api\/files\/([^/]+)$/.exec(p);
+  if (fm) {
+    const id = decodeURIComponent(fm[1]);
+    if (!validFileId(id)) return send(res, 400, { error: 'bad file id' });
+    const row = (await pool.query("SELECT deleted FROM rows WHERE clinic_id = $1 AND tbl = 'attachments' AND id = $2", [s.clinicId, id])).rows[0];
+    if (req.method === 'PUT') {
+      if (!row) return send(res, 409, { error: 'send the attachment record first' });
+      const bytes = await readBody(req, MAX_FILE);
+      const saved = await saveFile(pool, s.clinicId, id, bytes);
+      broadcast(s.clinicId, { type: 'files', id }, s.deviceId); // other devices can fetch it now
+      return send(res, 200, { ok: true, ...saved });
+    }
+    if (req.method === 'GET') {
+      const bytes = row && !row.deleted ? fileBytes(s.clinicId, id) : null;
+      if (!bytes) return send(res, 404, { error: 'file not on the server (yet)' });
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length, 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Server-Time': new Date().toISOString(), ...cors });
+      return res.end(bytes);
+    }
+  }
+  // Backups (Phase 4): status, "Back up now", and a copy to keep (Admin only).
+  if (p.startsWith('/api/backup/')) {
+    if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
+    if (p === '/api/backup/status' && req.method === 'GET') return send(res, 200, await backupStatus(pool));
+    if (p === '/api/backup/run' && req.method === 'POST') return send(res, 200, { ...(await runBackup(pool)), status: await backupStatus(pool) });
+    if (p === '/api/backup/download' && req.method === 'GET') {
+      const gz = await dump(pool);
+      res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': gz.length, 'Content-Disposition': `attachment; filename="clinic-server-backup-${new Date().toISOString().slice(0, 10)}.json.gz"`, 'Cache-Control': 'no-store', ...cors });
+      return res.end(gz);
+    }
   }
   // Devices (Phase 5): every signed-in laptop / phone / browser of the clinic; the Admin can sign one out.
   if (p === '/api/devices' && req.method === 'GET') {
@@ -359,7 +396,12 @@ setInterval(() => {
 }, 30_000).unref();
 
 bootstrapServer()
-  .then(() => server.listen(PORT, () => console.log(`clinic server on :${PORT} (web app from ${STATIC_DIR})`)))
+  .then(() => {
+    const st = storageInfo();
+    if (!st.persistent) console.warn(`FILES ARE NOT ON A VOLUME (${st.dir}): X-rays and backups are lost at the next deploy. Railway: add a Volume mounted at /data and set FILES_DIR=/data.`);
+    scheduleBackups(pool);
+    server.listen(PORT, () => console.log(`clinic server on :${PORT} (web app from ${STATIC_DIR}, files in ${st.dir})`));
+  })
   .catch((e) => {
     console.error('startup failed', e);
     process.exit(1);
