@@ -113,7 +113,7 @@ export async function onlineLogin(email: string, password: string): Promise<User
   let reply: LoginReply;
   try {
     const cfg = await platform.config();
-    reply = await call<LoginReply>('/api/login', { method: 'POST', body: JSON.stringify({ email, password, deviceId: deviceId(), deviceName: cfg.deviceName }) }, null, 10_000);
+    reply = await call<LoginReply>('/api/login', { method: 'POST', body: JSON.stringify({ email: email.trim(), password, deviceId: deviceId(), deviceName: cfg.deviceName }) }, null, 10_000);
   } catch (e) {
     if (e instanceof ApiError && e.status === 0) return 'unreachable';
     throw e;

@@ -50,6 +50,37 @@ async function bootstrapServer() {
       console.log(`created first Admin ${email}`);
     }
   }
+  await adminRecovery(clinic.id, email);
+}
+
+/**
+ * Lost Admin password: set ADMIN_RESET_PASSWORD (8+ characters) in Railway and restart. The account ADMIN_EMAIL
+ * gets that password as a temporary one (the Admin must choose a new one at sign-in), is made an active Admin,
+ * and is signed out everywhere. Each value is used once, so a later restart doesn't reset it again; remove the
+ * variable afterwards.
+ */
+async function adminRecovery(clinicId, email) {
+  const reset = process.env.ADMIN_RESET_PASSWORD;
+  if (!reset) return;
+  if (!email || reset.length < 8) return console.warn('ADMIN_RESET_PASSWORD needs ADMIN_EMAIL and at least 8 characters; nothing reset.');
+  const fingerprint = sha256(`${email.toLowerCase()}|${reset}`);
+  const used = (await pool.query("SELECT 1 FROM server_meta WHERE key = 'admin_reset_used' AND value = $1", [fingerprint])).rowCount;
+  if (used) return console.log('ADMIN_RESET_PASSWORD was already used; remove it from the variables.');
+  const now = new Date().toISOString();
+  const found = (await pool.query("SELECT id, data, versions FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND lower(data->>'email') = lower($2) AND NOT deleted", [clinicId, email])).rows[0];
+  const patch = { password_hash: bcrypt.hashSync(reset, 10), must_change_password: 1, is_active: 1, role: 'ADMIN', updated_at: now };
+  if (found) {
+    const versions = { ...found.versions, ...Object.fromEntries(Object.keys(patch).map((k) => [k, `${now}|server`])) };
+    await pool.query("UPDATE rows SET data = data || $3::jsonb, versions = $4, seq = nextval('change_seq') WHERE clinic_id = $1 AND tbl = 'users' AND id = $2", [clinicId, found.id, patch, versions]);
+    await pool.query('DELETE FROM sessions WHERE clinic_id = $1 AND user_id = $2', [clinicId, found.id]);
+  } else {
+    const id = crypto.randomUUID();
+    const data = { id, name: 'Admin', email, locale: 'ar', created_at: now, ...patch };
+    const versions = Object.fromEntries(Object.keys(data).map((k) => [k, `${now}|server`]));
+    await pool.query("INSERT INTO rows (clinic_id, tbl, id, data, versions, deleted, seq) VALUES ($1, 'users', $2, $3, $4, false, nextval('change_seq'))", [clinicId, id, data, versions]);
+  }
+  await pool.query("INSERT INTO server_meta (key, value) VALUES ('admin_reset_used', $1) ON CONFLICT (key) DO UPDATE SET value = excluded.value", [fingerprint]);
+  console.log(`Admin password reset for ${email}: sign in with ADMIN_RESET_PASSWORD, choose a new password, then remove the variable.`);
 }
 
 // ---------------------------------------------------------------- helpers
@@ -155,7 +186,7 @@ async function api(req, res, url) {
     const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
     if (tooManyTries(ip)) return send(res, 429, { error: 'Too many attempts. Wait a few minutes.' });
     const { email, password, deviceId, deviceName } = await readJson(req);
-    const found = email && password ? await findUserByEmail(String(email)) : null;
+    const found = email && password ? await findUserByEmail(String(email).trim()) : null;
     if (!found || !Number(found.data.is_active) || !bcrypt.compareSync(String(password), String(found.data.password_hash))) {
       failedTry(ip);
       return send(res, 401, { error: 'Wrong email or password' });
