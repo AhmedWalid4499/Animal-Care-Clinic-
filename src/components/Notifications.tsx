@@ -15,11 +15,11 @@ import { Icon } from './ui';
 export function notificationText(n: ClinicNotification, t: T, fmt: Formatters): string {
   const d = n.data;
   const vars: Record<string, string> = {
-    by: String(d.by ?? ''), pet: String(d.pet ?? ''), owner: String(d.owner ?? ''), number: String(d.number ?? ''), label: String(d.label ?? ''),
+    by: String(d.by ?? ''), pet: String(d.pet ?? ''), owner: String(d.owner ?? ''), number: String(d.number ?? ''), label: String(d.label ?? ''), complaint: String(d.complaint ?? ''),
     at: d.at ? `${fmt.weekday(String(d.at))} ${fmt.time(String(d.at))}` : '',
     amount: d.amount != null ? fmt.money(Number(d.amount)) : '',
   };
-  return t(`notify.${n.kind}.${n.event}`, vars).replace(/\(\s*\)/g, '').trim();
+  return t(`notify.${n.kind}.${n.event}`, vars).replace(/\(\s*\)/g, '').replace(/[:：]\s*$/, '').trim();
 }
 
 function ago(iso: string, t: T, locale: string) {
@@ -31,11 +31,11 @@ function ago(iso: string, t: T, locale: string) {
   return rtf.format(-Math.round(s / 86400), 'day');
 }
 
-const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit' };
+const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard' };
 
 /** The bell: unread count, the list, and each person's on/off choices. */
 export function NotificationBell({ floating }: { floating?: boolean }) {
-  const { t, fmt, locale, user } = useApp();
+  const { t, fmt, locale, user, canVisit } = useApp();
   const { items, unread } = useNotifications();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -102,7 +102,7 @@ export function NotificationBell({ floating }: { floating?: boolean }) {
           <footer>
             <div className="small muted">{t('notify.prefs')}</div>
             <div className="kinds">
-              {NOTIFY_KINDS.map((k) => (
+              {NOTIFY_KINDS.filter((k) => k !== 'queue' || canVisit).map((k) => (
                 <label key={k} className="check small">
                   <input type="checkbox" checked={!off.has(k)} onChange={() => toggleKind(k)} /> {t(`notify.kind.${k}`)}
                 </label>

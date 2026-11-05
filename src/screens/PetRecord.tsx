@@ -37,7 +37,10 @@ export function PetRecord() {
         <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
         {canVisit && pet.status === 'ACTIVE' && (
-          <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
+          <>
+            <button className="btn" onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
+            <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
+          </>
         )}
       </PageHead>
 
@@ -105,6 +108,7 @@ function Timeline({ petId }: { petId: string }) {
             <div className="body">
               <div className="row">
                 <Badge kind={v.type === 'EMERGENCY' ? 'bad' : v.type === 'SURGERY' ? 'warn' : 'info'}>{t(`visitType.${v.type}`)}</Badge>
+                {v.stage !== 'DONE' && <Badge kind="warn">{t(`intake.stage.${v.stage}`)}</Badge>}
                 {v.diagnosis && <b>{v.diagnosis}</b>}
                 <span className="spacer" />
                 {invId ? (
@@ -112,12 +116,20 @@ function Timeline({ petId }: { petId: string }) {
                 ) : (
                   <button className="btn ghost sm" onClick={() => nav(`/invoices/new?visit=${v.id}`)}><Icon name="receipt" /> {t('petRecord.createInvoice')}</button>
                 )}
-                {canVisit && <button className="btn ghost sm" onClick={() => nav(`/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
+                {canVisit && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
               </div>
               {v.complaint && <p><span className="muted">{t('visits.complaint')}:</span> {v.complaint}</p>}
+              {v.intake_at && (v.history || v.intake_notes) && (
+                <p className="small">
+                  <span className="muted">🩺 {t('intake.section')} ({v.intake_by_name ?? '—'}{v.urgency && v.urgency !== 'ROUTINE' ? ` · ${t(`urgency.${v.urgency}`)}` : ''}):</span>{' '}
+                  {[v.history, v.intake_notes].filter(Boolean).join(' · ')}
+                </p>
+              )}
               <div className="kv">
                 {v.weight_kg != null && <span>⚖ {fmt.num(v.weight_kg, 2)} {t('common.kg')}</span>}
                 {v.temperature_c != null && <span>🌡 {fmt.num(v.temperature_c, 1)} {t('common.celsius')}</span>}
+                {v.heart_rate != null && <span>♥ {v.heart_rate}/min</span>}
+                {v.resp_rate != null && <span>🫁 {v.resp_rate}/min</span>}
                 {v.follow_up_at && <span>↻ {t('visits.followUp')}: {fmt.dateTime(v.follow_up_at)}</span>}
               </div>
               {v.treatment_notes && <p className="small">{v.treatment_notes}</p>}

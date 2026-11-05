@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useQuery, type Theme } from '../lib/app';
 import { getSettings } from '../db/repo';
@@ -8,12 +8,14 @@ import { SyncBadge } from './SyncBadge';
 import { signOutSync } from '../sync/engine';
 import { dropPushSubscription } from '../sync/notify';
 import { NotificationAnnouncer, NotificationBell } from './Notifications';
+import { ChangePasswordDialog } from './Account';
 
 export function Layout() {
   const { t, user, setUser, isAdmin, canVisit, locale, setLocale, theme, setTheme } = useApp();
   const settings = useQuery(getSettings);
   const nav = useNavigate();
   const { pathname } = useLocation();
+  const [pwDialog, setPwDialog] = useState(false);
   // Each screen starts at the top and slides in (see .route-enter in styles.css).
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -72,10 +74,12 @@ export function Layout() {
             <button className="linkbtn" onClick={() => setTheme(nextTheme[theme])}>
               {t('app.theme')}: {t(`app.theme${theme[0].toUpperCase()}${theme.slice(1)}`)}
             </button>
+            <button className="linkbtn" onClick={() => setPwDialog(true)}>{t('password.change')}</button>
             <button className="linkbtn" onClick={async () => { await dropPushSubscription(); signOutSync(); setUser(null); nav('/'); }}>{t('app.logout')}</button>
           </div>
         </aside>
         <NotificationAnnouncer />
+        {pwDialog && <ChangePasswordDialog onClose={() => setPwDialog(false)} />}
         <div className="mobile-bell"><NotificationBell floating /></div>
         <main className="main">
           <div key={pathname} className="route-enter">

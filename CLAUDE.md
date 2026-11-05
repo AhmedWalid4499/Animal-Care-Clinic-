@@ -6,7 +6,7 @@ Vet clinic records app for Dr. Waleed El-Bourgy. Built by Yuto Software House (A
 The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced by a **Windows desktop app**. SCOPE.md §4/§5 still describe a web/PWA delivery; it must be re-confirmed with Dr. Waleed as a change request.
 - **Electron** (`electron/main.cjs`, sandboxed renderer, `electron/preload.cjs` is the only bridge) · **React 18 + Vite + TypeScript** · HashRouter
 - Data: **SQLite via sql.js**, one file at `%APPDATA%\Animal Care Clinic\data\clinic.sqlite`, written atomically after every transaction; daily backup copy (keep 14). Schema in `src/db/schema.ts` mirrors `DATABASE.md` (money = integer piastres; attachments' bytes in `attachment_blobs`)
-- Auth: users with bcryptjs, roles `ADMIN` / `DOCTOR` / `ASSISTANT` (schema v2; old `VET` → `ADMIN`). Admin: everything; Doctor: visits but no Settings/users/archive/void; Assistant: front desk, read-only visits. The UI hides what a role can't do (`isAdmin`, `canVisit` in `src/lib/app.tsx`), and `server/rules.mjs` enforces it
+- Auth: users with bcryptjs, roles `ADMIN` / `DOCTOR` / `ASSISTANT` (schema v2; old `VET` → `ADMIN`). Admin: everything; Doctor: visits but no Settings/users/archive/void; Assistant: front desk, read-only visits. Doctors also record the **pre-diagnosis** (Phase 5): the patient waits in the dashboard's vet queue and the Admin or another Doctor completes the same visit (`visits.stage`, schema v4). Passwords set by the Admin are temporary (`users.must_change_password`). The UI hides what a role can't do (`isAdmin`, `canVisit` in `src/lib/app.tsx`), and `server/rules.mjs` enforces it
 - **Cloud sync (Phase 1, 4 Nov 2026):** local-first, as in `docs/CLOUD-PLAN.md`. Each device keeps its SQLite and SQLite triggers feed `sync_outbox` (`src/sync/local.ts`); `src/sync/engine.ts` pushes and pulls against `server/` (Node + Postgres on Railway, `railway.json`). Any new table or column syncs automatically if it is in `SYNC_TABLES`, which must match `server/tables.mjs`. Invoice numbers come from the server while linked (`TMP-…` until synced)
 - i18n: `src/i18n/ar.json` (default, RTL) + `en.json`; never hard-code UI text
 - Charts: `recharts` (weight chart) · receipt / pet summary: print CSS, A5 · export: SheetJS (xlsx/csv)
@@ -35,9 +35,10 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/owners/[id]` | 3 Owner detail |
 | `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|files`) | 4 Pet record |
 | `/pets/[id]/visits/new`, `/visits/[id]/edit` | 5 Visit |
+| `/intake/new`, `/pets/[id]/intake`, `/visits/[id]/intake` | 5a Pre-diagnosis (Phase 5 change request; queue on the dashboard) |
 | `/appointments` (`?view=day\|week`) | 6 Appointments |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
-| `/settings` (clinic, prices, vaccines, users, export, clinic server) | 8 Settings — Admin only |
+| `/settings` (clinic, prices, vaccines, users, devices, export, clinic server) | 8 Settings — Admin only |
 
 ## The one integration
 WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in `lib/whatsapp.ts` (AR/EN): vaccination reminder, appointment reminder, invoice balance. Set `reminder_sent_at` when the button is clicked. **No WhatsApp Business API** — out of scope.
@@ -58,7 +59,7 @@ WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in 
 Scope sign-off 8 Nov · Prototype 13 Nov · Data sheet 22 Nov · Handover 29 Nov 2026 · Fix window to 29 Dec.
 
 ## Open items (fill in, then delete this section)
-- [ ] Cloud move: plan in `docs/CLOUD-PLAN.md` (local-first sync via Railway on Ahmed's account, offline, roles Admin/Doctor/Assistant, notifications incl. app closed, `clinic_id` for later clinics). Railway steps in `docs/RAILWAY-SETUP.md`. **Phase 1 live (5 Nov 2026):** server at `https://animal-care-clinic-production.up.railway.app` (Ahmed's Railway, EU West, Hobby), first laptop connected and synced. **Phase 3 (notifications: bell, tray, Web Push) built**, `server/notify.mjs` + `src/sync/notify.ts`. Next: Phases 2, 4, 5 + the 'Still open' answers
+- [ ] Cloud move: plan in `docs/CLOUD-PLAN.md` (local-first sync via Railway on Ahmed's account, offline, roles Admin/Doctor/Assistant, notifications incl. app closed, `clinic_id` for later clinics). Railway steps in `docs/RAILWAY-SETUP.md`. **Phase 1 live (5 Nov 2026):** server at `https://animal-care-clinic-production.up.railway.app` (Ahmed's Railway, EU West, Hobby), first laptop connected and synced. **Phase 3 (notifications: bell, tray, Web Push) live** (v0.1.7). **Phase 5 built** (devices, temporary passwords/reset/invite, pre-diagnosis queue). Next: Phases 2, 4 + the 'Still open' answers
 - [x] Clinic name, logo (`src/assets/clinic-logo.png`), phone 01227007428, Giza — seeded in `src/db/seed.ts` (`CLINIC`)
 - [ ] Confirm: brand colour = logo teal `#2e6f73`; WhatsApp number = phone; full street address; Arabic clinic name
 - [ ] Confirm spelling: logo says "Dr. Waleed ElBoargi", scope says "El-Bourgy"; Arabic spelling used in the how-to is "وليد البرجي"

@@ -1,4 +1,4 @@
-// Cloud sync + notifications test (docs/CLOUD-PLAN.md, Phases 1 and 3): a local Postgres + the clinic server +
+// Cloud sync + notifications + Phase 5 test (docs/CLOUD-PLAN.md, Phases 1, 3 and 5): a local Postgres + the clinic server +
 // two desktop apps + a fake push service standing in for a phone.
 // Usage: npm run build && npm run build:cloud && xvfb-run -a node scripts/sync-test.mjs [outDir]
 // Needs a local Postgres you can reach with TEST_DATABASE_URL (default postgres://clinic:clinic@127.0.0.1:5432/clinic_sync_test,
@@ -120,11 +120,22 @@ async function connect(d) {
   await d.win.locator('.server-edit .btn.primary').click();
   await d.win.waitForSelector('.server-line b.ltr');
 }
-async function signIn(d, email, password) {
+async function signIn(d, email, password, { newPassword } = {}) {
   await d.win.locator('input[type=email]').fill(email);
   await d.win.locator('input[type=password]').fill(password);
   await d.win.locator('form button.signin').click();
-  await d.win.waitForSelector('.searchbox', { timeout: 30_000 });
+  await d.win.waitForSelector('.searchbox, .password-form', { timeout: 30_000 });
+  // A temporary password from the Admin: the person must choose their own first.
+  if (await d.win.locator('.password-form').count()) {
+    if (!newPassword) throw new Error(`${email} was asked to choose a password`);
+    const [a, b] = await d.win.locator('.password-form input[type=password]').all();
+    await a.fill(newPassword);
+    await b.fill(newPassword);
+    await d.win.locator('.password-form .btn.primary').click();
+    await d.win.waitForSelector('.searchbox', { timeout: 10_000 });
+    return 'changed';
+  }
+  return 'in';
 }
 async function signOut(d) {
   await d.win.locator('.side-foot button.linkbtn').last().click();
@@ -188,6 +199,8 @@ await step('live: B → A', async () => {
 });
 
 let doctorId = null;
+const DOCTOR_PW = 'Doctor-own-2026';
+let inviteText = '';
 await step('admin adds users', async () => {
   for (const [name, email, role] of [['Dr. Assistant', 'doctor@test.local', 'DOCTOR'], ['Reception', 'desk@test.local', 'ASSISTANT']]) {
     await go(A, '#/settings?tab=users');
@@ -196,8 +209,15 @@ await step('admin adds users', async () => {
     await dlg.locator('input[type=text]').first().fill(name);
     await dlg.locator('input[type=email]').fill(email);
     await dlg.locator('select').first().selectOption(role);
-    await dlg.locator('input[type=password]').fill('Welcome2026!');
+    await dlg.locator('input[name=temp-password]').fill('Welcome2026!');
     await dlg.locator('footer .btn.primary').click();
+    // Then the sign-in details to send by WhatsApp or email.
+    await A.win.waitForSelector('.dialog .invite-text');
+    if (role === 'DOCTOR') {
+      inviteText = await A.win.locator('.dialog .invite-text').innerText();
+      await A.win.screenshot({ path: path.join(out, 'A-invite.png') });
+    }
+    await A.win.keyboard.press('Escape');
     await A.win.waitForSelector('.dialog', { state: 'detached' });
   }
   const r = await until(async () => (await pool.query("SELECT data FROM rows WHERE tbl = 'users' AND data->>'email' = 'doctor@test.local'")).rows[0], 10_000);
@@ -207,10 +227,28 @@ await step('admin adds users', async () => {
 
 await step('doctor signs in on the other laptop', async () => {
   await signOut(B);
-  await signIn(B, 'doctor@test.local', 'Welcome2026!');
+  await B.win.locator('input[type=email]').fill('doctor@test.local');
+  await B.win.locator('input[type=password]').fill('Welcome2026!');
+  await B.win.locator('form button.signin').click();
+  await B.win.waitForSelector('.password-form', { timeout: 30_000 });
+  await B.win.screenshot({ path: path.join(out, 'B-choose-password.png') });
+  const [a, b] = await B.win.locator('.password-form input[type=password]').all();
+  await a.fill('Welcome2026!');
+  await b.fill('Welcome2026!');
+  await B.win.locator('.password-form .btn.primary').click();
+  const sameRefused = (await B.win.locator('.password-form .err').count()) === 1;
+  await a.fill(DOCTOR_PW);
+  await b.fill(DOCTOR_PW);
+  await B.win.locator('.password-form .btn.primary').click();
+  await B.win.waitForSelector('.searchbox', { timeout: 10_000 });
   const newVisit = await B.win.locator('.side .btn.primary').count();
   const settings = await B.win.locator('.nav a[href="#/settings"]').count();
+  const synced = await until(async () => (await api('/api/login', { email: 'doctor@test.local', password: DOCTOR_PW, deviceId: 'test-check' })).status === 200, 10_000, 300);
+  const oldFails = (await api('/api/login', { email: 'doctor@test.local', password: 'Welcome2026!', deviceId: 'test-check' })).status === 401;
+  const invited = inviteText.includes('doctor@test.local') && inviteText.includes('Welcome2026!') && inviteText.includes(SERVER);
   check('doctor', 'A Doctor can sign in on another laptop, record visits, and has no Settings', newVisit === 1 && settings === 0, `New visit button: ${newVisit ? 'yes' : 'no'}; Settings in menu: ${settings ? 'yes' : 'no'}`);
+  check('first-password', 'A new user gets sign-in details to send, and must choose their own password the first time', invited && sameRefused && !!synced.v && oldFails,
+    `invite text has email, temporary password and server: ${invited}; keeping the temporary password refused: ${sameRefused}; new password works on the server: ${!!synced.v}, temporary one no longer: ${oldFails}`);
 });
 
 await step('server enforces roles', async () => {
@@ -255,7 +293,7 @@ let phone = null;
 
 await step('notify: booking', async () => {
   tokens.desk = (await api('/api/login', { email: 'desk@test.local', password: 'Welcome2026!', deviceId: 'test-desk-2' })).body.token;
-  tokens.doctor = (await api('/api/login', { email: 'doctor@test.local', password: 'Welcome2026!', deviceId: 'test-phone' })).body.token;
+  tokens.doctor = (await api('/api/login', { email: 'doctor@test.local', password: DOCTOR_PW, deviceId: 'test-phone' })).body.token;
   tokens.admin = (await api('/api/login', { ...ADMIN, deviceId: 'test-admin-api' })).body.token;
   // The doctor's phone: real push keys, so the clinic server must encrypt for it.
   const ecdh = crypto.createECDH('prime256v1');
@@ -360,7 +398,7 @@ await step('notify: preferences', async () => {
   const sneaky = (await api('/api/sync/push', { changes: [{ tbl: 'users', id: deskId, op: 'upsert', at: nowIso(), cols: { role: 'ADMIN' } }] }, tokens.desk)).body;
   // The doctor switches visit notifications off in the bell on laptop B.
   await B.win.locator('.side-foot .bell').click();
-  const visitBox = B.win.locator('.bell-panel .kinds label').nth(1).locator('input');
+  const visitBox = B.win.locator('.bell-panel .kinds label').nth(2).locator('input'); // queue, appointments, visits…
   await visitBox.uncheck();
   await B.win.keyboard.press('Escape');
   const docOff = await until(async () => (await pool.query("SELECT data->>'notify_off' v FROM rows WHERE tbl = 'users' AND data->>'email' = 'doctor@test.local'")).rows[0].v === 'visit', 10_000);
@@ -403,6 +441,119 @@ await step('notify: read', async () => {
   check('notify-read', '“Mark all read” clears the count, on every device of that person', (await bell(B)) === 0 && !!r.v, `bell count now ${await bell(B)}; server unread for the doctor: ${r.v ? 0 : 'not 0'}`);
 });
 
+// ---------------------------------------------------------------- Phase 5: pre-diagnosis, password reset, devices
+await step('phase5: pre-diagnosis', async () => {
+  // The doctor on laptop B records the intake; the admin on laptop A is the vet.
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY id LIMIT 1")).rows[0];
+  const beforeA = await bell(A);
+  await go(B, `#/pets/${pet.id}/intake`);
+  await B.win.waitForSelector('.seg.urgency');
+  await B.win.locator('.seg.urgency button').nth(2).click(); // emergency
+  const form = B.win.locator('form');
+  await form.locator('input[type=text]').first().fill('Vomiting since this morning');
+  const [hist, notes] = await form.locator('textarea').all();
+  await hist.fill('Ate something in the street yesterday');
+  const [w, temp, hr, rr] = await form.locator('input[type=number]').all();
+  await w.fill('12.4');
+  await temp.fill('39.6');
+  await hr.fill('132');
+  await rr.fill('36');
+  await notes.fill('Dehydrated, painful abdomen. Suspect gastroenteritis');
+  await B.win.screenshot({ path: path.join(out, 'B-pre-diagnosis.png') });
+  await B.win.locator('.actionbar .btn.primary').click();
+  await B.win.waitForSelector('.section.queue li.link');
+  // The admin (vet) is told at once, and sees the patient at the top of the queue.
+  const told = await until(async () => (await bell(A)) > beforeA, 10_000, 100);
+  const note = (await notesFor('admin')).find((n) => n.kind === 'queue');
+  await go(A, '#/');
+  const inQueue = await until(async () => (await A.win.locator('.section.queue li.urgency-EMERGENCY').count()) === 1, 10_000, 200);
+  await A.win.screenshot({ path: path.join(out, 'A-queue.png') });
+  // The vet takes the patient: laptop B shows "with Admin"; the vet sees the pre-diagnosis on top of the visit.
+  await A.win.locator('.section.queue li.urgency-EMERGENCY').click();
+  await A.win.waitForSelector('.intake-box');
+  const withVet = await until(async () => (await B.win.locator('.section.queue li .badge.ok').count()) === 1, 10_000, 200);
+  const shown = await A.win.locator('.intake-box input[type=text]').first().inputValue();
+  const hrShown = await A.win.locator('.intake-box input[type=number]').nth(2).inputValue();
+  await A.win.screenshot({ path: path.join(out, 'A-visit-with-pre-diagnosis.png'), fullPage: true });
+  // The vet corrects the temperature and completes the same visit.
+  await A.win.locator('.intake-box input[type=number]').nth(1).fill('39.4');
+  await A.win.locator('form > .form-section:not(.intake-box) input[type=text]').first().fill('Acute gastroenteritis');
+  await A.win.locator('.actionbar .btn.primary').click();
+  await A.win.waitForSelector('.dialog');
+  const invoiceOffered = (await A.win.locator('.dialog footer .btn.primary').count()) === 1;
+  await A.win.keyboard.press('Escape');
+  const row = await until(async () => {
+    const d = (await pool.query("SELECT data FROM rows WHERE tbl = 'visits' AND data->>'complaint' = 'Vomiting since this morning'")).rows[0]?.data;
+    return d?.stage === 'DONE' && d;
+  }, 10_000);
+  const v = row.v ?? {};
+  const adminId = (await pool.query("SELECT id FROM rows WHERE tbl = 'users' AND data->>'email' = $1", [ADMIN.email])).rows[0].id;
+  const visits = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'visits' AND data->>'pet_id' = $1 AND data->>'complaint' = 'Vomiting since this morning'", [pet.id])).rows[0].n);
+  const emptied = await until(async () => (await B.win.locator('.section.queue li.link').count()) === 0, 10_000, 200);
+  // Sending to the queue is not announced as a finished visit; finishing it is (to the others, for a pet booked today).
+  const earlyVisitNote = (await notesFor('admin')).filter((n) => n.kind === 'visit' && n.data.visit_id === v.id).length;
+  check('pre-diagnosis', 'A Doctor records the pre-diagnosis; the vet is notified, sees it in the queue and at the top of the visit, and completes it as one visit',
+    !!told.v && note?.event === 'emergency' && !!inQueue.v && !!withVet.v && shown === 'Vomiting since this morning' && hrShown === '132' && invoiceOffered &&
+      v.stage === 'DONE' && v.vet_id === adminId && v.intake_by === doctorId && Number(v.temperature_c) === 39.4 && v.diagnosis === 'Acute gastroenteritis' && visits === 1 && !!emptied.v && earlyVisitNote === 0,
+    `vet's notification: ${note?.event ?? 'none'}; in the vet's queue as emergency: ${!!inQueue.v}; doctor's laptop shows "with the vet": ${!!withVet.v}; visit form shows complaint "${shown}", heart rate ${hrShown}; saved as one visit (${visits}), stage ${v.stage}, vet = admin: ${v.vet_id === adminId}, intake by the doctor: ${v.intake_by === doctorId}, temperature corrected to ${v.temperature_c}; invoice offered: ${invoiceOffered}; queue empty after: ${!!emptied.v}; "visit recorded" sent at intake: ${earlyVisitNote}`);
+});
+
+await step('phase5: password reset', async () => {
+  await go(A, '#/settings?tab=users');
+  await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();
+  await A.win.locator('.dialog .span2 .btn').click(); // Reset password
+  await A.win.locator('.dialog .btn.danger').click(); // confirm
+  await A.win.waitForSelector('.dialog .temp-pw b');
+  const temp = (await A.win.locator('.dialog .temp-pw b').innerText()).trim();
+  await A.win.keyboard.press('Escape');
+  const oldSession = await until(async () => (await api('/api/notifications', null, tokens.desk)).status === 401, 10_000, 300);
+  const oldPw = (await api('/api/login', { email: 'desk@test.local', password: 'Welcome2026!', deviceId: 'test-desk-3' })).status;
+  const fresh = await api('/api/login', { email: 'desk@test.local', password: temp, deviceId: 'test-desk-3' });
+  tokens.desk = fresh.body.token;
+  check('password-reset', 'The Admin resets a password: the old one stops working, the person is signed out everywhere and must choose a new one',
+    /^[a-z2-9]{4}-[a-z2-9]{4}$/.test(temp) && !!oldSession.v && oldPw === 401 && fresh.status === 200 && Number(fresh.body.user?.must_change_password) === 1,
+    `temporary password ${temp}; old session signed out: ${!!oldSession.v}; old password → ${oldPw}; temporary password → ${fresh.status}, must choose a new one: ${fresh.body.user?.must_change_password}`);
+});
+
+await step('phase5: ten devices', async () => {
+  // Ten more devices (say the doctor's phone, tablets…) each add a record at the same moment; all see all ten.
+  const devs = await Promise.all(Array.from({ length: 10 }, (_, i) => api('/api/login', { email: 'doctor@test.local', password: DOCTOR_PW, deviceId: `load-${i}`, deviceName: `Tablet ${i + 1}` })));
+  const t0 = Date.now();
+  await Promise.all(devs.map((d, i) => {
+    const id = crypto.randomUUID();
+    return api('/api/sync/push', { changes: [{ tbl: 'owners', id, op: 'upsert', at: nowIso(), cols: { id, full_name: `Load Owner ${i + 1}`, phone: `0109100000${i}`, status: 'ACTIVE', created_at: nowIso(), updated_at: nowIso() } }] }, d.body.token);
+  }));
+  const pulls = await Promise.all(devs.map(async (d) => {
+    const r = (await api('/api/sync/pull?since=0&limit=2000', null, d.body.token)).body;
+    return (r.rows ?? []).filter((x) => x.tbl === 'owners' && /^Load Owner /.test(x.data?.full_name ?? '')).length;
+  }));
+  const ms = Date.now() - t0;
+  const onA = await until(async () => (await ownersOn(A, 'Load Owner')) === 10, 15_000, 300);
+  const list = (await api('/api/devices', null, tokens.admin)).body.devices ?? [];
+  check('devices-10', 'Ten more devices sync the same records at once, and all appear in Settings → Devices',
+    pulls.every((n) => n === 10) && !!onA.v && list.filter((d) => /^Tablet /.test(d.device_name ?? '')).length === 10,
+    `each of the 10 devices sees ${pulls.join('/')} of the 10 new owners (${ms} ms for all pushes and pulls); laptop A shows them: ${!!onA.v}; devices listed: ${list.length}`);
+});
+
+await step('phase5: sign out a device', async () => {
+  // The admin signs out laptop B (say it was lost) from Settings → Devices on laptop A.
+  await go(A, '#/settings?tab=devices');
+  const rowB = A.win.locator('table.devices tr', { hasText: 'Dr. Assistant' }).filter({ has: A.win.locator('.badge.ok') });
+  await rowB.first().waitFor({ timeout: 20_000 });
+  await A.win.screenshot({ path: path.join(out, 'A-devices.png') });
+  await rowB.first().locator('.btn.danger').click();
+  await A.win.locator('.dialog .btn.danger').click();
+  const t0 = Date.now();
+  const out1 = await until(async () => (await B.win.locator('form button.signin').count()) === 1, 10_000, 100);
+  const msg = out1.v ? (await B.win.locator('.login-msg').innerText()).trim() : '';
+  await B.win.screenshot({ path: path.join(out, 'B-signed-out-by-admin.png') });
+  const ms = Date.now() - t0;
+  const again = await signIn(B, 'doctor@test.local', DOCTOR_PW);
+  check('device-revoke', 'The Admin signs out a lost laptop: it goes back to the sign-in screen at once and needs the password again',
+    !!out1.v && msg.length > 0 && again === 'in',
+    `laptop B back at sign-in after ${ms} ms with "${msg}"; signed in again with the password: ${again === 'in'}`);
+});
+
 await step('offline then back', async () => {
   await stopServer();
   await go(A, '#/owners/new');
@@ -443,6 +594,6 @@ await pool.end();
 
 const failed = results.filter((r) => !r.pass);
 fs.writeFileSync(path.join(out, 'sync-test.json'), JSON.stringify(results, null, 2));
-fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync and notifications test (Phases 1 and 3)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
+fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync, notifications and Phase 5 test (Phases 1, 3 and 5)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
 console.log(`\n${results.length - failed.length}/${results.length} passed → ${out}`);
 process.exitCode = failed.length ? 1 : 0;

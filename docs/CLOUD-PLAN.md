@@ -3,7 +3,8 @@
 Status, 5 Nov 2026:
 - **Phase 1 live** at `https://animal-care-clinic-production.up.railway.app`; the first laptop syncs.
 - **Phase 3 (notifications) built and tested locally.** `scripts/sync-test.mjs` passes 18/18 against Postgres 16 with two desktop apps and a fake phone push service; results are in `docs/acceptance/SYNC-TEST.md`.
-- **Next:** Phase 2 (offline robustness), Phase 4, then Phase 5.
+- **Phase 5 built and tested locally** (devices, temporary passwords / reset / invite, pre-diagnosis queue): `scripts/sync-test.mjs` passes 23/23.
+- **Next:** Phase 2 (offline robustness), then Phase 4.
 - Open points are at the end.
 
 ## What Ahmed asked for
@@ -162,10 +163,16 @@ Dates assume 10–15 hours a week, as in SCOPE §8.
 | **Admin creates users and assigns roles** | Already works: **Settings → Users** (name, email, role, temporary password); the server accepts user changes from Admins only | **Must change password at first sign-in**, **Reset password** by the Admin, and an **Invite** link sent by WhatsApp or email | A new user signs in with the temporary password and has to set their own |
 | **Pre-diagnosis by the assistant doctor** | Not built | A **pre-assessment** step before the vet. The assistant doctor records the intake (complaint, weight, temperature, first observations, urgency). The patient appears in a **Waiting for the vet** queue on the vet's dashboard, the vet opens it, sees the pre-diagnosis at the top of the visit, and continues the same visit. A notification goes to the vet | A visit started by a Doctor shows in the vet's queue with the pre-diagnosis; the vet completes it as one visit |
 
-Open questions for the pre-assessment, at the start of Phase 5:
-- Which fields does the assistant doctor fill?
-- Can the vet edit what the assistant wrote?
-- Is there an urgency scale (e.g. routine / soon / emergency)?
+Decided by Ahmed (5 Nov): the **Doctor** role records the pre-diagnosis (no new role); the patient waits for the Admin or another Doctor. Fields: complaint, history, weight, temperature, heart rate, breathing rate, first observations / provisional diagnosis. Urgency: Routine / Soon / Emergency (emergencies first in the queue, and the notification says so). The vet can correct the pre-diagnosis; the audit log keeps who wrote what.
+
+How Phase 5 is built:
+
+| Piece | Where | Notes |
+|---|---|---|
+| Pre-diagnosis | `src/screens/IntakeForm.tsx`, routes `/intake/new`, `/pets/:id/intake`, `/visits/:id/intake` | Saved as a visit with `stage = WAITING` (schema v4). The dashboard's **Waiting for the vet** list (emergencies first, minutes waiting, who wrote it); the vet's click takes the patient (`WITH_VET`, shown to the others as "with Dr X") and opens the visit with the pre-diagnosis on top; saving completes it (`DONE`), offers the invoice and marks a linked appointment done. Notification kind `queue` goes to Admins and Doctors. |
+| Temporary passwords | `src/components/Account.tsx`, Settings → Users | A new user gets a generated temporary password; **Reset password** makes a new one. Either way the person must choose their own at the next sign-in (`must_change_password`), and the Admin gets the sign-in message (download link, server address, email, temporary password) to send by WhatsApp or email. A changed or reset password signs that person out on their other devices. Everyone can **Change my password** from the sidebar. |
+| Devices | `src/components/Devices.tsx`, `GET /api/devices`, `POST /api/devices/revoke` | Settings → Devices (Admin, when connected): every signed-in device with its user, last seen / online now. **Sign out** ends that session at once (live message) or at its next sync; the device needs the password again. No limit on the number of devices; tested with 12 at once. |
+| Sign-in brake | `server/index.mjs` | Now counts only wrong passwords (10 per 5 minutes per address): all the clinic's devices share one internet address, so counting every sign-in would have blocked a busy morning. |
 
 ## Scope impact (SCOPE §10)
 

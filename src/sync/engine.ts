@@ -163,6 +163,27 @@ export function signOutSync() {
   void flush();
 }
 
+/**
+ * The server no longer accepts this device's sign-in: the Admin signed the device out, the password was reset
+ * or changed elsewhere, or the user was deactivated. Back to the sign-in screen; a password is needed again.
+ */
+let revokedNotice = false;
+function deviceRevoked() {
+  if (userId) setState(`token:${userId}`, null);
+  setState('session_user', null);
+  stopLive();
+  setStatus({ state: 'signedOut', error: null });
+  revokedNotice = true;
+  liveHandlers.forEach((h) => h({ type: 'revoked' }));
+  void flush();
+}
+/** For the sign-in screen: was the last person signed out by the server? (asked once) */
+export function takeRevokedNotice() {
+  const r = revokedNotice;
+  revokedNotice = false;
+  return r;
+}
+
 export const clinicName = () => getState('clinic_name');
 
 /** Who stayed signed in on this device (until they press Sign out), so a laptop in the tray keeps notifying after a restart. */
@@ -251,11 +272,7 @@ export async function syncNow(): Promise<void> {
     setStatus({ state: 'synced', lastSync: new Date().toISOString() });
   } catch (e) {
     const err = e as ApiError;
-    if (err.status === 401) {
-      if (userId) setState(`token:${userId}`, null);
-      stopLive();
-      setStatus({ state: 'signedOut', error: err.message });
-    } else setStatus({ state: err.status === 0 ? 'offline' : 'error', error: err.message });
+    if (err.status === 401) deviceRevoked(); else setStatus({ state: err.status === 0 ? 'offline' : 'error', error: err.message });
   } finally {
     running = false;
     await flush();
@@ -304,6 +321,7 @@ function connect() {
       /* plain ping */
     }
     if (m.type === 'changed' || m.type === 'hello') void syncNow();
+    if (m.type === 'revoked') return deviceRevoked();
     liveHandlers.forEach((h) => h(m));
   };
   sock.onclose = () => {

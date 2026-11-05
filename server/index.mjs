@@ -101,20 +101,44 @@ async function auth(req) {
   return { clinicId: s.clinic_id, user: u.data, deviceId: s.device_id, tokenHash: s.token_hash };
 }
 
-// Simple brute-force brake on sign-in: 10 tries per 5 minutes per address.
-const tries = new Map();
+// Brute-force brake on sign-in: 10 wrong passwords per 5 minutes per address. Only failures count, because
+// every device of a clinic usually shares one internet address (any number of laptops signing in at 9am is fine).
+const failures = new Map();
+const recent = (ip) => (failures.get(ip) || []).filter((t) => Date.now() - t < 5 * 60_000);
 function tooManyTries(ip) {
-  const now = Date.now();
-  const list = (tries.get(ip) || []).filter((t) => now - t < 5 * 60_000);
-  list.push(now);
-  tries.set(ip, list);
-  return list.length > 10;
+  return recent(ip).length >= 10;
+}
+function failedTry(ip) {
+  const list = recent(ip);
+  list.push(Date.now());
+  failures.set(ip, list);
 }
 
 // ---------------------------------------------------------------- live pings
 const sockets = new Map(); // clinicId -> Set<ws>
 function broadcast(clinicId, msg, exceptDevice) {
   for (const ws of sockets.get(clinicId) || []) if (ws.readyState === 1 && ws.deviceId !== exceptDevice) ws.send(JSON.stringify(msg));
+}
+/** Sessions ended on the server (device signed out by the Admin, password reset, user deactivated): tell their open apps. */
+function endSockets(tokenHashes) {
+  const ended = new Set(tokenHashes);
+  if (!ended.size) return;
+  for (const set of sockets.values()) for (const ws of set) {
+    if (!ended.has(ws.tokenHash)) continue;
+    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'revoked' }));
+    ws.close();
+  }
+}
+/** After a push: a new password or a deactivated user ends that person's sessions (except the one that made the change). */
+async function endSessionsAfter(s, changes, rejected) {
+  const refused = new Set(rejected.map((r) => `${r.tbl}:${r.id}`));
+  for (const ch of changes) {
+    if (ch?.tbl !== 'users' || ch.op !== 'upsert' || refused.has(`users:${ch.id}`) || !ch.cols) continue;
+    const deactivated = 'is_active' in ch.cols && !Number(ch.cols.is_active);
+    if (!deactivated && !('password_hash' in ch.cols)) continue;
+    const r = await pool.query('DELETE FROM sessions WHERE clinic_id = $1 AND user_id = $2 AND token_hash <> $3 RETURNING token_hash', [s.clinicId, String(ch.id), s.tokenHash]);
+    endSockets(r.rows.map((x) => x.token_hash));
+  }
 }
 /** Ping every open app (incl. desktop apps in the tray) of the people notified, then push to their phones/browsers. */
 function deliver(clinicId, notifications) {
@@ -133,6 +157,7 @@ async function api(req, res, url) {
     const { email, password, deviceId, deviceName } = await readJson(req);
     const found = email && password ? await findUserByEmail(String(email)) : null;
     if (!found || !Number(found.data.is_active) || !bcrypt.compareSync(String(password), String(found.data.password_hash))) {
+      failedTry(ip);
       return send(res, 401, { error: 'Wrong email or password' });
     }
     const token = crypto.randomBytes(32).toString('base64url');
@@ -158,6 +183,7 @@ async function api(req, res, url) {
     const r = await applyChanges(pool, { clinicId: s.clinicId, user: s.user, deviceId: s.deviceId, changes });
     if (r.seq) broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
     deliver(s.clinicId, r.notifications);
+    await endSessionsAfter(s, changes, r.rejected);
     return send(res, 200, { rejected: r.rejected, reverts: r.reverts, seq: r.seq });
   }
   if (p === '/api/sync/pull' && req.method === 'GET') {
@@ -199,6 +225,31 @@ async function api(req, res, url) {
       [endpoint, s.clinicId, s.user.id, { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth }],
     );
     return send(res, 200, { ok: true });
+  }
+  // Devices (Phase 5): every signed-in laptop / phone / browser of the clinic; the Admin can sign one out.
+  if (p === '/api/devices' && req.method === 'GET') {
+    if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
+    const live = new Set();
+    for (const ws of sockets.get(s.clinicId) || []) if (ws.readyState === 1) live.add(ws.tokenHash);
+    const rows = (await pool.query(
+      `SELECT x.token_hash, x.device_id, x.device_name, x.created_at, x.last_seen, x.user_id, u.data->>'name' AS user_name, u.data->>'role' AS role
+         FROM sessions x LEFT JOIN rows u ON u.clinic_id = x.clinic_id AND u.tbl = 'users' AND u.id = x.user_id
+        WHERE x.clinic_id = $1 ORDER BY x.last_seen DESC`,
+      [s.clinicId],
+    )).rows;
+    return send(res, 200, {
+      devices: rows.map((r) => ({
+        id: r.token_hash, device_id: r.device_id, device_name: r.device_name, user_id: r.user_id, user_name: r.user_name, role: r.role,
+        created_at: r.created_at, last_seen: r.last_seen, online: live.has(r.token_hash), current: r.token_hash === s.tokenHash,
+      })),
+    });
+  }
+  if (p === '/api/devices/revoke' && req.method === 'POST') {
+    if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
+    const { id } = await readJson(req);
+    const r = await pool.query('DELETE FROM sessions WHERE clinic_id = $1 AND token_hash = $2 RETURNING token_hash', [s.clinicId, String(id ?? '')]);
+    endSockets(r.rows.map((x) => x.token_hash));
+    return send(res, 200, { ok: true, signedOut: r.rowCount });
   }
   if (p === '/api/push/unsubscribe' && req.method === 'POST') {
     const { endpoint } = await readJson(req);
@@ -254,6 +305,7 @@ server.on('upgrade', async (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.deviceId = s.deviceId;
     ws.userId = s.user.id;
+    ws.tokenHash = s.tokenHash;
     ws.alive = true;
     ws.on('pong', () => (ws.alive = true));
     const set = sockets.get(s.clinicId) || new Set();

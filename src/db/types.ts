@@ -18,11 +18,14 @@ export type PriceCategory = (typeof PRICE_CATEGORIES)[number];
 export type InvoiceStatus = (typeof INVOICE_STATUS)[number];
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export type Role = 'ADMIN' | 'DOCTOR' | 'ASSISTANT';
+export const URGENCIES = ['ROUTINE', 'SOON', 'EMERGENCY'] as const;
+export type Urgency = (typeof URGENCIES)[number];
+export type VisitStage = 'WAITING' | 'WITH_VET' | 'DONE';
 export const ROLES: Role[] = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
 export type Locale = 'ar' | 'en';
 
 export interface User {
-  id: string; name: string; email: string; password_hash: string; role: Role; locale: Locale; is_active: number; notify_off?: string | null;
+  id: string; name: string; email: string; password_hash: string; role: Role; locale: Locale; is_active: number; notify_off?: string | null; must_change_password?: number;
 }
 export interface Owner {
   id: string; full_name: string; phone: string; whatsapp: string | null; email: string | null; address: string | null;
@@ -37,6 +40,8 @@ export interface Visit {
   id: string; pet_id: string; vet_id: string | null; visited_at: string; type: VisitType; complaint: string | null;
   weight_kg: number | null; temperature_c: number | null; diagnosis: string | null; treatment_notes: string | null;
   follow_up_at: string | null; invoice_id: string | null;
+  stage: VisitStage; urgency: Urgency | null; history: string | null; heart_rate: number | null; resp_rate: number | null;
+  intake_notes: string | null; intake_by: string | null; intake_at: string | null;
 }
 export interface Prescription {
   id: string; visit_id: string; drug: string; dose: string | null; frequency: string | null; duration_days: number | null;

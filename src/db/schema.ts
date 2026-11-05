@@ -5,10 +5,21 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
+// Pre-diagnosis (Phase 5): a Doctor records the intake, the patient waits for the vet (stage WAITING), the vet
+// takes the patient (WITH_VET) and completes the same visit (DONE). Complaint, weight and temperature are the
+// visit's own columns; these are the rest of the intake.
+const visitIntake = `stage TEXT NOT NULL DEFAULT 'DONE' CHECK (stage IN ('WAITING','WITH_VET','DONE')),
+  urgency TEXT CHECK (urgency IN ('ROUTINE','SOON','EMERGENCY')),
+  history TEXT,
+  heart_rate INTEGER,
+  resp_rate INTEGER,
+  intake_notes TEXT,
+  intake_by TEXT REFERENCES users(id),
+  intake_at TEXT`;
 const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
 
@@ -26,6 +37,7 @@ CREATE TABLE users (
   locale TEXT NOT NULL DEFAULT 'ar' CHECK (locale IN ('ar','en')),
   is_active INTEGER NOT NULL DEFAULT 1,
   notify_off TEXT,
+  must_change_password INTEGER NOT NULL DEFAULT 0,
   ${ts}
 );
 
@@ -127,9 +139,11 @@ CREATE TABLE visits (
   treatment_notes TEXT,
   follow_up_at TEXT,
   invoice_id TEXT REFERENCES invoices(id),
+  ${visitIntake},
   ${ts}
 );
 CREATE INDEX visits_pet_date ON visits(pet_id, visited_at DESC);
+CREATE INDEX visits_stage ON visits(stage);
 
 CREATE TABLE prescriptions (
   id TEXT PRIMARY KEY,
@@ -261,6 +275,12 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v3 (5 Nov 2026): per-user notification choices — comma-separated kinds the user turned off.
   3: `ALTER TABLE users ADD COLUMN notify_off TEXT;`,
+  // v4 (5 Nov 2026, Phase 5): pre-diagnosis on visits, and "must change password at next sign-in".
+  4: `
+    ${visitIntake.split(',\n').map((c) => `ALTER TABLE visits ADD COLUMN ${c.trim()};`).join('\n')}
+    CREATE INDEX IF NOT EXISTS visits_stage ON visits(stage);
+    ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;
+  `,
 };
 
 /** Tables included in the one-click export, in dependency order. */
