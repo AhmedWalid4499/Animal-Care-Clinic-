@@ -127,6 +127,8 @@ export function seedDemo() {
     const mishmish = pet(o3, 'مشمش', 'CAT', { breed: 'بلدي', sex: 'MALE', date_of_birth: addDays(t, -400), dob_is_estimate: 1, color: 'برتقالي' });
     const kiwi = pet(o4, 'Kiwi', 'BIRD', { breed: 'Budgerigar', sex: 'UNKNOWN', color: 'Green' });
     const bondo = pet(o5, 'بندق', 'RABBIT', { sex: 'FEMALE', date_of_birth: addDays(t, -300) });
+    // Zeus: last seen 14 months ago, nothing booked → on the "not seen in a while" list.
+    const zeus = pet(o4, 'Zeus', 'DOG', { breed: 'Husky', sex: 'MALE', date_of_birth: addDays(t, -6 * 365), color: 'Grey' });
     pet(o2, 'Bella', 'DOG', { breed: 'Labrador', sex: 'FEMALE', status: 'DECEASED', deceased_at: addDays(t, -200) });
 
     const visit = (pet_id: string, daysAgo: number, type: string, extra: Record<string, unknown>) =>
@@ -154,6 +156,7 @@ export function seedDemo() {
     vacc(rocky, rv, 'Flea/tick', 33, 30); // overdue by 3 days
     const mm = visit(mishmish, 360, 'VACCINATION', { weight_kg: 4.5 });
     vacc(mishmish, mm, 'Rabies', 360, 365); // due in 5 days
+    visit(zeus, 430, 'CHECKUP', { weight_kg: 24.5, complaint: 'Annual check', diagnosis: 'Healthy' });
     visit(bondo, 20, 'CHECKUP', { weight_kg: 1.8, complaint: 'فحص دوري' });
 
     // Today's and this week's appointments.

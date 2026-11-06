@@ -486,3 +486,16 @@ table.t tr.on td { background: var(--accent-soft); font-weight: 600; }
 .low-stock { margin: 14px 0 0; }
 table.t td.neg { color: var(--bad); }
 table.t td.pos { color: var(--ok); }
+
+/* Prescription sheet for the owner (7 Nov 2026) */
+.rx-sheet .rx-title { text-align: center; font-size: 15pt; margin: 4px 0 8px; }
+.rx-sheet .rx-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 10pt; margin-bottom: 8px; }
+.rx-sheet .rx-next { margin-top: 12px; font-weight: 600; }
+.rx-sheet .rx-sign { margin-top: 26px; font-size: 9pt; width: 60mm; margin-inline-start: auto; text-align: center; }
+.rx-sheet .rx-sign .line { border-bottom: 1px solid #111; height: 14mm; margin-bottom: 3px; }
+/* Reminders tabs, activity log */
+.reminder-tabs { padding: 18px 28px 0; margin-bottom: -10px; }
+.activity-filters { margin-bottom: 12px; }
+table.t td.nowrap { white-space: nowrap; }
+table.t td.wrap { word-break: break-word; }
+@media (max-width: 760px) { .reminder-tabs { padding: 12px 16px 0; } }

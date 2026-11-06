@@ -40,13 +40,14 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|files`) | 4 Pet record |
 | `/pets/[id]/certificate` | Vaccination certificate, A5, English + Arabic (change request 6 Nov) |
 | `/pets/[id]/visits/new`, `/visits/[id]/edit` | 5 Visit |
+| `/visits/[id]/prescription` | Prescription for the owner, A5, Arabic or English (chosen on the sheet, not the app language) + WhatsApp text (change request 7 Nov) |
 | `/intake/new`, `/pets/[id]/intake`, `/visits/[id]/intake` | 5a Pre-diagnosis — Assistants, Doctors, Admin (Phase 5 change request; New patient on `/intake/new`; queue on the dashboard) |
 | `/appointments` (`?view=day\|week`) | 6 Appointments |
-| `/reminders` | Reminders: tomorrow's appointments + this week's due vaccinations, each with WhatsApp (change request 6 Nov) |
+| `/reminders` (`?tab=recall`) | Reminders: tomorrow's appointments + this week's due vaccinations, each with WhatsApp (change request 6 Nov). Tab "Not seen in a while": active pets with no visit in 6/12/18/24 months and nothing booked, WhatsApp check-up reminder stamps `pets.recall_sent_at` (schema v9, change request 7 Nov) |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
 | `/stock` | Stock — everyone sees levels and history; Admin restocks and corrects counts (change request 6 Nov) |
 | `/reports` (`?view=day&date=` \| `?view=month&month=`) | Reports — Admin only: end-of-day cash (by method, by staff, payments, open invoices) and monthly (12-month revenue chart, visits by type, top services, who owes money by age) (change request 6 Nov) |
-| `/settings` (clinic, prices, vaccines, drugs, treatment templates, users, devices, export, clinic server) | 8 Settings — Admin only |
+| `/settings` (clinic, prices, vaccines, drugs, treatment templates, users, devices, activity, export, clinic server) | 8 Settings — Admin only. Activity (`src/screens/Activity.tsx`, change request 7 Nov) reads `audit_log` (synced, so every device) with person / kind / date filters |
 | `/account` | Settings for Doctors and Assistants (nav "Settings" for non-Admins): check for updates / restart to update (the auto-update on/off switch stays Admin-only), language, theme, password (`src/screens/MySettings.tsx`) |
 
 ## The one integration

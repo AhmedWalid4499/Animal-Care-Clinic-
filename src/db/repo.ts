@@ -170,7 +170,7 @@ export const getPet = (id: string) =>
   );
 export const ownerPets = (ownerId: string) =>
   all<Pet>(`SELECT * FROM pets WHERE owner_id = ? ORDER BY status = 'ACTIVE' DESC, name COLLATE NOCASE`, [ownerId]);
-export type PetInput = Omit<Pet, 'id'>;
+export type PetInput = Omit<Pet, 'id' | 'recall_sent_at'>; // recall_sent_at is set only by the WhatsApp check-up reminder
 export function savePet(d: PetInput, id?: string): string {
   const values: Record<string, unknown> = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, blank(v)]));
   if (values.status === 'DECEASED' && !values.deceased_at) values.deceased_at = today();
@@ -809,3 +809,93 @@ export const stockHistory = (priceItemId: string, limit = 50) =>
      LEFT JOIN invoices i ON i.id = m.invoice_id WHERE m.price_item_id = ? ORDER BY m.at DESC LIMIT ?`,
     [priceItemId, limit],
   );
+
+// ---------------------------------------------------------------- "not seen in a while" (7 Nov 2026 change request)
+export interface RecallRow {
+  pet_id: string; pet_name: string; species: Species; recall_sent_at: string | null;
+  owner_id: string; owner_name: string; phone: string; whatsapp: string | null; last_visit: string;
+}
+/** Active pets whose last visit is more than `months` ago and who have no appointment booked. Most recent first. */
+export function recallList(months: number): RecallRow[] {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
+  return all<RecallRow>(
+    `SELECT p.id pet_id, p.name pet_name, p.species, p.recall_sent_at, o.id owner_id, o.full_name owner_name, o.phone, o.whatsapp, lv.last_visit
+     FROM pets p JOIN owners o ON o.id = p.owner_id
+     JOIN (SELECT pet_id, MAX(visited_at) last_visit FROM visits GROUP BY pet_id) lv ON lv.pet_id = p.id
+     WHERE p.status = 'ACTIVE' AND o.status = 'ACTIVE' AND lv.last_visit < ?
+       AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.pet_id = p.id AND a.status = 'SCHEDULED' AND a.scheduled_at >= ?)
+     ORDER BY lv.last_visit DESC`,
+    [cutoff.toISOString(), nowIso()],
+  );
+}
+export function markRecalled(petId: string) {
+  tx(() => update('pets', petId, { recall_sent_at: nowIso() }));
+}
+
+// ---------------------------------------------------------------- activity log (Admin; 7 Nov 2026 change request)
+export const ACTIVITY_GROUPS: Record<string, string[]> = {
+  patients: ['owners', 'pets', 'attachments'],
+  clinical: ['visits', 'prescriptions', 'vaccinations'],
+  appointments: ['appointments'],
+  money: ['invoices', 'invoice_items', 'payments'],
+  stock: ['stock_moves'],
+  settings: ['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'treatment_templates'],
+};
+export interface ActivityRow {
+  id: string; at: string; action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN'; table_name: string; record_id: string | null; diff: string | null;
+  user_id: string | null; user_name: string | null; label: string | null; pet_id: string | null; owner_id: string | null; invoice_id: string | null;
+}
+/** The audit trail, newest first, with a readable name for each record and where to open it. */
+export function activityLog(f: { userId?: string; from?: string; to?: string; group?: string; limit: number }): ActivityRow[] {
+  const where: string[] = [];
+  const args: (string | number)[] = [];
+  if (f.userId) { where.push('a.user_id = ?'); args.push(f.userId); }
+  if (f.from) { where.push('a.at >= ?'); args.push(f.from); }
+  if (f.to) { where.push('a.at < ?'); args.push(f.to); }
+  if (f.group === 'signin') where.push("a.action = 'LOGIN'");
+  else if (f.group && ACTIVITY_GROUPS[f.group]) {
+    where.push(`a.table_name IN (${ACTIVITY_GROUPS[f.group].map(() => '?').join(',')}) AND a.action <> 'LOGIN'`);
+    args.push(...ACTIVITY_GROUPS[f.group]);
+  }
+  args.push(f.limit);
+  return all<ActivityRow>(
+    `SELECT a.*, u.name user_name,
+       CASE a.table_name
+         WHEN 'owners' THEN (SELECT full_name FROM owners WHERE id = a.record_id)
+         WHEN 'pets' THEN (SELECT name FROM pets WHERE id = a.record_id)
+         WHEN 'visits' THEN (SELECT p.name FROM visits x JOIN pets p ON p.id = x.pet_id WHERE x.id = a.record_id)
+         WHEN 'vaccinations' THEN (SELECT p.name FROM vaccinations x JOIN pets p ON p.id = x.pet_id WHERE x.id = a.record_id)
+         WHEN 'prescriptions' THEN (SELECT drug FROM prescriptions WHERE id = a.record_id)
+         WHEN 'appointments' THEN (SELECT p.name FROM appointments x JOIN pets p ON p.id = x.pet_id WHERE x.id = a.record_id)
+         WHEN 'attachments' THEN (SELECT file_name FROM attachments WHERE id = a.record_id)
+         WHEN 'invoices' THEN (SELECT number FROM invoices WHERE id = a.record_id)
+         WHEN 'invoice_items' THEN (SELECT description FROM invoice_items WHERE id = a.record_id)
+         WHEN 'payments' THEN (SELECT i.number FROM payments x JOIN invoices i ON i.id = x.invoice_id WHERE x.id = a.record_id)
+         WHEN 'users' THEN (SELECT name FROM users WHERE id = a.record_id)
+         WHEN 'price_items' THEN (SELECT name_en FROM price_items WHERE id = a.record_id)
+         WHEN 'stock_moves' THEN (SELECT pi.name_en FROM stock_moves x JOIN price_items pi ON pi.id = x.price_item_id WHERE x.id = a.record_id)
+         WHEN 'vaccine_types' THEN (SELECT name FROM vaccine_types WHERE id = a.record_id)
+         WHEN 'drugs' THEN (SELECT name FROM drugs WHERE id = a.record_id)
+         WHEN 'treatment_templates' THEN (SELECT name FROM treatment_templates WHERE id = a.record_id)
+       END label,
+       CASE a.table_name
+         WHEN 'pets' THEN a.record_id
+         WHEN 'visits' THEN (SELECT pet_id FROM visits WHERE id = a.record_id)
+         WHEN 'vaccinations' THEN (SELECT pet_id FROM vaccinations WHERE id = a.record_id)
+         WHEN 'prescriptions' THEN (SELECT x.pet_id FROM prescriptions r JOIN visits x ON x.id = r.visit_id WHERE r.id = a.record_id)
+         WHEN 'appointments' THEN (SELECT pet_id FROM appointments WHERE id = a.record_id)
+         WHEN 'attachments' THEN (SELECT pet_id FROM attachments WHERE id = a.record_id)
+       END pet_id,
+       CASE a.table_name WHEN 'owners' THEN a.record_id END owner_id,
+       CASE a.table_name
+         WHEN 'invoices' THEN a.record_id
+         WHEN 'invoice_items' THEN (SELECT invoice_id FROM invoice_items WHERE id = a.record_id)
+         WHEN 'payments' THEN (SELECT invoice_id FROM payments WHERE id = a.record_id)
+       END invoice_id
+     FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+     ORDER BY a.at DESC LIMIT ?`,
+    args,
+  );
+}

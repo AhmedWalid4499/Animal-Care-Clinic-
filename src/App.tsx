@@ -17,6 +17,7 @@ import { Reminders } from './screens/Reminders';
 import { VaccinationCertificate } from './screens/Certificate';
 import { Reports } from './screens/Reports';
 import { StockPage } from './screens/Stock';
+import { PrescriptionPrint } from './screens/Prescription';
 import { useEffect, type ReactNode } from 'react';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
@@ -64,6 +65,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
           <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
+          <Route path="visits/:visitId/prescription" element={<PrescriptionPrint />} />
           <Route path="intake/new" element={<IntakeAllowed><VisitPickPet intake /></IntakeAllowed>} />
           <Route path="pets/:petId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />
           <Route path="visits/:visitId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />

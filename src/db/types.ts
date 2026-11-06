@@ -40,6 +40,7 @@ export interface Pet {
   photo_url: string | null; status: PetStatus; deceased_at: string | null; notes: string | null;
   /** Comma-separated ALERT_FLAGS, and free text (e.g. "penicillin"). Schema v6. */
   alert_flags: string | null; alert_note: string | null;
+  recall_sent_at: string | null;
 }
 export interface Visit {
   id: string; pet_id: string; vet_id: string | null; visited_at: string; type: VisitType; complaint: string | null;

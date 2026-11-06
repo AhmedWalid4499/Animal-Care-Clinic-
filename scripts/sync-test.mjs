@@ -173,7 +173,7 @@ await step('first device uploads the clinic', async () => {
   const owners = await serverCount('owners');
   const pets = await serverCount('pets');
   const defaultsActive = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'users' AND data->>'email' LIKE '%@clinic.local' AND (data->>'is_active')::int = 1")).rows[0].n);
-  check('bootstrap', 'The first laptop (Admin) uploads its records to an empty clinic', owners === 5 && pets === 7 && defaultsActive === 0,
+  check('bootstrap', 'The first laptop (Admin) uploads its records to an empty clinic', owners === 5 && pets === 8 && defaultsActive === 0,
     `server now holds ${owners} owners, ${pets} pets; default demo logins left active on the server: ${defaultsActive}`);
   await A.win.screenshot({ path: path.join(out, 'A-dashboard-synced.png') });
 });
