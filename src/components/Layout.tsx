@@ -25,13 +25,15 @@ export function Layout() {
     { to: '/', icon: 'home', label: t('nav.dashboard'), end: true },
     { to: '/owners', icon: 'users', label: t('nav.owners') },
     { to: '/appointments', icon: 'calendar', label: t('nav.appointments') },
-    { to: '/invoices', icon: 'receipt', label: t('nav.invoices') },
-    ...(isAdmin ? [{ to: '/reports', icon: 'chart', label: t('nav.reports') }] : []),
+    // Pricing: Invoices, Reports and the Price list (the tabs on top of each move between them).
+    { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices'] },
     // Stock sits in the sidebar only: the phone's bottom bar is full (it is reachable from the dashboard's "Running low" note).
     { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true },
+    ...(canVisit ? [{ to: '/templates', icon: 'clipboard', label: t('settings.templates'), sideOnly: true }] : []),
     // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
     { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings') },
   ];
+  const inSection = (i: { also?: string[] }) => !!i.also?.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const clinicName = locale === 'ar' ? settings.name_ar : settings.name_en;
   const nextTheme: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
   return (
@@ -56,7 +58,7 @@ export function Layout() {
           )}
           <nav className="nav">
             {items.map((i) => (
-              <NavLink key={i.to} to={i.to} end={i.end}>
+              <NavLink key={i.to} to={i.to} end={i.end} className={({ isActive }) => (isActive || inSection(i) ? 'active' : '')}>
                 <Icon name={i.icon} /> {i.label}
               </NavLink>
             ))}
@@ -95,7 +97,7 @@ export function Layout() {
       </div>
       <nav className="bottom-nav no-print">
         {items.filter((i) => !('sideOnly' in i)).map((i) => (
-          <NavLink key={i.to} to={i.to} end={i.end}>
+          <NavLink key={i.to} to={i.to} end={i.end} className={({ isActive }) => (isActive || inSection(i) ? 'active' : '')}>
             <Icon name={i.icon} />
             {i.label}
           </NavLink>

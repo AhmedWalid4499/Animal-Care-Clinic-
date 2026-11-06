@@ -7,6 +7,7 @@ import { correctStock, expiringStock, lowStock, restock, stockHistory, stockLeve
 import { daysBetween, today } from '../lib/dates';
 import { Badge, Dialog, Field, Icon } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { StockTabs } from '../components/Sections';
 
 type Action = { row: StockRow; kind: 'restock' | 'count' } | { row: StockRow; kind: 'history' };
 
@@ -19,11 +20,12 @@ export function StockPage() {
   const name = (r: StockRow) => (locale === 'ar' ? r.name_ar : r.name_en);
   return (
     <div className="page stock">
+      <StockTabs />
       <PageHead title={t('stock.title')} sub={t('stock.sub')} />
       {rows.length === 0 ? (
         <p className="note">
           {t('stock.none')}{' '}
-          {isAdmin && <button type="button" className="linkbtn" onClick={() => nav('/settings?tab=prices')}>{t('settings.prices')}</button>}
+          {isAdmin && <button type="button" className="linkbtn" onClick={() => nav('/prices')}>{t('settings.prices')}</button>}
         </p>
       ) : (
         <div className="tablewrap">

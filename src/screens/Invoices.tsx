@@ -8,6 +8,7 @@ import {
 import { fromLocalInput, nowLocalInput } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { Confirm, Dialog, Field, Icon, StatusBadge, WaButton } from '../components/ui';
+import { PricingTabs } from '../components/Sections';
 import { PageHead } from '../components/Layout';
 import { PAYMENT_METHODS, type InvoiceStatus, type PaymentMethod } from '../db/types';
 
@@ -24,6 +25,7 @@ export function InvoicesList() {
   const sum = rows.filter((r) => r.status !== 'VOID').reduce((s, r) => s + (r.total - r.paid), 0);
   return (
     <div className="page">
+      <PricingTabs />
       <PageHead title={t('invoices.title')} sub={`${rows.length} · ${t('invoices.balance')} ${fmt.money(sum)}`}>
         <button className="btn primary" onClick={() => nav('/invoices/new')}><Icon name="plus" /> {t('invoices.new')}</button>
       </PageHead>

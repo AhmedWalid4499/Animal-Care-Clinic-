@@ -1016,7 +1016,7 @@ await step('server older than the app', async () => {
     await connect(C);
     await signIn(C, ADMIN.email, ADMIN.password);
     await until(async () => (await C.win.locator('.sync-badge.synced').count()) > 0, 20_000);
-    await go(C, '#/settings?tab=drugs');
+    await go(C, '#/stock/drugs');
     await C.win.locator('.btn.primary', { hasText: /Add|إضافة/ }).first().click();
     await C.win.locator('.dialog input[type=text]').first().fill('Server-behind drug');
     await C.win.locator('.dialog input[type=number]').nth(0).fill('2');

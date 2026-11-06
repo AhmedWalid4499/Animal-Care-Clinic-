@@ -10,6 +10,7 @@ import {
 import { addDays, daysBetween, localDateOf, startOfDayIso, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { Badge, Icon, WaButton } from '../components/ui';
+import { PricingTabs } from '../components/Sections';
 import { ExpensesReport } from './Expenses';
 import { PageHead } from '../components/Layout';
 import { PAYMENT_METHODS } from '../db/types';
@@ -26,6 +27,7 @@ export function Reports() {
   const view: View = v === 'month' || v === 'expenses' ? v : 'day';
   return (
     <div className="page reports">
+      <PricingTabs />
       <PageHead title={t('reports.title')}>
         <button className="btn primary no-print" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
       </PageHead>

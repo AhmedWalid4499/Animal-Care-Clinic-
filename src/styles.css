@@ -502,3 +502,9 @@ table.t td.wrap { word-break: break-word; }
 
 /* Expenses / profit (7 Nov 2026) */
 .tile.neg b { color: var(--bad); }
+
+/* Sections with several screens: Pricing (Invoices · Reports · Price list), Stock (Stock · Vaccines · Drugs). */
+.section-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: -6px 0 16px; padding: 3px; background: var(--bg-2); border-radius: calc(var(--radius) + 2px); width: fit-content; max-width: 100%; }
+.section-tabs a { padding: 6px 14px; border-radius: var(--radius); font-weight: 600; font-size: 13.5px; color: var(--ink-2); text-decoration: none; }
+.section-tabs a:hover { color: var(--ink); text-decoration: none; }
+.section-tabs a.active { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
