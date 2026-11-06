@@ -4,7 +4,7 @@ import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Drug, Expense, ExpenseCategory, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Consent, Drug, Expense, ExpenseCategory, LabResult, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -955,3 +955,57 @@ export const expensesBetween = (fromDate: string, toDate: string) =>
      WHERE e.status = 'ACTIVE' AND e.spent_at >= ? AND e.spent_at < ? ORDER BY e.spent_at DESC, e.created_at DESC`,
     [fromDate, toDate],
   );
+
+// ---------------------------------------------------------------- lab results (7 Nov 2026 change request)
+export interface LabInputRow { analyte: string; value: string; unit: string; ref_low: string; ref_high: string }
+const numOrNull = (s: string) => {
+  const t = s.trim().replace(',', '.');
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+/** One panel taken on one day: a row per value. Numbers are stored as numbers (charted); anything else as text. */
+export function saveLabResults(petId: string, d: { taken_at: string; panel: string; visit_id?: string | null; note: string; rows: LabInputRow[] }, userId: string | null): number {
+  const rows = d.rows.filter((r) => r.analyte.trim() && r.value.trim());
+  tx(() => {
+    for (const r of rows) {
+      const n = numOrNull(r.value);
+      insert('lab_results', {
+        pet_id: petId, visit_id: d.visit_id ?? null, taken_at: d.taken_at, panel: blank(d.panel), analyte: r.analyte.trim(),
+        value: n, value_text: n == null ? r.value.trim() : null, unit: blank(r.unit), ref_low: numOrNull(r.ref_low), ref_high: numOrNull(r.ref_high),
+        note: blank(d.note), user_id: userId,
+      });
+    }
+  });
+  return rows.length;
+}
+/** Correct one value (a typo): the row is updated, and the audit log keeps the old value. */
+export function updateLabResult(id: string, r: LabInputRow) {
+  const n = numOrNull(r.value);
+  tx(() => update('lab_results', id, { analyte: r.analyte.trim(), value: n, value_text: n == null ? r.value.trim() || null : null, unit: blank(r.unit), ref_low: numOrNull(r.ref_low), ref_high: numOrNull(r.ref_high) }));
+}
+export const petLabResults = (petId: string) =>
+  all<LabResult>('SELECT * FROM lab_results WHERE pet_id = ? ORDER BY taken_at DESC, panel, created_at', [petId]);
+/** Analytes this clinic has recorded before, with the unit and range last used for this species (to fill a new row). */
+export function knownAnalytes(species: string): { analyte: string; unit: string | null; ref_low: number | null; ref_high: number | null; panel: string | null }[] {
+  const rows = all<{ analyte: string; unit: string | null; ref_low: number | null; ref_high: number | null; panel: string | null; same: number }>(
+    `SELECT l.analyte, l.unit, l.ref_low, l.ref_high, l.panel, p.species = ? same FROM lab_results l JOIN pets p ON p.id = l.pet_id
+     ORDER BY same DESC, l.created_at DESC`, [species],
+  );
+  const seen = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) if (!seen.has(r.analyte.toLowerCase())) seen.set(r.analyte.toLowerCase(), r);
+  return [...seen.values()].sort((a, b) => a.analyte.localeCompare(b.analyte));
+}
+
+// ---------------------------------------------------------------- consent forms (7 Nov 2026 change request)
+export interface ConsentRow extends Consent { user_name: string | null; pet_name: string; species: Species; owner_name: string; owner_phone: string }
+export function saveConsent(d: { pet_id: string; visit_id?: string | null; procedure: string; anaesthesia: boolean; estimate: number | null; notes: string; signer_name: string; signature: string }, userId: string | null): string {
+  return tx(() => insert('consents', {
+    pet_id: d.pet_id, visit_id: d.visit_id ?? null, procedure: d.procedure.trim(), anaesthesia: d.anaesthesia ? 1 : 0, estimate: d.estimate,
+    notes: blank(d.notes), signer_name: d.signer_name.trim(), signature: d.signature, signed_at: nowIso(), user_id: userId,
+  }));
+}
+const consentSql = `SELECT c.*, u.name user_name, p.name pet_name, p.species, o.full_name owner_name, o.phone owner_phone
+  FROM consents c JOIN pets p ON p.id = c.pet_id JOIN owners o ON o.id = p.owner_id LEFT JOIN users u ON u.id = c.user_id`;
+export const getConsent = (id: string) => get<ConsentRow>(`${consentSql} WHERE c.id = ?`, [id]);
+export const petConsents = (petId: string) => all<ConsentRow>(`${consentSql} WHERE c.pet_id = ? ORDER BY c.signed_at DESC`, [petId]);

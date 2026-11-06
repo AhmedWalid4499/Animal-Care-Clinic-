@@ -6,7 +6,7 @@ import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 // drugs: the dose calculator's list (doses decide what the calculator says), so only the Admin edits it.
 // expenses: the clinic's own spending (rent, salaries…), Admin only like the reports that use it.
 const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'expenses']);
-const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates']);
+const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates', 'lab_results']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
 // Assistants record the pre-diagnosis: they may create a visit that only waits for the vet (no vet, diagnosis,
@@ -37,6 +37,8 @@ export function refuse(role, change, before, userId) {
   // Stock movements are a log: never changed afterwards. Front desk and vets record sales on invoices; restocking
   // and count corrections are the Admin's.
   if (tbl === 'stock_moves' && before) return 'stock movements are append-only';
+  // A signed consent form is a record of what the owner agreed to: it is never changed afterwards. Anyone may record one.
+  if (tbl === 'consents' && before) return 'signed consent forms cannot be changed';
   if (tbl === 'stock_moves' && role !== 'ADMIN' && (cols.reason !== 'INVOICE' || !cols.invoice_id)) return 'restocking and corrections are for admins';
   if (role === 'ADMIN') return null;
   if (tbl === 'users' && before && change.id === userId && op === 'upsert' && Object.keys(cols).every((c) => OWN_USER_COLS.has(c))) return null;

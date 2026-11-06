@@ -77,6 +77,14 @@ export interface StockMove {
   id: string; price_item_id: string; qty: number; reason: StockReason; invoice_id: string | null; note: string | null; user_id: string | null; at: string;
   batch_no: string | null; expires_at: string | null;
 }
+export interface LabResult {
+  id: string; pet_id: string; visit_id: string | null; taken_at: string; panel: string | null; analyte: string; value: number | null; value_text: string | null;
+  unit: string | null; ref_low: number | null; ref_high: number | null; note: string | null; user_id: string | null; created_at: string;
+}
+export interface Consent {
+  id: string; pet_id: string; visit_id: string | null; procedure: string; anaesthesia: number; estimate: number | null; notes: string | null;
+  signer_name: string; signature: string; signed_at: string; user_id: string | null; created_at: string;
+}
 export const EXPENSE_CATEGORIES = ['RENT', 'SALARIES', 'SUPPLIES', 'UTILITIES', 'EQUIPMENT', 'MAINTENANCE', 'MARKETING', 'OTHER'] as const;
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 export interface Expense {

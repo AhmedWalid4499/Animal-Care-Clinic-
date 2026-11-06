@@ -332,6 +332,48 @@ await step('expenses and profit', async () => {
   await shot('report-month-profit');
 });
 
+// Lab results and the consent form (7 Nov 2026).
+await step('lab results with trend', async () => {
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.locator('.tabs button', { hasText: 'Lab results' }).click();
+  // Demo: creatinine 2.6 at the emergency (above 2.4) is flagged.
+  await win.locator('table.labs tr.flag', { hasText: 'Creatinine' }).first().waitFor();
+  await win.getByRole('button', { name: 'Add results' }).click();
+  const row = win.locator('.dialog .lab-row').first();
+  await row.getByLabel('Test').fill('Creatinine'); // known: fills unit and range
+  if ((await row.getByLabel('Unit').inputValue()) !== 'mg/dL') throw new Error('unit not remembered');
+  await row.getByLabel('Result').fill('3.1');
+  await win.locator('.dialog').getByLabel('Panel').fill('Kidney panel (demo)');
+  await win.locator('.dialog .btn.primary').click();
+  await win.locator('table.labs tr.flag', { hasText: '3.1' }).waitFor();
+  await win.locator('table.labs').first().getByRole('button', { name: 'Creatinine' }).click();
+  await win.locator('.lab-trend .recharts-line-dot').nth(2).waitFor(); // three creatinine results
+  await shot('pet-lab-results');
+});
+
+await step('consent form signed on screen', async () => {
+  await win.locator('.pagehead').getByRole('button', { name: 'Consent form' }).click();
+  await win.getByLabel('Procedure').fill('Spay (ovariohysterectomy)');
+  await win.getByLabel('Estimated cost (EGP)').fill('2500');
+  const sign = win.getByRole('button', { name: 'Sign and save' });
+  if (!(await sign.isDisabled())) throw new Error('saving allowed without a signature');
+  await win.getByLabel('I have read this form and agree').check();
+  const pad = await win.locator('.sigpad canvas').boundingBox();
+  await win.mouse.move(pad.x + 30, pad.y + 100);
+  await win.mouse.down();
+  for (const [dx, dy] of [[60, -50], [110, 20], [170, -40], [240, 10]]) await win.mouse.move(pad.x + 30 + dx, pad.y + 100 + dy, { steps: 6 });
+  await win.mouse.up();
+  await shot('consent-form');
+  await sign.click();
+  await win.locator('.consent-sheet', { hasText: 'Spay (ovariohysterectomy)' }).waitFor();
+  await win.locator('.consent-sign img[src^="data:image/png"]').waitFor();
+  await shot('consent-signed');
+  await win.getByRole('button', { name: 'Back' }).click();
+  await win.locator('.consents li', { hasText: 'Spay (ovariohysterectomy)' }).waitFor();
+});
+
 // Prescription sheet for the owner, "not seen in a while", activity log (7 Nov 2026).
 await step('prescription sheet for the owner', async () => {
   await go('#/owners');
