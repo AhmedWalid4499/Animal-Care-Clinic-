@@ -47,6 +47,8 @@ jobs:
           out=$("release/mac-universal/Animal Care Clinic.app/Contents/MacOS/Animal Care Clinic" --smoke --smoke-desktop 2>&1 | tee /dev/stderr | grep SMOKE-DESKTOP)
           echo "$out" | grep -q '"tray":true'
           echo "$out" | grep -q '"platform":"darwin"'
+          echo "$out" | grep -q '"loginItem":{"openAtLogin":true'
+          echo "$out" | grep -q '"loginItemAfterOff":false'
       - uses: actions/upload-artifact@v4
         with:
           name: animal-care-clinic-macos

@@ -86,7 +86,11 @@ function applyLoginItem() {
   // Start with Windows / macOS (hidden, straight to the tray / menu bar). Only for the installed app.
   if (!app.isPackaged || process.platform === 'linux' || process.env.PORTABLE_EXECUTABLE_DIR) return;
   try {
-    if (isMac) app.setLoginItemSettings({ openAtLogin: background }); // macOS 13+: SMAppService; hidden start via wasOpenedAtLogin
+    if (isMac) {
+      // macOS 13+: SMAppService; hidden start via wasOpenedAtLogin. Only change it when it differs: removing an item
+      // that was never added fails with "Operation not permitted".
+      if (app.getLoginItemSettings().openAtLogin !== background) app.setLoginItemSettings({ openAtLogin: background });
+    }
     else app.setLoginItemSettings({ openAtLogin: background, args: ['--hidden'] });
   } catch (e) {
     console.error('login item', e);
@@ -341,11 +345,15 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
         startHidden: startHidden(),
         deviceName: deviceName(),
       };
-      console.log(`SMOKE-DESKTOP ${JSON.stringify(report)}`);
+      // Turning background mode off must remove the login item again (else the app keeps starting at login).
       background = false;
       applyLoginItem();
       syncTray();
-      app.exit(report.tray && !report.trayImageEmpty && !report.startHidden && report.deviceName ? 0 : 4);
+      report.loginItemAfterOff = app.isPackaged && process.platform !== 'linux' ? app.getLoginItemSettings().openAtLogin : null;
+      report.trayAfterOff = !!tray;
+      console.log(`SMOKE-DESKTOP ${JSON.stringify(report)}`);
+      const ok = report.tray && !report.trayImageEmpty && !report.startHidden && report.deviceName && !report.trayAfterOff && report.loginItemAfterOff !== true;
+      app.exit(ok ? 0 : 4);
       return;
     }
     if (isSmoke) {
