@@ -95,6 +95,7 @@ await step('pet record', async () => {
   await shot('pet-weight-chart');
 });
 
+let invoiceHash = '';
 await step('new visit with vaccination + prescription + follow-up', async () => {
   await win.locator('.pagehead').getByRole('button', { name: 'New visit' }).click();
   await win.waitForSelector('text=Visit type');
@@ -117,6 +118,7 @@ await step('new visit with vaccination + prescription + follow-up', async () => 
   await shot('invoice-form-from-visit');
   await win.getByRole('button', { name: 'Save', exact: true }).click();
   await win.waitForSelector('text=Record payment');
+  invoiceHash = new URL(win.url()).hash; // the stock step voids this invoice at the end
   await win.getByRole('button', { name: 'Record payment' }).click();
   await win.getByLabel('Amount (EGP)').fill('300');
   await win.locator('.dialog').getByRole('button', { name: 'InstaPay' }).click();
@@ -261,6 +263,37 @@ await step('dose calculator and treatment templates', async () => {
   await win.getByRole('button', { name: 'Cancel' }).last().click();
   await go('#/settings?tab=templates');
   await win.locator('table.t tr', { hasText: 'Gastro + antibiotic' }).waitFor();
+});
+
+// Stock (demo: vaccines tracked with 24 delivered, deworming tracked with 3 = running low).
+await step('stock: running low, restock, invoice takes out, void gives back', async () => {
+  const onHand = async (name) => Number(await win.locator('.stock table.t tbody tr', { hasText: name }).locator('td').nth(1).innerText());
+  await go('#/');
+  await win.locator('.low-stock', { hasText: 'Deworming' }).waitFor();
+  await shot('dashboard-low-stock');
+  await win.locator('.side .nav a', { hasText: 'Stock' }).click();
+  await win.locator('.stock table.t tr', { hasText: 'Deworming' }).locator('.badge.warn').waitFor();
+  // The visit's invoice above billed one vaccine administration: 24 − 1.
+  if ((await onHand('Vaccine administration')) !== 23) throw new Error(`vaccines on hand after the invoice: ${await onHand('Vaccine administration')}`);
+  await win.locator('.stock table.t tr', { hasText: 'Deworming' }).getByRole('button', { name: 'Restock' }).click();
+  await win.getByLabel('How many arrived').fill('10');
+  await win.locator('.dialog').getByRole('button', { name: 'Save' }).click();
+  await win.locator('.stock table.t tr', { hasText: 'Deworming' }).locator('.badge.ok').waitFor();
+  if ((await onHand('Deworming')) !== 13) throw new Error(`deworming after restock: ${await onHand('Deworming')}`);
+  await shot('stock');
+  await win.locator('.stock table.t tr', { hasText: 'Vaccine administration' }).locator('td').first().click();
+  await win.locator('.dialog tr', { hasText: 'Invoice' }).locator('td.neg').waitFor();
+  await shot('stock-history');
+  await win.keyboard.press('Escape');
+  // Voiding the invoice puts the vaccine back.
+  await go(invoiceHash);
+  await win.getByRole('button', { name: 'Void invoice' }).click();
+  await win.locator('.dialog .btn.danger').click();
+  await go('#/stock');
+  if ((await onHand('Vaccine administration')) !== 24) throw new Error(`vaccines after voiding: ${await onHand('Vaccine administration')}`);
+  if (await win.locator('.side .nav a', { hasText: 'Stock' }).count() !== 1) throw new Error('no Stock in the sidebar');
+  await go('#/');
+  if (await win.locator('.low-stock').count()) throw new Error('running low still shown after restocking');
 });
 
 await step('dark mode', async () => {

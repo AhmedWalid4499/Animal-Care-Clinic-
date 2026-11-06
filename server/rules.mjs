@@ -33,6 +33,10 @@ export function refuse(role, change, before, userId) {
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
   if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
+  // Stock movements are a log: never changed afterwards. Front desk and vets record sales on invoices; restocking
+  // and count corrections are the Admin's.
+  if (tbl === 'stock_moves' && before) return 'stock movements are append-only';
+  if (tbl === 'stock_moves' && role !== 'ADMIN' && (cols.reason !== 'INVOICE' || !cols.invoice_id)) return 'restocking and corrections are for admins';
   if (role === 'ADMIN') return null;
   if (tbl === 'users' && before && change.id === userId && op === 'upsert' && Object.keys(cols).every((c) => OWN_USER_COLS.has(c))) return null;
   if (ADMIN_ONLY.has(tbl)) return 'admins only';

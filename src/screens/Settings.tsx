@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { strToU8, zipSync } from 'fflate';
 import { useApp, useQuery } from '../lib/app';
@@ -93,12 +93,14 @@ function ClinicTab() {
 
 function PricesTab() {
   const { t, fmt } = useApp();
+  const nav = useNavigate();
   const rows = useQuery(() => listPriceItems());
   const [edit, setEdit] = useState<Partial<PriceItem> | null>(null);
   return (
     <>
       <div className="row end" style={{ marginBottom: 10 }}>
-        <button className="btn primary" onClick={() => setEdit({ name_en: '', name_ar: '', category: 'OTHER', unit_price: 0, is_active: 1 })}><Icon name="plus" /> {t('settings.addPrice')}</button>
+        <button className="btn" onClick={() => nav('/stock')}><Icon name="box" /> {t('stock.title')}</button>
+        <button className="btn primary" onClick={() => setEdit({ name_en: '', name_ar: '', category: 'OTHER', unit_price: 0, is_active: 1, track_stock: 0, low_stock: null })}><Icon name="plus" /> {t('settings.addPrice')}</button>
       </div>
       <div className="tablewrap">
       <table className="t">
@@ -120,14 +122,17 @@ function PricesTab() {
 
 function PriceDialog({ item, onClose }: { item: Partial<PriceItem>; onClose: () => void }) {
   const { t, toast } = useApp();
-  const [f, setF] = useState({ ...item, price: String((item.unit_price ?? 0) / 100) });
+  const [f, setF] = useState({ ...item, price: String((item.unit_price ?? 0) / 100), low: item.low_stock?.toString() ?? '' });
   return (
     <Dialog
       title={t('settings.prices')}
       onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button>
         <button className="btn primary" disabled={!f.name_en || !f.name_ar} onClick={() => {
-          savePriceItem({ name_en: f.name_en!, name_ar: f.name_ar!, category: f.category!, unit_price: Math.round(Number(f.price) * 100) || 0, is_active: f.is_active ? 1 : 0 }, item.id);
+          savePriceItem({
+            name_en: f.name_en!, name_ar: f.name_ar!, category: f.category!, unit_price: Math.round(Number(f.price) * 100) || 0, is_active: f.is_active ? 1 : 0,
+            track_stock: f.track_stock ? 1 : 0, low_stock: f.low.trim() === '' ? null : Number(f.low.replace(',', '.')),
+          }, item.id);
           toast(t('app.saved')); onClose();
         }}>{t('common.save')}</button></>}
     >
@@ -141,6 +146,12 @@ function PriceDialog({ item, onClose }: { item: Partial<PriceItem>; onClose: () 
         </Field>
         <Field label={t('settings.price')}><input type="number" min="0" step="0.01" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
         <label className="check"><input type="checkbox" checked={!!f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked ? 1 : 0 })} /> {t('common.active')}</label>
+        <label className="check"><input type="checkbox" checked={!!f.track_stock} onChange={(e) => setF({ ...f, track_stock: e.target.checked ? 1 : 0 })} /> {t('stock.track')}</label>
+        {!!f.track_stock && (
+          <Field label={t('stock.lowAt')} hint={t('stock.lowHint')}>
+            <input type="number" min="0" step="any" value={f.low} onChange={(e) => setF({ ...f, low: e.target.value })} />
+          </Field>
+        )}
       </div>
     </Dialog>
   );

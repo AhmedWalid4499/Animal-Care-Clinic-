@@ -477,3 +477,8 @@ table.t tr.on td { background: var(--accent-soft); font-weight: 600; }
 .dose-hint .btn { margin-inline-start: auto; }
 .tpl-bar { gap: 8px; }
 .tpl-list { max-height: 50vh; overflow-y: auto; }
+
+/* Stock (6 Nov 2026) */
+.low-stock { margin: 14px 0 0; }
+table.t td.neg { color: var(--bad); }
+table.t td.pos { color: var(--ok); }

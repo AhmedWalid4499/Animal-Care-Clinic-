@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -26,6 +26,21 @@ const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now
 // Dose calculator and treatment templates (schema v7, 6 Nov 2026). drugs: the clinic's own list, entered by the Admin;
 // the app only does the arithmetic (dose_mg_kg × weight, ÷ concentration per ml/tablet, capped at max_mg).
 // treatment_templates.prescriptions is JSON: [{ drug, drug_id?, dose, frequency, duration_days, instructions }].
+// Stock (schema v8, 6 Nov 2026): price items can be tracked; stock_moves is an append-only log (restock +, invoice −,
+// count correction ±) and the quantity on hand is its sum, so moves made on different devices simply add up.
+const stockTable = `CREATE TABLE IF NOT EXISTS stock_moves (
+  id TEXT PRIMARY KEY,
+  price_item_id TEXT NOT NULL REFERENCES price_items(id),
+  qty REAL NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('RESTOCK','INVOICE','ADJUST')),
+  invoice_id TEXT REFERENCES invoices(id),
+  note TEXT,
+  user_id TEXT REFERENCES users(id),
+  at TEXT NOT NULL,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS stock_moves_item ON stock_moves(price_item_id);
+CREATE INDEX IF NOT EXISTS stock_moves_invoice ON stock_moves(invoice_id);`;
 const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -114,6 +129,8 @@ CREATE TABLE price_items (
   category TEXT NOT NULL CHECK (category IN ('CONSULTATION','VACCINE','SURGERY','MEDICATION','BOARDING','GROOMING','OTHER')),
   unit_price INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
+  track_stock INTEGER NOT NULL DEFAULT 0,
+  low_stock REAL,
   ${ts}
 );
 
@@ -256,6 +273,7 @@ CREATE TABLE clinic_settings (
 );
 
 ${calcTables}
+${stockTable}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -323,12 +341,18 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v7 (6 Nov 2026): the drug list for the dose calculator, and treatment templates.
   7: calcTables,
+  // v8 (6 Nov 2026): stock — tracked price items and the stock movement log.
+  8: `
+    ALTER TABLE price_items ADD COLUMN track_stock INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE price_items ADD COLUMN low_stock REAL;
+    ${stockTable}
+  `,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */
