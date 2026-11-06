@@ -358,7 +358,7 @@ async function pdfOf(hash, name) {
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
-    ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/settings?tab=prices'], ['settings-vaccines', '#/settings?tab=vaccines'],
+    ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/prices'], ['settings-vaccines', '#/stock/vaccines'],
     ['settings-users', '#/settings?tab=users'], ['settings-data', '#/settings?tab=data'],
   ];
   const problems = [];

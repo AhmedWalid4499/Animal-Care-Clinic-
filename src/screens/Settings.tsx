@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { strToU8, zipSync } from 'fflate';
 import { useApp, useQuery } from '../lib/app';
@@ -19,30 +19,28 @@ import { UpdatesSection } from '../components/Updates';
 import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
 import { serverUrl } from '../sync/engine';
-import { DrugsTab, TemplatesTab } from './SettingsClinical';
 import { ActivityTab } from './Activity';
 import { PRICE_CATEGORIES, ROLES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
-type Tab = 'clinic' | 'prices' | 'vaccines' | 'drugs' | 'templates' | 'users' | 'devices' | 'activity' | 'data';
+type Tab = 'clinic' | 'users' | 'devices' | 'activity' | 'data';
+// Moved out of Settings (7 Nov 2026): old links still land in the right place.
+const MOVED: Record<string, string> = { prices: '/prices', vaccines: '/stock/vaccines', drugs: '/stock/drugs', templates: '/templates' };
 
 export function Settings() {
   const { t } = useApp();
   const [sp, setSp] = useSearchParams();
   const tab = (sp.get('tab') as Tab) || 'clinic';
+  if (MOVED[tab]) return <Navigate to={MOVED[tab]} replace />;
   return (
     <div className="page">
       <PageHead title={t('settings.title')} />
       <div className="tabs" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['clinic', 'prices', 'vaccines', 'drugs', 'templates', 'users', ...(serverUrl() ? ['devices'] : []), 'activity', 'data'] as Tab[]).map((k) => (
+        {(['clinic', 'users', ...(serverUrl() ? ['devices'] : []), 'activity', 'data'] as Tab[]).map((k) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>{t(`settings.${k}`)}</button>
         ))}
       </div>
       <div key={tab} className="tab-enter">
         {tab === 'clinic' && <ClinicTab />}
-        {tab === 'prices' && <PricesTab />}
-        {tab === 'vaccines' && <VaccinesTab />}
-        {tab === 'drugs' && <DrugsTab />}
-        {tab === 'templates' && <TemplatesTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'devices' && <DevicesTab />}
         {tab === 'activity' && <ActivityTab />}
@@ -93,7 +91,7 @@ function ClinicTab() {
   );
 }
 
-function PricesTab() {
+export function PricesTab() {
   const { t, fmt } = useApp();
   const nav = useNavigate();
   const rows = useQuery(() => listPriceItems());
@@ -159,7 +157,7 @@ function PriceDialog({ item, onClose }: { item: Partial<PriceItem>; onClose: () 
   );
 }
 
-function VaccinesTab() {
+export function VaccinesTab() {
   const { t } = useApp();
   const rows = useQuery(() => listVaccineTypes());
   const [edit, setEdit] = useState<Partial<VaccineType> | null>(null);

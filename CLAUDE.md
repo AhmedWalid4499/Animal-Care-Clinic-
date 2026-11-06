@@ -7,7 +7,7 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - **Electron** (`electron/main.cjs`, sandboxed renderer, `electron/preload.cjs` is the only bridge) · **React 18 + Vite + TypeScript** · HashRouter
 - Data: **SQLite via sql.js**, one file at `%APPDATA%\Animal Care Clinic\data\clinic.sqlite`, written atomically after every transaction; daily backup copy (keep 14). Schema in `src/db/schema.ts` mirrors `DATABASE.md` (money = integer piastres; attachments' bytes in `attachment_blobs`)
 - Auth: users with bcryptjs, roles `ADMIN` / `DOCTOR` / `ASSISTANT` (schema v2; old `VET` → `ADMIN`). Admin: everything; Doctor: visits but no Settings/users/archive/void; Assistant: front desk, read-only visits except the pre-diagnosis. Assistants and Doctors record the **pre-diagnosis** (Phase 5; Assistants added 6 Nov 2026 at Ahmed's request, change request): the patient waits in the dashboard's vet queue, Admins and Doctors are notified, and the Admin or a Doctor completes the same visit (`visits.stage`, schema v4). An Assistant may only create a `WAITING` visit in their own name (no vet, diagnosis, treatment, follow-up, invoice) and edit its intake fields while it is still `WAITING` (`assistantIntake` in `server/rules.mjs`). The pre-diagnosis start screen has **New patient** (phone first: an existing owner's pets are offered, else owner + pet are created, `quickPatient` in `repo.ts`). Passwords set by the Admin are temporary (`users.must_change_password`). The UI hides what a role can't do (`isAdmin`, `canVisit`, `canIntake` in `src/lib/app.tsx`), and `server/rules.mjs` enforces it
-- **Cloud sync (Phase 1, 4 Nov 2026):** local-first, as in `docs/CLOUD-PLAN.md`. Each device keeps its SQLite and SQLite triggers feed `sync_outbox` (`src/sync/local.ts`); `src/sync/engine.ts` pushes and pulls against `server/` (Node + Postgres on Railway, `railway.json`). Any new table or column syncs automatically if it is in `SYNC_TABLES`, which must match `server/tables.mjs`. Invoice numbers come from the server while linked (`TMP-…` until synced)
+- **Cloud sync (Phase 1, 4 Nov 2026):** local-first, as in `docs/CLOUD-PLAN.md`. Each device keeps its SQLite and SQLite triggers feed `sync_outbox` (`src/sync/local.ts`); `src/sync/engine.ts` pushes and pulls against `server/` (Node + Postgres on Railway, `railway.json`). Any new table or column syncs automatically if it is in `SYNC_TABLES`, which must match `server/tables.mjs`. A server older than the app refuses unknown tables: the device keeps those changes queued (no revert) and shows "server needs update" (`serverBehind` in `engine.ts`). Railway must deploy from `main` (the repo's GitHub default branch is still the old `claude/magical-lovelace-xx07az`). Invoice numbers come from the server while linked (`TMP-…` until synced)
 - i18n: `src/i18n/ar.json` (default, RTL) + `en.json`; never hard-code UI text
 - Charts: `recharts` (weight chart) · receipt / pet summary: print CSS, A5 · export: SheetJS (xlsx/csv)
 - Packaging: `electron-builder` → Windows: NSIS installer + portable exe (`.github/workflows/windows.yml`, `windows-latest`) · macOS: universal dmg, ad-hoc signed via `build/mac-adhoc-sign.cjs`, not notarized (`.github/workflows/macos.yml`, `macos-latest`)
@@ -33,6 +33,8 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 ## Screens (`SCOPE.md §4`) → routes
 Routes are hash routes (`#/owners`) because the app loads from `file://`.
 
+Sidebar (7 Nov 2026, at Ahmed's request): Dashboard · Owners · Appointments · **Pricing** (`/invoices`, `/reports`, `/prices`, with tabs on top: `PricingTabs` in `src/components/Sections.tsx`) · **Stock** (`/stock`, `/stock/vaccines`, `/stock/drugs`: `StockTabs`) · **Treatment templates** (`/templates`, Admin + Doctor) · Settings. Old `/settings?tab=prices|vaccines|drugs|templates` links redirect.
+
 | Route | Screen |
 |---|---|
 | `/login` | Login |
@@ -48,8 +50,11 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/reminders` (`?tab=recall`) | Reminders: tomorrow's appointments + this week's due vaccinations, each with WhatsApp (change request 6 Nov). Tab "Not seen in a while": active pets with no visit in 6/12/18/24 months and nothing booked, WhatsApp check-up reminder stamps `pets.recall_sent_at` (schema v9, change request 7 Nov) |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
 | `/stock` | Stock — everyone sees levels and history; Admin restocks and corrects counts (change request 6 Nov) |
+| `/stock/vaccines`, `/stock/drugs` | Vaccine catalogue and drug list (Admin), moved from Settings 7 Nov |
+| `/prices` | Price list (Admin), under Pricing, moved from Settings 7 Nov |
+| `/templates` | Treatment templates (Admin + Doctor), own sidebar item since 7 Nov |
 | `/reports` (`?view=day&date=` \| `?view=month&month=` \| `?view=expenses&month=`) | Reports — Admin only: end-of-day cash (by method, by staff, payments, open invoices), monthly (12-month collected vs spent chart, profit, visits by type, top services, who owes money by age) (change request 6 Nov) and expenses (change request 7 Nov) |
-| `/settings` (clinic, prices, vaccines, drugs, treatment templates, users, devices, activity, export, clinic server) | 8 Settings — Admin only. Activity (`src/screens/Activity.tsx`, change request 7 Nov) reads `audit_log` (synced, so every device) with person / kind / date filters |
+| `/settings` (clinic, users, devices, activity, export, clinic server) | 8 Settings — Admin only. Activity (`src/screens/Activity.tsx`, change request 7 Nov) reads `audit_log` (synced, so every device) with person / kind / date filters |
 | `/account` | Settings for Doctors and Assistants (nav "Settings" for non-Admins): check for updates / restart to update (the auto-update on/off switch stays Admin-only), language, theme, password (`src/screens/MySettings.tsx`) |
 
 ## The one integration

@@ -156,9 +156,9 @@ await step('invoices list', async () => {
 await step('settings', async () => {
   await go('#/settings');
   await shot('settings-clinic');
-  await go('#/settings?tab=prices');
+  await go('#/prices');
   await shot('settings-prices');
-  await go('#/settings?tab=vaccines');
+  await go('#/stock/vaccines');
   await shot('settings-vaccines');
   await go('#/settings?tab=data');
   await shot('settings-data');
@@ -220,7 +220,13 @@ await step('patient alerts, certificate, reminders', async () => {
 
 // Reports for the Admin: today's cash (the partial payment taken above) and the monthly report.
 await step('reports: end-of-day cash and monthly', async () => {
-  await win.locator('.side .nav a', { hasText: 'Reports' }).click();
+  // Pricing in the sidebar holds Invoices, Reports and the Price list.
+  const navText = await win.locator('.side .nav').innerText();
+  if (!navText.includes('Pricing') || navText.includes('Reports') || /\bInvoices\b/.test(navText)) throw new Error(`sidebar: ${navText.replace(/\n/g, ' | ')}`);
+  await win.locator('.side .nav a', { hasText: 'Pricing' }).click();
+  await win.locator('.section-tabs a', { hasText: 'Reports' }).click();
+  await win.locator('.side .nav a.active', { hasText: 'Pricing' }).waitFor();
+  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Invoices|Reports|Price list') throw new Error('pricing tabs');
   await win.locator('.tile.main', { hasText: 'Collected' }).waitFor();
   const rows = await win.locator('.reports table.t').nth(1).locator('tbody tr.link').count();
   if (rows < 1) throw new Error('no payments in today\'s cash report');
@@ -234,7 +240,9 @@ await step('reports: end-of-day cash and monthly', async () => {
 
 // Dose calculator + treatment templates (demo drugs/template from SEED_DEMO).
 await step('dose calculator and treatment templates', async () => {
-  await go('#/settings?tab=drugs');
+  await go('#/stock/drugs');
+  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Stock|Vaccine catalogue|Drugs') throw new Error('stock tabs');
+  await win.locator('.side .nav a.active', { hasText: 'Stock' }).waitFor();
   await win.locator('table.t tr', { hasText: 'Meloxicam 1.5 mg/ml (demo)' }).waitFor();
   await shot('settings-drugs');
   await go('#/owners');
@@ -261,7 +269,7 @@ await step('dose calculator and treatment templates', async () => {
   await win.locator('.dialog input[type=text]').fill('Gastro + antibiotic');
   await win.locator('.dialog .btn.primary').click();
   await win.getByRole('button', { name: 'Cancel' }).last().click();
-  await go('#/settings?tab=templates');
+  await win.locator('.side .nav a', { hasText: 'Treatment templates' }).click();
   await win.locator('table.t tr', { hasText: 'Gastro + antibiotic' }).waitFor();
 });
 
