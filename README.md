@@ -13,9 +13,9 @@ macOS:   ~/Library/Application Support/Animal Care Clinic/data/clinic.sqlite
          ~/Library/Application Support/Animal Care Clinic/data/backups/
 ```
 
-Every change builds both versions: CI produces a Windows exe (`windows.yml`) and a Mac dmg (`macos.yml`) on every push to `main` and every PR, so the Mac build is always the same app as the Windows one. The two computers do **not** share data: each has its own database file (move data with Settings → Data & backup → backup/restore).
+Every change builds both versions: CI produces a Windows exe (`windows.yml`) and a Mac dmg (`macos.yml`) on every push to `main` and every PR, so the Mac build is always the same app as the Windows one. Every feature is in both: cloud sync with the clinic server, notifications, devices, offline mode, backups, exports and automatic updates. Linked to the clinic server, the Mac and the PC see the same live records.
 
-No server needed. Internet is used only to open WhatsApp and to fetch app updates. Backups and Excel export are under **Settings → Data & backup**. Exports and backup files go straight to the Exports folder in Documents (`Documents\Animal Care Clinic\Exports`) with no save dialog.
+No server needed. Internet is used only to open WhatsApp and to fetch app updates. Backups and Excel export are under **Settings → Data & backup**. Exports and backup files go straight to the Exports folder in Documents (Windows `Documents\Animal Care Clinic\Exports`, Mac `~/Documents/Animal Care Clinic/Exports`) with no save dialog.
 
 ## Install on the clinic PC
 
@@ -36,6 +36,13 @@ Download `AnimalCareClinic-<version>-mac.dmg` from **[Releases](https://github.c
    - If macOS says the app "is damaged", run this once in Terminal, then open it again: `xattr -cr "/Applications/Animal Care Clinic.app"`
 
 The dmg is universal: it runs on Apple-chip (M1–M4) and Intel Macs, macOS 11 or later. Same default logins as below. Run it from **Applications** (not from the open dmg) or it can't update itself. If it is started from the dmg, or macOS runs a temporary copy of a downloaded app, it offers **Move to Applications** at start (also under Settings → Data & backup → Updates) and moves and reopens itself.
+
+On the Mac, background mode (the bell → *Keep running in the menu bar and start with the Mac*) works like the Windows tray:
+
+- Closing the window keeps the app running, with an icon in the **menu bar** (top right) and in the Dock. Click the Dock icon, or the menu-bar icon → *Open*, to bring the window back. Quit with **⌘Q** or the menu-bar icon → *Quit*.
+- It starts at login, hidden, straight to the menu bar. macOS may ask you to allow it first: the bell panel then shows **Open Login Items settings**, where you switch Animal Care Clinic on.
+- The first notification makes macOS ask for permission. If alerts never appear, allow Animal Care Clinic in **System Settings → Notifications**.
+- The first export may make macOS ask to let the app use the Documents folder; allow it.
 
 ## Updates
 

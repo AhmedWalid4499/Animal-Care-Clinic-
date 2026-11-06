@@ -45,10 +45,19 @@ export function NotificationBell({ floating }: { floating?: boolean }) {
   const off = new Set((me?.notify_off ?? '').split(',').filter(Boolean));
   const [perm, setPerm] = useState(pushPermission());
   const [background, setBackground] = useState<boolean | null>(null);
+  const [mac, setMac] = useState(false);
+  const [loginStatus, setLoginStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open && isDesktop) platform.getBackground().then(setBackground);
+    if (!open || !isDesktop) return;
+    platform.getBackground().then(setBackground);
+    platform.config().then((c) => setMac(c.platform === 'darwin'));
+    platform.loginItemStatus().then(setLoginStatus);
   }, [open]);
+  const toggleBackground = async (on: boolean) => {
+    setBackground(await platform.setBackground(on));
+    setLoginStatus(await platform.loginItemStatus());
+  };
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
@@ -122,9 +131,15 @@ export function NotificationBell({ floating }: { floating?: boolean }) {
             )}
             {isDesktop && background !== null && (
               <label className="check small">
-                <input type="checkbox" checked={background} onChange={async (e) => setBackground(await platform.setBackground(e.target.checked))} />
-                <span>{t('notify.background')}<br /><span className="muted">{t('notify.backgroundHint')}</span></span>
+                <input type="checkbox" checked={background} onChange={(e) => void toggleBackground(e.target.checked)} />
+                <span>{t(mac ? 'notify.backgroundMac' : 'notify.background')}<br /><span className="muted">{t(mac ? 'notify.backgroundHintMac' : 'notify.backgroundHint')}</span></span>
               </label>
+            )}
+            {isDesktop && mac && background && loginStatus === 'requires-approval' && (
+              <div className="note warn small">
+                {t('notify.loginApproval')}{' '}
+                <button type="button" className="btn sm ghost" onClick={() => platform.openLoginItemsSettings()}>{t('notify.loginApprovalOpen')}</button>
+              </div>
             )}
           </footer>
         </div>
