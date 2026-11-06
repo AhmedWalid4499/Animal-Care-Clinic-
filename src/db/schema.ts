@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -122,6 +122,12 @@ CREATE TABLE IF NOT EXISTS care_tasks (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS care_tasks_admission ON care_tasks(admission_id, due_at);`;
+// Schema v13 (7 Nov 2026, at Ahmed's request): how many of each drug the clinic has (a plain count the Admin keeps,
+// with a "running low" level), and a short "how to use" note on treatment templates, printed for the owner.
+const v13Cols = `ALTER TABLE drugs ADD COLUMN stock_qty REAL;
+ALTER TABLE drugs ADD COLUMN stock_unit TEXT;
+ALTER TABLE drugs ADD COLUMN low_stock REAL;
+ALTER TABLE treatment_templates ADD COLUMN owner_note TEXT;`;
 const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -360,6 +366,7 @@ ${stockBatchCols}
 ${expensesTable}
 ${clinicalDocs}
 ${wardTables}
+${v13Cols}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -444,6 +451,8 @@ export const MIGRATIONS: Record<number, string> = {
   11: clinicalDocs,
   // v12 (7 Nov 2026): in-patient board.
   12: wardTables,
+  // v13 (7 Nov 2026): drug counts, owner instructions on templates.
+  13: v13Cols,
 };
 
 /** Tables included in the one-click export, in dependency order. */

@@ -24,7 +24,7 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - Vaccination `next_due_at` default = `administered_at + vaccine_types.interval_days`; editable.
 - Dashboard "due" = latest vaccination per (pet, type) with `next_due_at ≤ today + 7d`, pet `ACTIVE`.
 - Reports leave out VOID invoices and their payments, and group days/months in local time (moments are stored UTC). "Taken by" = `payments.received_by`.
-- Dose calculator (schema v7): `drugs` is the clinic's own list (Admin only, `server/rules.mjs`); `src/lib/dose.ts` does mg/kg × weight (visit weight, else last recorded), caps at `max_mg`, ÷ concentration, and warns on species / allergy-note matches. Never ship real doses in seeds: demo drugs are marked "(demo)" and seeded only with `SEED_DEMO=1`. Treatment templates (`treatment_templates`, Admin + Doctor) fill diagnosis, treatment and prescriptions; listed drugs' doses are left blank so they are recalculated.
+- Dose calculator (schema v7): `drugs` is the clinic's own list (Admin only, `server/rules.mjs`); `src/lib/dose.ts` does mg/kg × weight (visit weight, else last recorded), caps at `max_mg`, ÷ concentration, and warns on species / allergy-note matches. Never ship real doses in seeds: demo drugs are marked "(demo)" and seeded only with `SEED_DEMO=1`. Treatment templates (`treatment_templates`, Admin + Doctor) fill diagnosis, treatment and prescriptions; listed drugs' doses are left blank so they are recalculated. Each template has a short owner note (`owner_note`, schema v13) and prints as a prescription for the owner (`/templates/[id]/print`, AR or EN, optional patient → name + doses from the last weight, else blank lines). Drugs carry a plain count kept by the Admin (`stock_qty`, `stock_unit`, `low_stock`, schema v13; Stock → Drugs → Count); low counts join the dashboard's stock note.
 - Stock (schema v8): price items with `track_stock` are counted; `stock_moves` is append-only and on hand = Σ `qty`. Invoices reconcile their own moves in `syncInvoiceStock` (`repo.ts`) on every save and void, so never write INVOICE moves elsewhere. Restock / count correction are Admin only (`server/rules.mjs`); the dashboard shows "Running low" at or below `low_stock`.
 - Stock batches (schema v10): a RESTOCK move may carry `batch_no` + `expires_at`; `batchesInStock()` assumes first in, first out (on hand is taken from the newest deliveries) to say which batches are probably still on the shelf; Stock and the dashboard warn 30 days before expiry; the visit form suggests in-stock vaccine batch numbers.
 - Expenses (schema v10, Admin only in `server/rules.mjs`): `expenses` (local date `spent_at`, piastres, `status` ACTIVE/VOID, never deleted); Reports → Expenses; monthly report profit = payments collected − active expenses.
@@ -41,7 +41,7 @@ Sidebar (7 Nov 2026, at Ahmed's request): Dashboard · Owners · Appointments ·
 | Route | Screen |
 |---|---|
 | `/login` | Login |
-| `/` | 1 Dashboard |
+| `/` | 1 Dashboard (redone 7 Nov at Ahmed's request: greeting, big search, quick-action buttons, today at a glance cards, stock warnings, vet queue, today's schedule, vaccinations due) |
 | `/owners`, `/owners/new` | 2 Owners |
 | `/owners/[id]` | 3 Owner detail |
 | `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|labs\|files`) | 4 Pet record (Lab results tab: change request 7 Nov) |
@@ -57,7 +57,7 @@ Sidebar (7 Nov 2026, at Ahmed's request): Dashboard · Owners · Appointments ·
 | `/stock` | Stock — everyone sees levels and history; Admin restocks and corrects counts (change request 6 Nov) |
 | `/stock/vaccines`, `/stock/drugs` | Vaccine catalogue and drug list (Admin), moved from Settings 7 Nov |
 | `/prices` | Price list (Admin), under Pricing, moved from Settings 7 Nov |
-| `/templates` | Treatment templates (Admin + Doctor), own sidebar item since 7 Nov |
+| `/templates`, `/templates/[id]/print` | Treatment templates (Admin + Doctor), own sidebar item since 7 Nov; printable for the owner |
 | `/reports` (`?view=day&date=` \| `?view=month&month=` \| `?view=expenses&month=`) | Reports — Admin only: end-of-day cash (by method, by staff, payments, open invoices), monthly (12-month collected vs spent chart, profit, visits by type, top services, who owes money by age) (change request 6 Nov) and expenses (change request 7 Nov) |
 | `/settings` (clinic, users, devices, activity, export, clinic server) | 8 Settings — Admin only. Activity (`src/screens/Activity.tsx`, change request 7 Nov) reads `audit_log` (synced, so every device) with person / kind / date filters |
 | `/account` | Settings for Doctors and Assistants (nav "Settings" for non-Admins): check for updates / restart to update (the auto-update on/off switch stays Admin-only), language, theme, password (`src/screens/MySettings.tsx`) |

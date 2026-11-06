@@ -202,11 +202,12 @@ export function seedDemo() {
 
     // Dose calculator and templates (demo only). These are EXAMPLES for trying the screens, marked "(demo)":
     // the clinic enters its own drug list and doses in Settings → Drugs.
-    insert('drugs', { name: 'Meloxicam 1.5 mg/ml (demo)', dose_mg_kg: 0.1, concentration: 1.5, unit: 'ml', frequency: 'Once daily', duration_days: 3, species: 'DOG,CAT' });
-    insert('drugs', { name: 'Amoxicillin 250 mg tablet (demo)', dose_mg_kg: 20, concentration: 250, unit: 'tablet', max_mg: 500, frequency: 'Every 12 h', duration_days: 7, species: 'DOG,CAT' });
+    insert('drugs', { name: 'Meloxicam 1.5 mg/ml (demo)', dose_mg_kg: 0.1, concentration: 1.5, unit: 'ml', frequency: 'Once daily', duration_days: 3, species: 'DOG,CAT', stock_qty: 6, stock_unit: 'bottles', low_stock: 2 });
+    insert('drugs', { name: 'Amoxicillin 250 mg tablet (demo)', dose_mg_kg: 20, concentration: 250, unit: 'tablet', max_mg: 500, frequency: 'Every 12 h', duration_days: 7, species: 'DOG,CAT', stock_qty: 2, stock_unit: 'strips', low_stock: 3 });
     insert('treatment_templates', {
       name: 'Gastroenteritis, standard (demo)', diagnosis: 'Acute gastroenteritis', treatment_notes: 'Bland diet 3 days, fresh water, recheck if vomiting continues',
-      prescriptions: JSON.stringify([{ drug: 'Meloxicam 1.5 mg/ml (demo)', dose: '', frequency: '', duration_days: '', instructions: 'With food' }]), created_by: vetId,
+      prescriptions: JSON.stringify([{ drug: 'Meloxicam 1.5 mg/ml (demo)', dose: '', frequency: 'Once daily', duration_days: '3', instructions: 'With food' }]), created_by: vetId,
+      owner_note: 'Small, bland meals for 3 days and plenty of fresh water. Call us if vomiting continues.',
     });
 
     // Stock (demo): vaccines tracked and comfortably stocked; deworming tracked and running low.
