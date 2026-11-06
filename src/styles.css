@@ -450,3 +450,22 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 /* ---- phone install (Phase 4) ---- */
 .install-banner { display: flex; align-items: center; gap: 10px; margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); }
 .install-banner img { border-radius: 8px; flex: none; }
+
+/* Reports (6 Nov 2026) */
+.reports .stepper { gap: 8px; margin-bottom: 14px; }
+.reports .stepper input { min-height: 32px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.tile { border: 1px solid var(--rule); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.tile span { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.tile b { font-size: 18px; color: var(--ink); }
+.tile.main { border-color: var(--accent); background: var(--accent-soft); }
+.tile.main b { font-size: 22px; }
+.tile small { font-size: 12px; color: var(--ink-3); }
+table.t tfoot td { border-top: 2px solid var(--ink); border-bottom: 0; }
+table.t.compact td, table.t.compact th { padding: 5px 8px; }
+table.t tr.on td { background: var(--accent-soft); font-weight: 600; }
+.chart-box { margin: 10px 0 6px; }
+@media print {
+  .reports .tiles { grid-template-columns: repeat(5, 1fr); }
+  .reports .chart-box { height: 200px !important; }
+}

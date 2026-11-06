@@ -26,6 +26,7 @@ export function Layout() {
     { to: '/owners', icon: 'users', label: t('nav.owners') },
     { to: '/appointments', icon: 'calendar', label: t('nav.appointments') },
     { to: '/invoices', icon: 'receipt', label: t('nav.invoices') },
+    ...(isAdmin ? [{ to: '/reports', icon: 'chart', label: t('nav.reports') }] : []),
     // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
     { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings') },
   ];
