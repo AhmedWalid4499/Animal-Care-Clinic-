@@ -31,6 +31,8 @@ interface Ctx {
   isAdmin: boolean;
   /** Admin or Doctor: record and edit visits. */
   canVisit: boolean;
+  /** Everyone, Assistants included: record a pre-diagnosis and send the patient to the vet's queue. */
+  canIntake: boolean;
   theme: Theme;
   setTheme: (t: Theme) => void;
   toast: (msg: string) => void;
@@ -120,6 +122,7 @@ export function AppProvider({ children, defaultLocale }: { children: ReactNode; 
       },
       isAdmin: user?.role === 'ADMIN',
       canVisit: user?.role === 'ADMIN' || user?.role === 'DOCTOR',
+      canIntake: user?.role === 'ADMIN' || user?.role === 'DOCTOR' || user?.role === 'ASSISTANT',
       theme,
       setTheme: (th) => {
         setThemeState(th);

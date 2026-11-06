@@ -7,22 +7,34 @@ import { Dialog, Field, Icon, PetAvatar, PetPicker } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { VISIT_TYPES, type VisitType } from '../db/types';
 import type { PetOption } from '../db/repo';
-import { IntakeEditor, num, type IntakeDraft } from './IntakeForm';
+import { IntakeEditor, NewPatientForm, num, type IntakeDraft } from './IntakeForm';
 
-/** /visits/new — choose the pet first (dashboard "New visit" button). */
+/** /visits/new and /intake/new — choose the pet first. For a pre-diagnosis, a new patient can be added right here. */
 export function VisitPickPet({ intake }: { intake?: boolean }) {
   const { t } = useApp();
   const nav = useNavigate();
   const [pet, setPet] = useState<PetOption | null>(null);
+  const [newPatient, setNewPatient] = useState(false);
   useEffect(() => {
     if (pet) nav(intake ? `/pets/${pet.id}/intake` : `/pets/${pet.id}/visits/new`, { replace: true });
   }, [pet, nav, intake]);
   return (
     <div className="page narrow">
       <PageHead title={intake ? t('intake.new') : t('visits.new')} sub={intake ? t('intake.sub') : t('visits.minFields')} />
-      <Field label={t('visits.pickPet')} group>
-        <PetPicker value={pet} onChange={setPet} autoFocus />
-      </Field>
+      {newPatient ? (
+        <NewPatientForm onDone={(id) => nav(`/pets/${id}/intake`, { replace: true })} onCancel={() => setNewPatient(false)} />
+      ) : (
+        <>
+          <Field label={t('visits.pickPet')} group>
+            <PetPicker value={pet} onChange={setPet} autoFocus />
+          </Field>
+          {intake && (
+            <button type="button" className="btn" onClick={() => setNewPatient(true)}>
+              <Icon name="plus" /> {t('intake.newPatient')}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

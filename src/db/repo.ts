@@ -4,7 +4,7 @@ import { all, audit, get, insert, nowIso, run, tx, update, uuid } from './core';
 import { addDays, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -131,6 +131,26 @@ export function findDuplicatePhone(phone: string, excludeId?: string): Owner | u
   return all<Owner>('SELECT * FROM owners WHERE id <> ?', [excludeId ?? '']).find(
     (o) => digits(o.phone).endsWith(d.slice(-9)) || (o.whatsapp && digits(o.whatsapp).endsWith(d.slice(-9))),
   );
+}
+/** Active owners whose phone or WhatsApp matches (last 9 digits), for the front desk's quick "new patient". */
+export function ownersByPhone(phone: string): Owner[] {
+  const d = digits(phone);
+  if (d.length < 6) return [];
+  return all<Owner>("SELECT * FROM owners WHERE status = 'ACTIVE' ORDER BY full_name").filter(
+    (o) => digits(o.phone).endsWith(d.slice(-9)) || (!!o.whatsapp && digits(o.whatsapp).endsWith(d.slice(-9))),
+  );
+}
+/**
+ * New patient at the front desk, in one step: the pet, under the owner with this phone if there is one (no duplicate
+ * owner), otherwise under a new owner. Everything else about the pet can be filled in later from the pet record.
+ */
+export function quickPatient(d: { owner_name: string; phone: string; pet_name: string; species: Species }): { petId: string; ownerId: string; existingOwner: boolean } {
+  return tx(() => {
+    const found = ownersByPhone(d.phone)[0];
+    const ownerId = found?.id ?? insert('owners', { full_name: d.owner_name.trim(), phone: d.phone.trim() });
+    const petId = insert('pets', { owner_id: ownerId, name: d.pet_name.trim(), species: d.species });
+    return { petId, ownerId, existingOwner: !!found };
+  });
 }
 export type OwnerInput = Pick<Owner, 'full_name' | 'phone' | 'whatsapp' | 'email' | 'address' | 'national_id' | 'notes'>;
 export function saveOwner(d: OwnerInput, id?: string): string {

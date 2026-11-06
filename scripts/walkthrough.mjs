@@ -202,6 +202,39 @@ await step('assistant cannot reach settings', async () => {
   await shot('assistant-blocked-settings');
 });
 
+// The front desk records the pre-diagnosis for a patient who is not in the system yet, and sends them to the vet.
+await step('assistant pre-diagnosis for a new patient', async () => {
+  await go('#/');
+  await win.getByRole('button', { name: 'Pre-diagnosis' }).click();
+  await win.getByRole('button', { name: 'New patient' }).click();
+  await win.getByLabel('Phone', { exact: true }).fill('01055501234');
+  await win.getByLabel("Owner's name").fill('Hoda Sami');
+  await win.getByLabel("Pet's name").fill('Simba');
+  await win.getByLabel('Species').selectOption('CAT');
+  await shot('assistant-new-patient');
+  await win.getByRole('button', { name: 'Add patient and continue' }).click();
+  await win.waitForSelector('.seg.urgency');
+  await win.locator('.seg.urgency button').nth(1).click(); // soon
+  await win.locator('form input[type=text]').first().fill('Not eating for two days');
+  await shot('assistant-pre-diagnosis');
+  await win.getByRole('button', { name: 'Send to the vet' }).click();
+  await win.locator('.section.queue li', { hasText: 'Simba' }).waitFor();
+  await shot('assistant-queue');
+  // Same phone again: the owner is recognised and their pet offered, so no duplicate owner is created.
+  await win.getByRole('button', { name: 'Pre-diagnosis' }).click();
+  await win.getByRole('button', { name: 'New patient' }).click();
+  await win.getByLabel('Phone', { exact: true }).fill('01055501234');
+  await win.locator('.owner-found', { hasText: 'Hoda Sami' }).waitFor();
+  await win.locator('.owner-found button', { hasText: 'Simba' }).waitFor();
+  await shot('assistant-owner-found');
+  // The assistant can still correct the pre-diagnosis while the patient waits, but cannot start a full visit.
+  await go('#/');
+  await win.locator('.section.queue li', { hasText: 'Simba' }).click();
+  await win.waitForSelector('.seg.urgency');
+  await go('#/visits/new');
+  await win.waitForSelector('text=Only doctors and admins');
+});
+
 await step('phone layout', async () => {
   await win.setViewportSize({ width: 390, height: 844 });
   await win.getByRole('button', { name: 'Sign out' }).first().click().catch(() => {});

@@ -1,12 +1,13 @@
-// Pre-diagnosis (Phase 5, docs/CLOUD-PLAN.md): a Doctor records the intake before the vet sees the patient;
-// the patient then waits in the "Waiting for the vet" queue on the dashboard, and the vet continues the same visit.
+// Pre-diagnosis (Phase 5, docs/CLOUD-PLAN.md): an Assistant or a Doctor records the intake before the vet sees the
+// patient; the patient then waits in the "Waiting for the vet" queue on the dashboard, the vets get a notification,
+// and the vet continues the same visit. Assistants may edit it only while the patient is still waiting.
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { getAppointment, getPet, getVisit, saveIntake, takePatient, waitingQueue, type IntakeInput, type QueueRow } from '../db/repo';
+import { getAppointment, getPet, getVisit, ownerPets, ownersByPhone, quickPatient, saveIntake, takePatient, waitingQueue, type IntakeInput, type QueueRow } from '../db/repo';
 import { Badge, Field, Icon, PetAvatar, speciesEmoji } from '../components/ui';
 import { PageHead } from '../components/Layout';
-import { URGENCIES, VISIT_TYPES, type Urgency, type VisitType } from '../db/types';
+import { SPECIES, URGENCIES, VISIT_TYPES, type Species, type Urgency, type VisitType } from '../db/types';
 
 /** The intake fields, shared by the pre-diagnosis screen and the top of the vet's visit form. */
 export interface IntakeDraft {
@@ -66,14 +67,80 @@ export function IntakeEditor({ value, onChange }: { value: IntakeDraft; onChange
   );
 }
 
+/**
+ * "New patient" at the front desk (pre-diagnosis start screen). The phone comes first: if an owner already has it,
+ * their pets are offered (no duplicate owner); otherwise owner name, pet name and species are enough to continue.
+ * Breed, sex, date of birth… can be added later from the pet record.
+ */
+export function NewPatientForm({ onDone, onCancel }: { onDone: (petId: string) => void; onCancel: () => void }) {
+  const { t, toast } = useApp();
+  const [phone, setPhone] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [petName, setPetName] = useState('');
+  const [species, setSpecies] = useState<Species>('DOG');
+  const owner = useMemo(() => ownersByPhone(phone)[0], [phone]);
+  const theirPets = useMemo(() => (owner ? ownerPets(owner.id).filter((p) => p.status === 'ACTIVE') : []), [owner]);
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const r = quickPatient({ owner_name: ownerName, phone, pet_name: petName, species });
+    toast(r.existingOwner && owner ? t('intake.petAddedToOwner', { owner: owner.full_name }) : t('intake.patientAdded'));
+    onDone(r.petId);
+  };
+  return (
+    <form className="form-section new-patient" onSubmit={submit}>
+      <h2>{t('intake.newPatient')}</h2>
+      <p className="muted small">{t('intake.newPatientHint')}</p>
+      <div className="grid g2">
+        <Field label={t('owners.phone')}>
+          <input type="tel" inputMode="tel" required autoFocus value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </Field>
+        <Field label={t('intake.ownerName')}>
+          {owner ? <input type="text" value={owner.full_name} disabled /> : <input type="text" required value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />}
+        </Field>
+      </div>
+      {owner && (
+        <div className="note small owner-found">
+          {t('intake.ownerFound', { owner: owner.full_name })}
+          {theirPets.length > 0 && (
+            <div className="row" style={{ marginTop: 6 }}>
+              <span className="muted">{t('intake.pickTheirPet')}</span>
+              {theirPets.map((p) => (
+                <button key={p.id} type="button" className="btn sm" onClick={() => onDone(p.id)}>
+                  {speciesEmoji[p.species]} {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="grid g2">
+        <Field label={t('intake.petName')}>
+          <input type="text" required value={petName} onChange={(e) => setPetName(e.target.value)} />
+        </Field>
+        <Field label={t('pets.species')}>
+          <select value={species} onChange={(e) => setSpecies(e.target.value as Species)}>
+            {SPECIES.map((sp) => <option key={sp} value={sp}>{t(`species.${sp}`)}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="actionbar">
+        <button type="button" className="btn" onClick={onCancel}>{t('common.cancel')}</button>
+        <button className="btn primary">{owner ? t('intake.addPetContinue') : t('intake.addPatientContinue')}</button>
+      </div>
+    </form>
+  );
+}
+
 /** /pets/:petId/intake (new, optionally ?appointment=) and /visits/:visitId/intake (edit while waiting). */
 export function IntakeFormPage() {
   const { petId: petParam, visitId } = useParams();
   const [sp] = useSearchParams();
   const appointmentId = sp.get('appointment');
-  const { t, fmt, user, toast } = useApp();
+  const { t, fmt, user, toast, canVisit } = useApp();
   const nav = useNavigate();
   const existing = useMemo(() => (visitId ? getVisit(visitId) : undefined), [visitId]);
+  // The vet has taken the patient (or finished the visit): the pre-diagnosis is now the vet's to change.
+  const locked = !!existing && existing.stage !== 'WAITING' && !canVisit;
   const petId = petParam ?? existing?.pet_id ?? '';
   const pet = useQuery(() => getPet(petId), [petId]);
   const appt = useMemo(() => (appointmentId ? getAppointment(appointmentId) : undefined), [appointmentId]);
@@ -88,6 +155,14 @@ export function IntakeFormPage() {
       : { ...emptyIntake, complaint: appt?.notes ?? '' },
   );
   if (!pet) return <div className="page">{t('common.notFound')}</div>;
+  if (locked) {
+    return (
+      <div className="page narrow">
+        <PageHead title={t('intake.edit')} crumb={{ to: `/pets/${pet.id}`, label: pet.name }} />
+        <p className="note warn">{t('intake.lockedWithVet')}</p>
+      </div>
+    );
+  }
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,13 +221,14 @@ function useNow(ms = 30_000) {
 
 /** Dashboard: patients waiting for the vet, emergencies first. Vets open the visit; everyone else sees the list. */
 export function QueueSection() {
-  const { t, canVisit, user } = useApp();
+  const { t, canVisit, canIntake, user } = useApp();
   const nav = useNavigate();
   const rows = useQuery(waitingQueue);
   const now = useNow();
-  if (!rows.length && !canVisit) return null;
+  if (!rows.length && !canIntake) return null;
   const open = (r: QueueRow) => {
-    if (!canVisit || !user) return nav(`/pets/${r.pet_id}`);
+    // Assistants: a waiting patient opens its pre-diagnosis (to add or correct something); otherwise the pet record.
+    if (!canVisit || !user) return nav(r.stage === 'WAITING' && canIntake ? `/visits/${r.id}/intake` : `/pets/${r.pet_id}`);
     if (r.stage === 'WITH_VET' && r.vet_id && r.vet_id !== user.id && !window.confirm(t('queue.takeOver', { name: r.vet_name ?? '' }))) return;
     if (r.stage === 'WAITING' || r.vet_id !== user.id) takePatient(r.id, user.id);
     nav(`/visits/${r.id}/edit`);

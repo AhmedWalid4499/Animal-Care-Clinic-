@@ -8,7 +8,7 @@ import { PageHead } from '../components/Layout';
 import { QueueSection } from './IntakeForm';
 
 export function Dashboard() {
-  const { t, fmt, canVisit, locale } = useApp();
+  const { t, fmt, canVisit, canIntake, locale } = useApp();
   const nav = useNavigate();
   const [q, setQ] = useState('');
   const hits = useQuery(() => quickSearch(q), [q]);
@@ -22,15 +22,15 @@ export function Dashboard() {
   return (
     <div className="page">
       <PageHead title={`${t('dashboard.title')} · ${fmt.weekday(d)}`} sub={t('dashboard.stats', counts)}>
+        {canIntake && (
+          <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav('/intake/new')}>
+            <Icon name="clipboard" /> {t('nav.intake')}
+          </button>
+        )}
         {canVisit && (
-          <>
-            <button className="btn" onClick={() => nav('/intake/new')}>
-              <Icon name="clipboard" /> {t('nav.intake')}
-            </button>
-            <button className="btn primary" onClick={() => nav('/visits/new')}>
-              <Icon name="plus" /> {t('nav.newVisit')}
-            </button>
-          </>
+          <button className="btn primary" onClick={() => nav('/visits/new')}>
+            <Icon name="plus" /> {t('nav.newVisit')}
+          </button>
         )}
       </PageHead>
 

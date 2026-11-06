@@ -1,12 +1,22 @@
 // Who may change what. The server checks every change it receives, so a device can't give itself rights.
 // Roles (docs/CLOUD-PLAN.md): ADMIN everything · DOCTOR clinical + front desk, no settings/users/archive/void ·
-// ASSISTANT front desk, read-only visits.
+// ASSISTANT front desk, read-only visits except the pre-diagnosis (they send the patient to the vet's queue).
 import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 
 const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types']);
 const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
+// Assistants record the pre-diagnosis: they may create a visit that only waits for the vet (no vet, diagnosis,
+// treatment, follow-up or invoice), recorded as theirs, and correct its intake fields while the patient still waits.
+const INTAKE_EDIT_COLS = new Set(['type', 'complaint', 'weight_kg', 'temperature_c', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', 'updated_at']);
+const VET_ONLY_VISIT_COLS = ['vet_id', 'diagnosis', 'treatment_notes', 'follow_up_at', 'invoice_id'];
+function assistantIntake(change, before, userId) {
+  const { op, cols } = change;
+  if (op !== 'upsert') return false;
+  if (!before) return cols.stage === 'WAITING' && cols.intake_by === userId && VET_ONLY_VISIT_COLS.every((c) => cols[c] == null);
+  return before.stage === 'WAITING' && Object.keys(cols).every((c) => INTAKE_EDIT_COLS.has(c));
+}
 // Everyone may change these on their own user row: the bell's on/off switches, and their own password.
 const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_password', 'updated_at']);
 
@@ -27,7 +37,8 @@ export function refuse(role, change, before, userId) {
   if (ADMIN_ONLY.has(tbl)) return 'admins only';
   if (CLINICAL.has(tbl) && role === 'ASSISTANT') {
     const onlyReminder = tbl === 'vaccinations' && before && op === 'upsert' && Object.keys(cols).every((c) => ASSISTANT_VACCINATION_COLS.has(c));
-    if (!onlyReminder) return 'doctors and admins only';
+    const intake = tbl === 'visits' && assistantIntake(change, before, userId);
+    if (!onlyReminder && !intake) return 'doctors and admins only';
   }
   if (tbl === 'owners' && 'status' in cols && (cols.status === 'ARCHIVED' || before?.status === 'ARCHIVED')) return 'archiving is for admins';
   if (tbl === 'invoices' && 'status' in cols && (cols.status === 'VOID' || before?.status === 'VOID')) return 'voiding is for admins';
