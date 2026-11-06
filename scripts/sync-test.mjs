@@ -92,8 +92,8 @@ const pushService = https.createServer({ key: fs.readFileSync(path.join(certDir,
 });
 await new Promise((r) => pushService.listen(PUSH_PORT, '127.0.0.1', r));
 let server = null;
-function startServer(extraEnv = {}) {
-  server = spawn(process.execPath, ['server/index.mjs'], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
+function startServer(extraEnv = {}, entry = 'server/index.mjs') {
+  server = spawn(process.execPath, [entry], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   server.stderr.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   return until(async () => (await fetch(`${SERVER}/health`)).ok, 15_000);
@@ -999,6 +999,44 @@ await step('restart keeps sync', async () => {
   check('restart', 'After restarting, the laptop is still signed in to its clinic server and keeps everyone’s records', host.includes('127.0.0.1') && n >= 8 && !!synced.v && who.length > 0,
     `signed in again automatically as ${who}, ${synced.v ? 'synced' : 'not synced'}; owners: ${n}; after Sign out the sign-in screen shows server ${host}`);
   await A2.close();
+});
+
+await step('server older than the app', async () => {
+  // Railway still running an older version (it deployed from another branch): the server does not know the drugs
+  // table yet. A drug saved on a laptop must stay there (and wait), not vanish when the server refuses it.
+  const oldDir = path.resolve('.sync-test-old-server');
+  fs.rmSync(oldDir, { recursive: true, force: true });
+  fs.cpSync('server', oldDir, { recursive: true });
+  const tf = path.join(oldDir, 'tables.mjs');
+  fs.writeFileSync(tf, fs.readFileSync(tf, 'utf8').replace("'drugs', ", ''));
+  await stopServer();
+  await startServer({}, path.join(oldDir, 'index.mjs'));
+  const C = await launch('C', { demo: false });
+  try {
+    await connect(C);
+    await signIn(C, ADMIN.email, ADMIN.password);
+    await until(async () => (await C.win.locator('.sync-badge.synced').count()) > 0, 20_000);
+    await go(C, '#/settings?tab=drugs');
+    await C.win.locator('.btn.primary', { hasText: /Add|إضافة/ }).first().click();
+    await C.win.locator('.dialog input[type=text]').first().fill('Server-behind drug');
+    await C.win.locator('.dialog input[type=number]').nth(0).fill('2');
+    await C.win.locator('.dialog input[type=number]').nth(1).fill('50');
+    await C.win.locator('.dialog .btn.primary').click();
+    await C.win.locator('.sync-badge').click();
+    const told = await until(async () => (await C.win.locator('.sync-badge').innerText()).match(/update|تحديث/), 15_000, 300);
+    const kept = await C.win.locator('table.t tbody tr', { hasText: 'Server-behind drug' }).count();
+    // Railway updated: the current server comes back, and the waiting drug goes up.
+    await stopServer();
+    await startServer();
+    await C.win.locator('.sync-badge').click();
+    const up = await until(async () => (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'drugs' AND data->>'name' = 'Server-behind drug' AND NOT deleted")).rows[0].n === '1', 20_000, 500);
+    check('server-behind', 'A server older than the app does not make new records vanish: they wait on the laptop and go up once the server is updated',
+      !!told.v && kept === 1 && !!up.v,
+      `badge on the old server: "${told.v ? told.v[0] : 'no notice'}"; drug still on the laptop: ${kept === 1}; reached the updated server: ${!!up.v}`);
+  } finally {
+    await C.app.close().catch(() => {});
+    fs.rmSync(oldDir, { recursive: true, force: true });
+  }
 });
 
 await step('admin password recovery', async () => {
