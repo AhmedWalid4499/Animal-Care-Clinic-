@@ -20,6 +20,14 @@ function setStatus(p: Partial<SyncStatus>) {
   status = { ...status, ...p, pending: outboxCount() };
   listeners.forEach((l) => l());
 }
+// The server refused a change (the person may not make it there) and the device undid it: the screens say so, instead
+// of the record silently disappearing.
+type Refused = { tbl: string; id: string; reason: string }[];
+const refusedListeners = new Set<(r: Refused) => void>();
+export function onRefused(l: (r: Refused) => void) {
+  refusedListeners.add(l);
+  return () => { refusedListeners.delete(l); };
+}
 export function useSyncStatus(): SyncStatus {
   return useSyncExternalStore(
     (l) => {
@@ -366,7 +374,10 @@ export async function syncNow(): Promise<void> {
           const reverts = r.reverts.filter((x) => !keep.has(`${x.tbl}:${x.id}`));
           if (reverts.length) applyRemote(reverts);
           const refused = r.rejected.filter((x) => x.reason !== 'unknown table');
-          if (refused.length) setStatus({ rejected: status.rejected + refused.length, error: refused[0].reason });
+          if (refused.length) {
+            setStatus({ rejected: status.rejected + refused.length, error: refused[0].reason });
+            refusedListeners.forEach((l) => l(refused));
+          }
         }
       } catch (e) {
         if ((e as ApiError).status === 401 && u !== userId && u !== null) {

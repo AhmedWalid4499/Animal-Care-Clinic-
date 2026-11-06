@@ -8,6 +8,7 @@ import { PageHead } from '../components/Layout';
 import { QueueSection } from './IntakeForm';
 import { remindersLeft } from './Reminders';
 import { LowStockSection } from './Stock';
+import { WardSection } from './Ward';
 
 export function Dashboard() {
   const { t, fmt, canVisit, canIntake, locale } = useApp();
@@ -61,6 +62,7 @@ export function Dashboard() {
         </ul>
       )}
 
+      <WardSection />
       <LowStockSection />
       <QueueSection />
 

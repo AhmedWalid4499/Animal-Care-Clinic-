@@ -527,3 +527,17 @@ table.labs tr.flag td b { color: var(--bad); }
 .consent-sheet .consent-sign { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 10px; font-size: 9pt; }
 .consent-sheet .consent-sign img { max-height: 22mm; max-width: 65mm; display: block; }
 .consent-sheet .consent-sign .line { border-bottom: 1px solid #111; width: 65mm; margin-bottom: 3px; }
+
+/* In-patient board (7 Nov 2026) */
+.ward-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.ward-card { border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; }
+.ward-card.late { border-color: var(--bad); box-shadow: inset 3px 0 0 var(--bad); }
+.ward-card header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.ward-card header .badge { margin-inline-start: 8px; }
+.ward-card .tasks { list-style: none; margin: 8px 0 0; padding: 0; }
+.ward-card .tasks li { display: grid; grid-template-columns: 76px 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--rule); font-size: 14px; }
+.ward-card .tasks.done li { grid-template-columns: 52px 1fr auto auto; color: var(--ink-2); font-size: 13px; }
+.ward-card .tasks li.overdue .time, .ward-card .tasks li.overdue .what { color: var(--bad); font-weight: 600; }
+.ward-note { margin: 14px 0 0; }
+b.neg { color: var(--bad); }
+@media (max-width: 760px) { .ward-grid { grid-template-columns: 1fr; } }

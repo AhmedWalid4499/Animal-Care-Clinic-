@@ -19,6 +19,7 @@ import { Reports } from './screens/Reports';
 import { StockPage } from './screens/Stock';
 import { PrescriptionPrint } from './screens/Prescription';
 import { ConsentNew, ConsentView } from './screens/Consent';
+import { Ward } from './screens/Ward';
 import { DrugsPage, PricesPage, TemplatesPage, VaccinesPage } from './components/Sections';
 import { useEffect, type ReactNode } from 'react';
 import { ForcedPasswordChange } from './components/Account';
@@ -81,6 +82,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="invoices/:id/edit" element={<InvoiceFormPage />} />
           <Route path="invoices/:id/print" element={<InvoicePrint />} />
           <Route path="reports" element={<AdminOnly><Reports /></AdminOnly>} />
+          <Route path="ward" element={<Ward />} />
           <Route path="stock" element={<StockPage />} />
           <Route path="stock/vaccines" element={<AdminOnly><VaccinesPage /></AdminOnly>} />
           <Route path="stock/drugs" element={<AdminOnly><DrugsPage /></AdminOnly>} />

@@ -42,6 +42,8 @@ users (clinic staff) ──< visits.vet_id, invoices.created_by
 | **expenses** (v10) | spent_at (local date), category `RENT \| SALARIES \| SUPPLIES \| UTILITIES \| EQUIPMENT \| MAINTENANCE \| MARKETING \| OTHER`, amount (piastres), method, payee, note, user_id → users, status `ACTIVE \| VOID` | The clinic's own spending, Admin only. Voided, never deleted. Monthly profit = payments collected − active expenses. |
 | **lab_results** (v11) | pet_id → pets, visit_id? → visits, taken_at (date), panel, analyte, value (number) or value_text, unit, ref_low, ref_high, note, user_id → users | One row per result value with the reference range used, so values can be flagged and charted. Admin + Doctor. |
 | **consents** (v11) | pet_id → pets, visit_id? → visits, procedure, anaesthesia, estimate? (piastres), notes, signer_name, signature (PNG data URL), signed_at, user_id → users | Signed consent form. Append-only: never changed after signing. |
+| **admissions** (v12) | pet_id → pets, visit_id? → visits, admitted_at, reason, cage, vet_id → users, status `IN \| OUT`, discharged_at, discharge_note, user_id → users | A pet staying in the clinic (in-patient board). Admin + Doctor. |
+| **care_tasks** (v12) | admission_id → admissions, task, due_at, status `DUE \| DONE \| SKIPPED`, done_at, done_by → users, note | One row per treatment time (a repeating treatment is expanded when added). Assistants may only tick. |
 | **clinic_settings** | single row: name_en, name_ar, logo_url, phone, whatsapp, address, currency (EGP), locale_default, receipt_footer | Loaded once per request. |
 | **audit_log** | user_id, table_name, record_id, action `CREATE \| UPDATE \| DELETE \| LOGIN`, diff (jsonb), at | Who changed what. Append-only. |
 

@@ -166,6 +166,13 @@ export function seedDemo() {
     visit(zeus, 430, 'CHECKUP', { weight_kg: 24.5, complaint: 'Annual check', diagnosis: 'Healthy' });
     visit(bondo, 20, 'CHECKUP', { weight_kg: 1.8, complaint: 'فحص دوري' });
 
+    // In-patient (demo): Rocky, on fluids after a lump check; one treatment overdue, one given, one later today.
+    const adm = insert('admissions', { pet_id: rocky, admitted_at: at(0, 8, 0), reason: 'IV fluids, observation (demo)', cage: 'A1', vet_id: vetId, status: 'IN', user_id: vetId });
+    const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
+    insert('care_tasks', { admission_id: adm, task: 'Check temperature', due_at: hoursFromNow(-4), status: 'DONE', done_at: hoursFromNow(-3.9), done_by: vetId });
+    insert('care_tasks', { admission_id: adm, task: 'IV fluids bag change', due_at: hoursFromNow(-1), status: 'DUE' });
+    insert('care_tasks', { admission_id: adm, task: 'Check temperature', due_at: hoursFromNow(3), status: 'DUE' });
+
     // Today's and this week's appointments.
     const appt = (pet_id: string, owner_id: string, scheduled_at: string, type: string, extra: Record<string, unknown> = {}) =>
       insert('appointments', { pet_id, owner_id, scheduled_at, type, duration_min: 20, status: 'SCHEDULED', ...extra });

@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -93,6 +93,35 @@ CREATE TABLE IF NOT EXISTS consents (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS consents_pet ON consents(pet_id);`;
+// Schema v12 (7 Nov 2026): the in-patient board. An admission is a pet staying in the clinic; its care tasks are
+// timed treatments (a repeating one is stored as one row per time) that anyone ticks off; the vet admits and discharges.
+const wardTables = `CREATE TABLE IF NOT EXISTS admissions (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  admitted_at TEXT NOT NULL,
+  reason TEXT,
+  cage TEXT,
+  vet_id TEXT REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'IN' CHECK (status IN ('IN','OUT')),
+  discharged_at TEXT,
+  discharge_note TEXT,
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS admissions_status ON admissions(status);
+CREATE TABLE IF NOT EXISTS care_tasks (
+  id TEXT PRIMARY KEY,
+  admission_id TEXT NOT NULL REFERENCES admissions(id),
+  task TEXT NOT NULL,
+  due_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'DUE' CHECK (status IN ('DUE','DONE','SKIPPED')),
+  done_at TEXT,
+  done_by TEXT REFERENCES users(id),
+  note TEXT,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS care_tasks_admission ON care_tasks(admission_id, due_at);`;
 const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -330,6 +359,7 @@ ${stockTable}
 ${stockBatchCols}
 ${expensesTable}
 ${clinicalDocs}
+${wardTables}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -412,12 +442,14 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v11 (7 Nov 2026): lab results, signed consent forms.
   11: clinicalDocs,
+  // v12 (7 Nov 2026): in-patient board.
+  12: wardTables,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */

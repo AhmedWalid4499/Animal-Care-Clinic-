@@ -7,9 +7,10 @@ import { UpdateBanner } from './Updates';
 import { SyncBadge } from './SyncBadge';
 import { signOutSync } from '../sync/engine';
 import { dropPushSubscription } from '../sync/notify';
-import { NotificationAnnouncer, NotificationBell } from './Notifications';
+import { NotificationAnnouncer, NotificationBell, RefusedAnnouncer } from './Notifications';
 import { ChangePasswordDialog } from './Account';
 import { InstallPrompt } from './InstallPrompt';
+import { WardWatcher } from '../screens/Ward';
 
 export function Layout() {
   const { t, user, setUser, isAdmin, canVisit, locale, setLocale, theme, setTheme } = useApp();
@@ -28,6 +29,7 @@ export function Layout() {
     // Pricing: Invoices, Reports and the Price list (the tabs on top of each move between them).
     { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices'] },
     // Stock sits in the sidebar only: the phone's bottom bar is full (it is reachable from the dashboard's "Running low" note).
+    { to: '/ward', icon: 'stethoscope', label: t('ward.title'), sideOnly: true },
     { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true },
     ...(canVisit ? [{ to: '/templates', icon: 'clipboard', label: t('settings.templates'), sideOnly: true }] : []),
     // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
@@ -86,6 +88,8 @@ export function Layout() {
           </div>
         </aside>
         <NotificationAnnouncer />
+        <RefusedAnnouncer />
+        <WardWatcher />
         {pwDialog && <ChangePasswordDialog onClose={() => setPwDialog(false)} />}
         <div className="mobile-bell"><NotificationBell floating /></div>
         <main className="main">
