@@ -26,7 +26,8 @@ export function Layout() {
     { to: '/owners', icon: 'users', label: t('nav.owners') },
     { to: '/appointments', icon: 'calendar', label: t('nav.appointments') },
     { to: '/invoices', icon: 'receipt', label: t('nav.invoices') },
-    ...(isAdmin ? [{ to: '/settings', icon: 'settings', label: t('nav.settings') }] : []),
+    // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
+    { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings') },
   ];
   const clinicName = locale === 'ar' ? settings.name_ar : settings.name_en;
   const nextTheme: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };

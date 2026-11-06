@@ -51,7 +51,11 @@ export function UpdateBanner() {
   return null;
 }
 
-export function UpdatesSection() {
+/**
+ * Settings → Data & backup (Admin) and the personal Settings page (everyone else). Anyone may check for an update and
+ * restart to install it; switching automatic updates on/off is for the whole computer, so only the Admin can.
+ */
+export function UpdatesSection({ canChangeAuto = true }: { canChangeAuto?: boolean }) {
   const { t } = useApp();
   const st = useUpdateState();
   if (!st) return null;
@@ -82,9 +86,13 @@ export function UpdatesSection() {
         </div>
       ) : (
         <>
-          <label className="check">
-            <input type="checkbox" checked={st.auto} onChange={(e) => updates.setAuto(e.target.checked)} /> {t('updates.auto')}
-          </label>
+          {canChangeAuto ? (
+            <label className="check">
+              <input type="checkbox" checked={st.auto} onChange={(e) => updates.setAuto(e.target.checked)} /> {t('updates.auto')}
+            </label>
+          ) : (
+            <p className="small auto-state">{t('updates.autoManaged', { state: t(st.auto ? 'updates.autoOn' : 'updates.autoOff') })}</p>
+          )}
           <p className="muted small">{t('updates.autoHint')}</p>
         </>
       )}

@@ -235,6 +235,21 @@ await step('assistant pre-diagnosis for a new patient', async () => {
   await win.waitForSelector('text=Only doctors and admins');
 });
 
+// Assistants (and Doctors) have their own Settings: check for updates, restart to update, their account.
+await step('assistant settings: updates and account', async () => {
+  await go('#/');
+  await win.locator('.side .nav a', { hasText: 'Settings' }).click();
+  await win.waitForSelector('text=Your account');
+  const ready = { current: '0.1.12', auto: true, supported: true, reason: null, status: 'ready', version: '0.1.13', progress: 100, error: null, releasesUrl: '' };
+  await app.evaluate(({ BrowserWindow }, st) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', st), ready);
+  await win.getByRole('button', { name: 'Check for updates now' }).waitFor();
+  await win.locator('.form-section').getByRole('button', { name: 'Restart and update' }).waitFor();
+  await win.locator('.auto-state', { hasText: 'Automatic updates: On' }).waitFor();
+  if (await win.getByRole('checkbox', { name: 'Update automatically' }).count()) throw new Error('an assistant can switch automatic updates');
+  await win.locator('.my-account').getByRole('button', { name: 'Change my password' }).waitFor();
+  await shot('assistant-settings');
+});
+
 await step('phone layout', async () => {
   await win.setViewportSize({ width: 390, height: 844 });
   await win.getByRole('button', { name: 'Sign out' }).first().click().catch(() => {});
