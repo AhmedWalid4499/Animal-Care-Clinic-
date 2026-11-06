@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { getAppointment, getPet, getVisit, listVaccineTypes, listVets, saveVisit, type VisitInput } from '../db/repo';
 import { addDays, fromLocalInput, localDateOf, nowLocalInput, toLocalInput } from '../lib/dates';
-import { Dialog, Field, Icon, PetAvatar, PetPicker } from '../components/ui';
+import { Dialog, Field, Icon, PetAlerts, PetAvatar, PetPicker } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { VISIT_TYPES, type VisitType } from '../db/types';
 import type { PetOption } from '../db/repo';
@@ -171,6 +171,7 @@ export function VisitFormPage() {
           <PetAvatar photo={pet.photo_url} species={pet.species} size="sm" />
           <div style={{ flex: 1 }}>
             <b>{pet.name}</b> <span className="muted small">· {t(`species.${pet.species}`)} · {pet.owner_name}</span>
+            <PetAlerts flags={pet.alert_flags} note={pet.alert_note} />
           </div>
         </div>
 

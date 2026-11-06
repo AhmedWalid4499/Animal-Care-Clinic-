@@ -13,6 +13,8 @@ import { Appointments } from './screens/Appointments';
 import { InvoicesList, InvoiceFormPage, InvoiceDetail, InvoicePrint } from './screens/Invoices';
 import { Settings } from './screens/Settings';
 import { MySettings } from './screens/MySettings';
+import { Reminders } from './screens/Reminders';
+import { VaccinationCertificate } from './screens/Certificate';
 import { useEffect, type ReactNode } from 'react';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
@@ -56,6 +58,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="pets/:id" element={<PetRecord />} />
           <Route path="pets/:id/edit" element={<PetFormPage />} />
           <Route path="pets/:id/print" element={<PetSummaryPrint />} />
+          <Route path="pets/:id/certificate" element={<VaccinationCertificate />} />
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
           <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
@@ -63,6 +66,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="pets/:petId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />
           <Route path="visits/:visitId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />
           <Route path="appointments" element={<Appointments />} />
+          <Route path="reminders" element={<Reminders />} />
           <Route path="invoices" element={<InvoicesList />} />
           <Route path="invoices/new" element={<InvoiceFormPage />} />
           <Route path="invoices/:id" element={<InvoiceDetail />} />

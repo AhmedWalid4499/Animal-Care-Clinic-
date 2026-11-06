@@ -4,7 +4,7 @@ import { useApp, useQuery } from '../lib/app';
 import { getOwner, getPet, microchipTaken, savePet, searchOwners, type PetInput } from '../db/repo';
 import { Field, PetAvatar, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
-import { PET_STATUS, SEXES, SPECIES, type Pet } from '../db/types';
+import { ALERT_FLAGS, PET_STATUS, SEXES, SPECIES, type Pet } from '../db/types';
 import { today } from '../lib/dates';
 
 export function PetFormPage() {
@@ -15,7 +15,7 @@ export function PetFormPage() {
   const [f, setF] = useState<PetInput>(() =>
     existing
       ? strip(existing)
-      : { owner_id: ownerId!, name: '', species: 'DOG', breed: '', sex: 'UNKNOWN', is_neutered: 0, date_of_birth: '', dob_is_estimate: 0, color: '', microchip_no: '', photo_url: null, status: 'ACTIVE', deceased_at: null, notes: '' },
+      : { owner_id: ownerId!, name: '', species: 'DOG', breed: '', sex: 'UNKNOWN', is_neutered: 0, date_of_birth: '', dob_is_estimate: 0, color: '', microchip_no: '', photo_url: null, status: 'ACTIVE', deceased_at: null, notes: '', alert_flags: null, alert_note: '' },
   );
   const [ownerQ, setOwnerQ] = useState('');
   const owners = useQuery(() => (ownerQ.trim().length >= 2 ? searchOwners(ownerQ, 'ACTIVE').slice(0, 8) : []), [ownerQ]);
@@ -103,6 +103,29 @@ export function PetFormPage() {
               )}
             </Field>
           )}
+          <Field label={t('alerts.title')} className="span2 alerts-field" hint={t('alerts.hint')} optional group>
+            <div className="row">
+              {ALERT_FLAGS.map((fl) => {
+                const on = (f.alert_flags ?? '').split(',').includes(fl);
+                return (
+                  <label key={fl} className="check">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => {
+                        const cur = new Set((f.alert_flags ?? '').split(',').filter(Boolean));
+                        if (e.target.checked) cur.add(fl);
+                        else cur.delete(fl);
+                        set('alert_flags', ALERT_FLAGS.filter((x) => cur.has(x)).join(',') || null);
+                      }}
+                    />{' '}
+                    {t(`alerts.flag.${fl}`)}
+                  </label>
+                );
+              })}
+            </div>
+            <input type="text" value={f.alert_note ?? ''} placeholder={t('alerts.notePlaceholder')} aria-label={t('alerts.note')} onChange={(e) => set('alert_note', e.target.value)} />
+          </Field>
           <Field label={t('common.notes')} className="span2" optional>
             <textarea value={f.notes ?? ''} onChange={(e) => set('notes', e.target.value)} />
           </Field>

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { getAppointment, getPet, getVisit, ownerPets, ownersByPhone, quickPatient, saveIntake, takePatient, waitingQueue, type IntakeInput, type QueueRow } from '../db/repo';
-import { Badge, Field, Icon, PetAvatar, speciesEmoji } from '../components/ui';
+import { Badge, Field, Icon, PetAlerts, PetAvatar, speciesEmoji } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { SPECIES, URGENCIES, VISIT_TYPES, type Species, type Urgency, type VisitType } from '../db/types';
 
@@ -188,6 +188,7 @@ export function IntakeFormPage() {
           <PetAvatar photo={pet.photo_url} species={pet.species} size="sm" />
           <div style={{ flex: 1 }}>
             <b>{pet.name}</b> <span className="muted small">· {t(`species.${pet.species}`)} · {pet.owner_name}</span>
+            <PetAlerts flags={pet.alert_flags} note={pet.alert_note} />
           </div>
         </div>
         <div className="form-section">
@@ -248,6 +249,7 @@ export function QueueSection() {
               <Badge kind={urgencyKind(r.urgency)}>{t(`urgency.${r.urgency ?? 'ROUTINE'}`)}</Badge>
               <div className="main-col">
                 <b>{speciesEmoji[r.species]} {r.pet_name}</b>
+                <PetAlerts flags={r.alert_flags} note={r.alert_note} />
                 <div className="sub">
                   {r.owner_name}
                   {r.complaint ? ` · ${r.complaint}` : ''}

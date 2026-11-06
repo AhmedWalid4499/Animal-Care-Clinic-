@@ -184,6 +184,38 @@ await step('mac not in Applications', async () => {
   await shot('update-mac-move');
 });
 
+// Patient alerts, the vaccination certificate and the reminders screen (6 Nov 2026 change requests).
+await step('patient alerts, certificate, reminders', async () => {
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.waitForSelector('.tabs');
+  const petHash = await win.evaluate(() => location.hash);
+  await win.locator('.pagehead').getByRole('button', { name: 'Edit' }).click();
+  await win.getByLabel('Aggressive / bites').check();
+  await win.getByLabel('Allergy', { exact: true }).check();
+  await win.getByLabel('Alert details').fill('Penicillin – muzzle before handling');
+  await win.locator('.actionbar .btn.primary').click();
+  await win.locator('.pet-alerts.big .alert-chip.danger', { hasText: 'Aggressive' }).waitFor();
+  await win.locator('.pet-alerts.big .alert-chip', { hasText: 'Penicillin' }).waitFor();
+  await shot('pet-alerts');
+  // The alert follows the pet into the pre-diagnosis.
+  await go(`${petHash.split('?')[0]}/intake`);
+  await win.locator('.chosen .alert-chip', { hasText: 'Allergy' }).waitFor();
+  // Bilingual certificate.
+  await go(`${petHash.split('?')[0]}/certificate`);
+  await win.locator('.cert-title', { hasText: 'Vaccination Certificate' }).waitFor();
+  await win.locator('.cert-title', { hasText: 'شهادة تطعيم' }).waitFor();
+  if ((await win.locator('.certificate tbody tr').count()) < 3) throw new Error('certificate is missing rows');
+  await shot('vaccination-certificate');
+  // Reminders: tomorrow's appointments + this week's vaccinations, each with WhatsApp.
+  await go('#/');
+  await win.locator('.pagehead').getByRole('button', { name: /Reminders/ }).click();
+  await win.locator('.reminders h2', { hasText: 'Vaccinations due this week' }).waitFor();
+  if ((await win.locator('.reminders .btn.wa').count()) < 1) throw new Error('no WhatsApp buttons on the reminders list');
+  await shot('reminders');
+});
+
 await step('dark mode', async () => {
   await go('#/');
   await win.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));

@@ -6,6 +6,7 @@ import { addDays, daysBetween, startOfDayIso, today } from '../lib/dates';
 import { Badge, Icon, StatusBadge, WaButton, speciesEmoji } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { QueueSection } from './IntakeForm';
+import { remindersLeft } from './Reminders';
 
 export function Dashboard() {
   const { t, fmt, canVisit, canIntake, locale } = useApp();
@@ -16,12 +17,16 @@ export function Dashboard() {
   const appts = useQuery(() => appointmentsBetween(startOfDayIso(d), startOfDayIso(addDays(d, 1))), [d]);
   const due = useQuery(() => dueVaccinations(7));
   const counts = useQuery(dashboardCounts);
+  const toRemind = useQuery(remindersLeft);
   const settings = useQuery(getSettings);
   const clinic = locale === 'ar' ? settings.name_ar : settings.name_en;
 
   return (
     <div className="page">
       <PageHead title={`${t('dashboard.title')} · ${fmt.weekday(d)}`} sub={t('dashboard.stats', counts)}>
+        <button className="btn" onClick={() => nav('/reminders')}>
+          <Icon name="chat" /> {t('reminders.title')}{toRemind > 0 && <span className="pill">{toRemind}</span>}
+        </button>
         {canIntake && (
           <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav('/intake/new')}>
             <Icon name="clipboard" /> {t('nav.intake')}

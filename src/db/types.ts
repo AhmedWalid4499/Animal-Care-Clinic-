@@ -1,6 +1,8 @@
 export const SPECIES = ['DOG', 'CAT', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER'] as const;
 export const SEXES = ['MALE', 'FEMALE', 'UNKNOWN'] as const;
 export const PET_STATUS = ['ACTIVE', 'DECEASED', 'TRANSFERRED'] as const;
+/** Patient alerts (schema v6): shown wherever the pet is handled, so the person in front of it sees them first. */
+export const ALERT_FLAGS = ['AGGRESSIVE', 'ALLERGY', 'INFECTIOUS', 'DIABETIC', 'HEART', 'EPILEPSY', 'OTHER'] as const;
 export const VISIT_TYPES = ['CHECKUP', 'VACCINATION', 'SURGERY', 'EMERGENCY', 'FOLLOW_UP', 'OTHER'] as const;
 export const APPT_STATUS = ['SCHEDULED', 'DONE', 'NO_SHOW', 'CANCELLED'] as const;
 export const ATTACHMENT_KINDS = ['LAB', 'XRAY', 'PHOTO', 'DOCUMENT', 'OTHER'] as const;
@@ -11,6 +13,7 @@ export const PAYMENT_METHODS = ['CASH', 'INSTAPAY', 'CARD', 'OTHER'] as const;
 export type Species = (typeof SPECIES)[number];
 export type Sex = (typeof SEXES)[number];
 export type PetStatus = (typeof PET_STATUS)[number];
+export type AlertFlag = (typeof ALERT_FLAGS)[number];
 export type VisitType = (typeof VISIT_TYPES)[number];
 export type ApptStatus = (typeof APPT_STATUS)[number];
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
@@ -35,6 +38,8 @@ export interface Pet {
   id: string; owner_id: string; name: string; species: Species; breed: string | null; sex: Sex; is_neutered: number;
   date_of_birth: string | null; dob_is_estimate: number; color: string | null; microchip_no: string | null;
   photo_url: string | null; status: PetStatus; deceased_at: string | null; notes: string | null;
+  /** Comma-separated ALERT_FLAGS, and free text (e.g. "penicillin"). Schema v6. */
+  alert_flags: string | null; alert_note: string | null;
 }
 export interface Visit {
   id: string; pet_id: string; vet_id: string | null; visited_at: string; type: VisitType; complaint: string | null;

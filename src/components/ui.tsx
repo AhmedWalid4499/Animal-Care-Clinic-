@@ -36,6 +36,23 @@ export function Icon({ name }: { name: keyof typeof paths | string }) {
 
 export const speciesEmoji: Record<string, string> = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', OTHER: '🐾' };
 
+/** Patient alerts as coloured chips (danger flags red, chronic conditions amber). Renders nothing without alerts. */
+const ALERT_ICON: Record<string, string> = { AGGRESSIVE: '⚠️', ALLERGY: '🚫', INFECTIOUS: '🦠', DIABETIC: '💉', HEART: '❤️', EPILEPSY: '⚡', OTHER: '❗' };
+const ALERT_DANGER = new Set(['AGGRESSIVE', 'ALLERGY', 'INFECTIOUS']);
+export function PetAlerts({ flags, note, className }: { flags: string | null | undefined; note?: string | null; className?: string }) {
+  const { t } = useApp();
+  const list = (flags ?? '').split(',').map((f) => f.trim()).filter(Boolean);
+  if (!list.length && !note?.trim()) return null;
+  return (
+    <div className={`pet-alerts ${className ?? ''}`} role="note" aria-label={t('alerts.title')}>
+      {list.map((f) => (
+        <span key={f} className={`alert-chip ${ALERT_DANGER.has(f) ? 'danger' : 'caution'}`}>{ALERT_ICON[f] ?? '❗'} {t(`alerts.flag.${f}`)}</span>
+      ))}
+      {note?.trim() && <span className={`alert-chip note ${list.some((f) => ALERT_DANGER.has(f)) ? 'danger' : 'caution'}`}>{note.trim()}</span>}
+    </div>
+  );
+}
+
 export function PetAvatar({ photo, species, size }: { photo?: string | null; species: string; size?: 'sm' }) {
   return <div className={`avatar ${size ?? ''}`}>{photo ? <img src={photo} alt="" /> : <span aria-hidden>{speciesEmoji[species] ?? '🐾'}</span>}</div>;
 }
