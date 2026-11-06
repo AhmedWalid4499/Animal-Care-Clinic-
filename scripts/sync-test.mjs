@@ -551,6 +551,19 @@ await step('phase5: assistant pre-diagnosis', async () => {
     `new patient + pre-diagnosis accepted: ${sent.rejected.length === 0}; doctor notified: ${docNote.v ? docNote.v.event : 'no'}, admin: ${adminNote ? adminNote.event : 'no'}, assistant about own patient: ${ownNote}; in the doctor's queue: ${!!onB.v} ("${byShown.replace(/\s+/g, ' ').trim()}"); correction while waiting accepted: ${fix.rejected.length === 0}; diagnosis refused: ${diag.rejected[0]?.reason ?? 'NO'}; prescription refused: ${presc.rejected[0]?.reason ?? 'NO'}; edit after the doctor took it refused: ${late.rejected[0]?.reason ?? 'NO'}`);
 });
 
+await step('patient alert reaches the vet', async () => {
+  // The front desk flags Simba as aggressive (schema v6 columns on pets); the doctor's laptop shows it in the queue.
+  const simba = (await pool.query("SELECT id FROM rows WHERE tbl = 'pets' AND data->>'name' = 'Simba' AND NOT deleted")).rows[0].id;
+  const r = (await api('/api/sync/push', { changes: [{ tbl: 'pets', id: simba, op: 'upsert', at: nowIso(), cols: { alert_flags: 'AGGRESSIVE', alert_note: 'Bites when restrained', updated_at: nowIso() } }] }, tokens.desk)).body;
+  await go(B, '#/');
+  const row = B.win.locator('.section.queue li', { hasText: 'Simba' });
+  const shown = await until(async () => (await row.locator('.alert-chip.danger').count()) >= 1 && (await row.innerText()).includes('Bites when restrained'), 10_000, 200);
+  await B.win.screenshot({ path: path.join(out, 'B-queue-alert.png') });
+  check('pet-alert-sync', "A patient alert set at the front desk shows in the vet's queue on another computer",
+    r.rejected.length === 0 && !!shown.v,
+    `alert accepted from the assistant: ${r.rejected.length === 0}; shown in the doctor's queue: ${!!shown.v}`);
+});
+
 await step('phase5: password reset', async () => {
   await go(A, '#/settings?tab=users');
   await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();

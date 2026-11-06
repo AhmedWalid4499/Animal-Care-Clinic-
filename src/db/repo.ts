@@ -334,12 +334,13 @@ export function saveIntake(d: IntakeInput, userId: string | null, id?: string): 
 export interface QueueRow {
   id: string; pet_id: string; pet_name: string; species: string; owner_name: string; complaint: string | null; urgency: Urgency | null;
   stage: VisitStage; intake_at: string | null; intake_by_name: string | null; vet_id: string | null; vet_name: string | null;
+  alert_flags: string | null; alert_note: string | null;
 }
 /** Patients waiting for the vet (or with one), emergencies first, then in arrival order. */
 export const waitingQueue = () =>
   all<QueueRow>(
     `SELECT v.id, v.pet_id, p.name pet_name, p.species, o.full_name owner_name, v.complaint, v.urgency, v.stage, v.intake_at, v.vet_id,
-       ib.name intake_by_name, u.name vet_name
+       ib.name intake_by_name, u.name vet_name, p.alert_flags, p.alert_note
      FROM visits v JOIN pets p ON p.id = v.pet_id JOIN owners o ON o.id = p.owner_id
        LEFT JOIN users ib ON ib.id = v.intake_by LEFT JOIN users u ON u.id = v.vet_id
      WHERE v.stage IN ('WAITING','WITH_VET')

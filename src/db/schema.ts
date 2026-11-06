@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -72,6 +72,8 @@ CREATE TABLE pets (
   status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DECEASED','TRANSFERRED')),
   deceased_at TEXT,
   notes TEXT,
+  alert_flags TEXT,
+  alert_note TEXT,
   ${ts}
 );
 CREATE INDEX pets_owner ON pets(owner_id);
@@ -284,6 +286,11 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v5 (5 Nov 2026, Phase 2): each queued change remembers who made it, so it is sent under that person's sign-in.
   5: `ALTER TABLE sync_outbox ADD COLUMN user_id TEXT;`,
+  // v6 (6 Nov 2026): patient alerts on the pet (aggressive, allergy…), shown in the queue, pre-diagnosis and visit.
+  6: `
+    ALTER TABLE pets ADD COLUMN alert_flags TEXT;
+    ALTER TABLE pets ADD COLUMN alert_note TEXT;
+  `,
 };
 
 /** Tables included in the one-click export, in dependency order. */

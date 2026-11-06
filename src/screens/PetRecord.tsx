@@ -10,7 +10,7 @@ import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Badge, Field, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Badge, Field, Icon, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 
@@ -37,6 +37,7 @@ export function PetRecord() {
           text={t('wa.pet', { owner: pet.owner_name, clinic: locale === 'ar' ? settings.name_ar : settings.name_en, pet: pet.name })}
         />
         <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
+        <button className="btn" onClick={() => nav(`/pets/${id}/certificate`)}><Icon name="print" /> {t('certificate.button')}</button>
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
         {canIntake && pet.status === 'ACTIVE' && (
           <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
@@ -46,6 +47,7 @@ export function PetRecord() {
         )}
       </PageHead>
 
+      <PetAlerts flags={pet.alert_flags} note={pet.alert_note} className="big" />
       <div className={`record ${pet.status !== 'ACTIVE' ? 'greyed' : ''}`} style={{ gridTemplateColumns: 'auto 1fr' }}>
         <PetAvatar photo={pet.photo_url} species={pet.species} />
         <div>
