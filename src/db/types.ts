@@ -65,7 +65,14 @@ export interface Attachment {
   id: string; pet_id: string; visit_id: string | null; kind: AttachmentKind; file_url: string; file_name: string;
   mime_type: string | null; size_bytes: number | null; uploaded_by: string | null; created_at: string;
 }
-export interface PriceItem { id: string; name_en: string; name_ar: string; category: PriceCategory; unit_price: number; is_active: number }
+export interface PriceItem {
+  id: string; name_en: string; name_ar: string; category: PriceCategory; unit_price: number; is_active: number;
+  /** Stock (schema v8): count this item; warn on the dashboard at or below low_stock. */
+  track_stock: number; low_stock: number | null;
+}
+export const STOCK_REASONS = ['RESTOCK', 'INVOICE', 'ADJUST'] as const;
+export type StockReason = (typeof STOCK_REASONS)[number];
+export interface StockMove { id: string; price_item_id: string; qty: number; reason: StockReason; invoice_id: string | null; note: string | null; user_id: string | null; at: string }
 export interface Invoice {
   id: string; owner_id: string; pet_id: string | null; visit_id: string | null; number: string; issued_at: string;
   subtotal: number; discount: number; total: number; status: InvoiceStatus; created_by: string | null; notes: string | null;

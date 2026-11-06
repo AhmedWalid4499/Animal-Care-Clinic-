@@ -580,6 +580,25 @@ await step('drugs and treatment templates: who may change them', async () => {
     `assistant drug: ${deskDrug.rejected[0]?.reason ?? 'ACCEPTED'}; assistant template: ${deskTpl.rejected[0]?.reason ?? 'ACCEPTED'}; doctor drug: ${docDrug.rejected[0]?.reason ?? 'ACCEPTED'}; doctor template: ${docTpl.rejected.length ? 'REFUSED' : 'accepted'}; admin drug: ${adminDrug.rejected.length ? 'REFUSED' : 'accepted'}`);
 });
 
+await step('stock moves: who may add them', async () => {
+  // Schema v8. Stock is a log of moves (never edited), so two devices can't overwrite each other's counts.
+  // Invoices (any role that bills) take items out; restocking and count corrections are for the Admin.
+  const at = nowIso();
+  const item = crypto.randomUUID();
+  const move = (id, reason, extra = {}) => ({ tbl: 'stock_moves', id, op: 'upsert', at, cols: { id, price_item_id: item, qty: reason === 'RESTOCK' ? 10 : -1, reason, at, ts: Date.now(), ...extra } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskInvoice = await push(move(crypto.randomUUID(), 'INVOICE', { invoice_id: crypto.randomUUID() }), 'desk');
+  const deskBare = await push(move(crypto.randomUUID(), 'INVOICE'), 'desk');
+  const deskRestock = await push(move(crypto.randomUUID(), 'RESTOCK'), 'desk');
+  const docAdjust = await push(move(crypto.randomUUID(), 'ADJUST'), 'doctor');
+  const adminId = crypto.randomUUID();
+  const adminRestock = await push(move(adminId, 'RESTOCK'), 'admin');
+  const adminEdit = await push(move(adminId, 'RESTOCK', { qty: 1000 }), 'admin');
+  check('stock-rules', 'Invoices take stock out from any desk; only the Admin restocks or corrects counts; a recorded move is never changed',
+    deskInvoice.rejected.length === 0 && deskBare.rejected.length === 1 && deskRestock.rejected.length === 1 && docAdjust.rejected.length === 1 && adminRestock.rejected.length === 0 && adminEdit.rejected.length === 1,
+    `assistant invoice move: ${deskInvoice.rejected[0]?.reason ?? 'accepted'}; assistant move without invoice: ${deskBare.rejected[0]?.reason ?? 'ACCEPTED'}; assistant restock: ${deskRestock.rejected[0]?.reason ?? 'ACCEPTED'}; doctor correction: ${docAdjust.rejected[0]?.reason ?? 'ACCEPTED'}; admin restock: ${adminRestock.rejected[0]?.reason ?? 'accepted'}; admin edits it later: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
 await step('phase5: password reset', async () => {
   await go(A, '#/settings?tab=users');
   await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();

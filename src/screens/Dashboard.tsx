@@ -7,6 +7,7 @@ import { Badge, Icon, StatusBadge, WaButton, speciesEmoji } from '../components/
 import { PageHead } from '../components/Layout';
 import { QueueSection } from './IntakeForm';
 import { remindersLeft } from './Reminders';
+import { LowStockSection } from './Stock';
 
 export function Dashboard() {
   const { t, fmt, canVisit, canIntake, locale } = useApp();
@@ -60,6 +61,7 @@ export function Dashboard() {
         </ul>
       )}
 
+      <LowStockSection />
       <QueueSection />
 
       <div className="cols" style={{ marginTop: 26 }}>

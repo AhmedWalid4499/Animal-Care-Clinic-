@@ -32,12 +32,13 @@ users (clinic staff) ──< visits.vet_id, invoices.created_by
 | **vaccinations** | pet_id → pets, visit_id? → visits, vaccine_type_id → vaccine_types, administered_at, next_due_at, batch_no, reminder_sent_at | `next_due_at` defaults to `administered_at + interval_days`; vet may override. Dashboard = `next_due_at` within 7 days and no newer vaccination of same type. |
 | **appointments** | pet_id → pets, owner_id → owners, scheduled_at, duration_min (default 20), type (same enum as visits), status `SCHEDULED \| DONE \| NO_SHOW \| CANCELLED`, notes, visit_id? → visits, reminder_sent_at | Marking DONE opens a new visit pre-filled. Warn on overlap. |
 | **attachments** | pet_id → pets, visit_id? → visits, kind `LAB \| XRAY \| PHOTO \| DOCUMENT \| OTHER`, file_url, file_name, mime_type, size_bytes, uploaded_by → users | Stored on Railway volume or S3-compatible bucket; app only stores the URL. |
-| **price_items** | name_en, name_ar, category `CONSULTATION \| VACCINE \| SURGERY \| MEDICATION \| BOARDING \| GROOMING \| OTHER`, unit_price, is_active | Clinic price list, edited in Settings. |
+| **price_items** | name_en, name_ar, category `CONSULTATION \| VACCINE \| SURGERY \| MEDICATION \| BOARDING \| GROOMING \| OTHER`, unit_price, is_active, track_stock (v8), low_stock? (v8) | Clinic price list, edited in Settings. `track_stock` = count this item in Stock; `low_stock` = warn at or below (empty = at 0). |
 | **invoices** | owner_id → owners, pet_id? → pets, visit_id? → visits, number (sequential, e.g. INV-2026-0001), issued_at, subtotal, discount, total, status `UNPAID \| PARTIAL \| PAID \| VOID`, created_by → users, notes | Totals recomputed from items. `status` derived from payments. |
 | **invoice_items** | invoice_id → invoices, price_item_id? → price_items, description, qty, unit_price, line_total | Copy name and price at creation (price list may change later). |
 | **payments** | invoice_id → invoices, amount, method `CASH \| INSTAPAY \| CARD \| OTHER`, paid_at, received_by → users, reference | Sum of payments vs total → invoice status. |
 | **drugs** (v7) | name, dose_mg_kg, concentration (mg per unit), unit `ml \| tablet \| capsule \| mg`, max_mg, frequency, duration_days, species (comma-separated, empty = all), notes, is_active | The clinic's own list for the dose calculator; Admin only. The app only does the arithmetic. |
 | **treatment_templates** (v7) | name, diagnosis, treatment_notes, prescriptions (JSON: drug, dose, frequency, duration_days, instructions), is_active, created_by → users | Fills a visit in one tap; blank doses of listed drugs are worked out from the pet's weight. Admins and Doctors. |
+| **stock_moves** (v8) | price_item_id → price_items, qty (+ in / − out), reason `RESTOCK \| INVOICE \| ADJUST`, invoice_id? → invoices, note, user_id → users, at | Append-only log; on hand = Σ qty. Saving an invoice adds one INVOICE move per tracked item for the difference to what it already took (editing or voiding gives back). Restock and count corrections (ADJUST = counted − on hand) are Admin only. |
 | **clinic_settings** | single row: name_en, name_ar, logo_url, phone, whatsapp, address, currency (EGP), locale_default, receipt_footer | Loaded once per request. |
 | **audit_log** | user_id, table_name, record_id, action `CREATE \| UPDATE \| DELETE \| LOGIN`, diff (jsonb), at | Who changed what. Append-only. |
 
@@ -56,7 +57,7 @@ users (clinic staff) ──< visits.vet_id, invoices.created_by
 - Invoice status ← payments sum (store it, but recompute on every payment write)
 
 ## Deliberately out of v1
-Owner logins / portal, inventory & stock, multi-branch (`clinic_id` on every table), lab-result structured data, SMS/WhatsApp API delivery log, drug catalogue, boarding kennels. Each is a v2 table that attaches to this schema without changing it.
+Owner logins / portal, full inventory (suppliers, batches, expiry; a simple stock count was added in v8 by change request), multi-branch (`clinic_id` on every table), lab-result structured data, SMS/WhatsApp API delivery log, boarding kennels. Each is a v2 table that attaches to this schema without changing it.
 
 ## Seed data (migration `0001_seed`)
 - One VET user (Dr. Waleed), one ASSISTANT

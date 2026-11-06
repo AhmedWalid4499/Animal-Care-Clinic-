@@ -191,5 +191,12 @@ export function seedDemo() {
       name: 'Gastroenteritis, standard (demo)', diagnosis: 'Acute gastroenteritis', treatment_notes: 'Bland diet 3 days, fresh water, recheck if vomiting continues',
       prescriptions: JSON.stringify([{ drug: 'Meloxicam 1.5 mg/ml (demo)', dose: '', frequency: '', duration_days: '', instructions: 'With food' }]), created_by: vetId,
     });
+
+    // Stock (demo): vaccines tracked and comfortably stocked; deworming tracked and running low.
+    const item = (en: string) => get<{ id: string }>('SELECT id FROM price_items WHERE name_en = ?', [en])!.id;
+    run('UPDATE price_items SET track_stock = 1, low_stock = 5 WHERE name_en = ?', ['Vaccine administration']);
+    run('UPDATE price_items SET track_stock = 1, low_stock = 4 WHERE name_en = ?', ['Deworming']);
+    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 24, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10) });
+    insert('stock_moves', { price_item_id: item('Deworming'), qty: 3, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10) });
   });
 }

@@ -27,6 +27,8 @@ export function Layout() {
     { to: '/appointments', icon: 'calendar', label: t('nav.appointments') },
     { to: '/invoices', icon: 'receipt', label: t('nav.invoices') },
     ...(isAdmin ? [{ to: '/reports', icon: 'chart', label: t('nav.reports') }] : []),
+    // Stock sits in the sidebar only: the phone's bottom bar is full (it is reachable from the dashboard's "Running low" note).
+    { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true },
     // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
     { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings') },
   ];
@@ -92,7 +94,7 @@ export function Layout() {
         </main>
       </div>
       <nav className="bottom-nav no-print">
-        {items.map((i) => (
+        {items.filter((i) => !('sideOnly' in i)).map((i) => (
           <NavLink key={i.to} to={i.to} end={i.end}>
             <Icon name={i.icon} />
             {i.label}

@@ -1,10 +1,10 @@
 // All reads and writes the screens use. Every write runs inside tx() and is audited (CLAUDE.md rules).
 import bcrypt from 'bcryptjs';
-import { all, audit, get, insert, nowIso, run, tx, update, uuid } from './core';
+import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from './core';
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Drug, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Drug, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -574,6 +574,7 @@ export function saveInvoice(d: InvoiceInput, userId: string | null, id?: string)
     }
     if (d.visit_id) run('UPDATE visits SET invoice_id = ? WHERE id = ?', [invoiceId, d.visit_id]);
     recomputeInvoice(invoiceId);
+    syncInvoiceStock(invoiceId, userId);
     return invoiceId;
   });
 }
@@ -585,7 +586,10 @@ export function addPayment(invoiceId: string, p: { amount: number; method: Payme
   });
 }
 export function voidInvoice(id: string) {
-  tx(() => update('invoices', id, { status: 'VOID' }));
+  tx(() => {
+    update('invoices', id, { status: 'VOID' });
+    syncInvoiceStock(id, getActor()); // a voided invoice gives its items back to stock
+  });
 }
 export function visitInvoice(visitId: string) {
   return get<{ id: string }>("SELECT id FROM invoices WHERE visit_id = ? AND status <> 'VOID' LIMIT 1", [visitId])?.id;
@@ -759,3 +763,49 @@ export function saveTemplate(d: { name: string; diagnosis: string; treatment_not
   };
   return tx(() => (id ? (update('treatment_templates', id, values), id) : insert('treatment_templates', { ...values, created_by: userId })));
 }
+
+// ---------------------------------------------------------------- stock (schema v8)
+// stock_moves is append-only; on hand = SUM(qty). An invoice's moves are reconciled on every save/void: what the
+// invoice should have taken (tracked items × qty, none when VOID) minus what its moves already took becomes one more
+// move, so editing an invoice never double-counts and moves from different devices add up.
+function syncInvoiceStock(invoiceId: string, userId: string | null) {
+  const inv = get<{ status: string }>('SELECT status FROM invoices WHERE id = ?', [invoiceId]);
+  if (!inv) return;
+  const want = new Map<string, number>();
+  if (inv.status !== 'VOID') {
+    for (const r of all<{ id: string; q: number }>(
+      `SELECT ii.price_item_id id, SUM(ii.qty) q FROM invoice_items ii JOIN price_items pi ON pi.id = ii.price_item_id AND pi.track_stock = 1
+       WHERE ii.invoice_id = ? GROUP BY ii.price_item_id`, [invoiceId])) want.set(r.id, -r.q);
+  }
+  const have = new Map(all<{ id: string; q: number }>(
+    "SELECT price_item_id id, SUM(qty) q FROM stock_moves WHERE invoice_id = ? AND reason = 'INVOICE' GROUP BY price_item_id", [invoiceId]).map((r) => [r.id, r.q]));
+  for (const id of new Set([...want.keys(), ...have.keys()])) {
+    const delta = (want.get(id) ?? 0) - (have.get(id) ?? 0);
+    if (Math.abs(delta) > 1e-9) insert('stock_moves', { price_item_id: id, qty: delta, reason: 'INVOICE', invoice_id: invoiceId, user_id: userId, at: nowIso() });
+  }
+}
+export interface StockRow extends PriceItem { on_hand: number; last_move: string | null }
+export const stockLevels = () =>
+  all<StockRow>(
+    `SELECT pi.*, COALESCE(SUM(m.qty), 0) on_hand, MAX(m.at) last_move FROM price_items pi LEFT JOIN stock_moves m ON m.price_item_id = pi.id
+     WHERE pi.track_stock = 1 GROUP BY pi.id ORDER BY pi.category, pi.name_en`,
+  );
+/** Tracked, active items at or below their warning level (no level set = warn at 0). */
+export const lowStock = () => stockLevels().filter((r) => r.is_active && r.on_hand <= (r.low_stock ?? 0));
+/** Restock (+qty) or a count correction: `counted` = what is on the shelf, the move is the difference. */
+export function restock(priceItemId: string, qty: number, note: string, userId: string | null) {
+  tx(() => insert('stock_moves', { price_item_id: priceItemId, qty, reason: 'RESTOCK', note: blank(note), user_id: userId, at: nowIso() }));
+}
+export function correctStock(priceItemId: string, counted: number, note: string, userId: string | null) {
+  tx(() => {
+    const now = get<{ q: number }>('SELECT COALESCE(SUM(qty),0) q FROM stock_moves WHERE price_item_id = ?', [priceItemId])?.q ?? 0;
+    if (Math.abs(counted - now) > 1e-9) insert('stock_moves', { price_item_id: priceItemId, qty: counted - now, reason: 'ADJUST', note: blank(note), user_id: userId, at: nowIso() });
+  });
+}
+export interface StockMoveRow extends StockMove { user_name: string | null; invoice_number: string | null }
+export const stockHistory = (priceItemId: string, limit = 50) =>
+  all<StockMoveRow>(
+    `SELECT m.*, u.name user_name, i.number invoice_number FROM stock_moves m LEFT JOIN users u ON u.id = m.user_id
+     LEFT JOIN invoices i ON i.id = m.invoice_id WHERE m.price_item_id = ? ORDER BY m.at DESC LIMIT ?`,
+    [priceItemId, limit],
+  );
