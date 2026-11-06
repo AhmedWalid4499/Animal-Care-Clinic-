@@ -5,6 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, Not
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const updater = require('./updater.cjs');
 
 const isSmoke = process.argv.includes('--smoke');
@@ -68,7 +69,10 @@ let background = false; // set when the app is ready (needs userData)
 let quitting = false;
 let tray = null;
 let mainWin = null;
-const startHidden = process.argv.includes('--hidden');
+// Started by the OS at login → open hidden, straight to the tray / menu bar. Windows passes --hidden (login item args);
+// macOS ignores login-item args, so there we ask the OS whether this launch was a login launch.
+const startHidden = () =>
+  process.argv.includes('--hidden') || (isMac && app.isPackaged && app.getLoginItemSettings().wasOpenedAtLogin === true);
 app.on('before-quit', () => {
   quitting = true;
 });
@@ -79,9 +83,46 @@ function showMain() {
   mainWin.focus();
 }
 function applyLoginItem() {
-  // Start with Windows / macOS (hidden, straight to the tray). Only for the installed app.
+  // Start with Windows / macOS (hidden, straight to the tray / menu bar). Only for the installed app.
   if (!app.isPackaged || process.platform === 'linux' || process.env.PORTABLE_EXECUTABLE_DIR) return;
-  app.setLoginItemSettings({ openAtLogin: background, openAsHidden: true, args: ['--hidden'] });
+  try {
+    if (isMac) app.setLoginItemSettings({ openAtLogin: background }); // macOS 13+: SMAppService; hidden start via wasOpenedAtLogin
+    else app.setLoginItemSettings({ openAtLogin: background, args: ['--hidden'] });
+  } catch (e) {
+    console.error('login item', e);
+  }
+}
+// macOS can hold a new login item for the user's approval (System Settings → General → Login Items).
+// Returns 'requires-approval' etc. on macOS, null elsewhere.
+function loginItemStatus() {
+  if (!isMac || !app.isPackaged) return null;
+  try {
+    return app.getLoginItemSettings().status ?? null;
+  } catch {
+    return null;
+  }
+}
+// Menu-bar icon on macOS: 18 pt with a 2× version so it is sharp on Retina; Windows tray: 16 px.
+function trayImage() {
+  const src = nativeImage.createFromPath(ICON);
+  if (!isMac) return src.resize({ width: 16, height: 16 });
+  const img = src.resize({ width: 18, height: 18, quality: 'best' });
+  img.addRepresentation({ scaleFactor: 2, buffer: src.resize({ width: 36, height: 36, quality: 'best' }).toPNG() });
+  return img;
+}
+// The name shown under Settings → Devices: the Mac's own name ("Ahmed's MacBook Pro"), not "Ahmeds-MacBook-Pro.local".
+let cachedDeviceName = null;
+function deviceName() {
+  if (cachedDeviceName) return cachedDeviceName;
+  let name = os.hostname();
+  if (isMac) {
+    try {
+      name = execFileSync('/usr/sbin/scutil', ['--get', 'ComputerName'], { encoding: 'utf8', timeout: 2000 }).trim() || name;
+    } catch {
+      name = name.replace(/\.local$/, '');
+    }
+  }
+  return (cachedDeviceName = name);
 }
 function syncTray() {
   if (!background) {
@@ -90,19 +131,21 @@ function syncTray() {
     return;
   }
   if (tray) return;
-  tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
+  tray = new Tray(trayImage());
   tray.setToolTip('Animal Care Clinic');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Animal Care Clinic · فتح', click: showMain },
     { type: 'separator' },
     { label: 'Quit · خروج', click: () => { quitting = true; app.quit(); } },
   ]));
-  tray.on('click', showMain);
+  // Windows: a click on the tray icon opens the window. macOS: a click opens the menu (its first item opens the window).
+  if (!isMac) tray.on('click', showMain);
 }
 function hideToTray(win) {
   win.hide();
   if (!readSettings().hideNoticeShown && Notification.isSupported()) {
-    new Notification({ title: 'Animal Care Clinic', body: 'Still running in the tray; notifications keep coming. · يعمل في الخلفية وتستمر الإشعارات.' }).show();
+    const where = isMac ? 'menu bar' : 'tray';
+    new Notification({ title: 'Animal Care Clinic', body: `Still running in the ${where}; notifications keep coming. · يعمل في الخلفية وتستمر الإشعارات.` }).show();
     writeSettings({ hideNoticeShown: true });
   }
 }
@@ -116,7 +159,7 @@ function createWindow() {
     title: 'Animal Care Clinic',
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
-    show: !isSmoke && !startHidden,
+    show: !isSmoke && !startHidden(),
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -159,7 +202,7 @@ ipcMain.handle('app:config', () => ({
   exportDir,
   version: app.getVersion(),
   platform: process.platform,
-  deviceName: os.hostname(),
+  deviceName: deviceName(),
 }));
 
 // A named copy of the database right now (e.g. before this laptop joins a clinic server and its local
@@ -176,6 +219,10 @@ ipcMain.handle('db:backupNow', (_e, label) => {
 ipcMain.handle('app:showWindow', () => showMain());
 ipcMain.handle('app:isForeground', () => !!mainWin && mainWin.isVisible() && !mainWin.isMinimized() && mainWin.isFocused());
 ipcMain.handle('app:getBackground', () => background);
+ipcMain.handle('app:loginItemStatus', () => loginItemStatus());
+ipcMain.handle('app:openLoginItemsSettings', () => {
+  if (isMac) shell.openExternal('x-apple.systempreferences:com.apple.LoginItems-Settings.extension');
+});
 ipcMain.handle('app:setBackground', (_e, on) => {
   background = !!on;
   writeSettings({ background });
@@ -277,6 +324,30 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
     mainWin = win;
     syncTray();
     applyLoginItem();
+    if (isSmoke && process.argv.includes('--smoke-desktop')) {
+      // CI check of the background features on the real OS (macOS / Windows runners): tray or menu-bar icon,
+      // login item, device name. Prints one JSON line, undoes the login item, exits 0 only if the icon was created.
+      background = true;
+      syncTray();
+      applyLoginItem();
+      const report = {
+        platform: process.platform,
+        tray: !!tray && !tray.isDestroyed(),
+        trayImageEmpty: trayImage().isEmpty(),
+        loginItem: (() => {
+          const s = app.getLoginItemSettings();
+          return { openAtLogin: s.openAtLogin, status: s.status ?? null, wasOpenedAtLogin: s.wasOpenedAtLogin ?? null };
+        })(),
+        startHidden: startHidden(),
+        deviceName: deviceName(),
+      };
+      console.log(`SMOKE-DESKTOP ${JSON.stringify(report)}`);
+      background = false;
+      applyLoginItem();
+      syncTray();
+      app.exit(report.tray && !report.trayImageEmpty && !report.startHidden && report.deviceName ? 0 : 4);
+      return;
+    }
     if (isSmoke) {
       // CI check: load the UI, wait for the login screen, exit 0.
       win.webContents.once('did-finish-load', () => {

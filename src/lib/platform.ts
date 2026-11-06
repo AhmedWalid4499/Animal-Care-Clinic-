@@ -22,6 +22,8 @@ interface DesktopBridge {
   isForeground(): Promise<boolean>;
   getBackground(): Promise<boolean>;
   setBackground(on: boolean): Promise<boolean>;
+  loginItemStatus(): Promise<string | null>;
+  openLoginItemsSettings(): Promise<void>;
   exportFile(name: string, bytes: Uint8Array): Promise<string>;
   showItem(file: string): Promise<void>;
   loadDb(): Promise<Uint8Array | null>;
@@ -174,6 +176,13 @@ export const platform = {
   /** Desktop: keep running in the tray when the window is closed, and start with the computer. */
   async getBackground() {
     return desktop ? desktop.getBackground() : false;
+  },
+  /** macOS only: 'requires-approval' when the login item waits for the user in System Settings; null elsewhere. */
+  async loginItemStatus(): Promise<string | null> {
+    return desktop ? desktop.loginItemStatus() : null;
+  },
+  openLoginItemsSettings() {
+    void desktop?.openLoginItemsSettings();
   },
   async setBackground(on: boolean) {
     return desktop ? desktop.setBackground(on) : false;

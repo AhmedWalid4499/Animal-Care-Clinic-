@@ -42,6 +42,11 @@ jobs:
           grep -Eq "url: AnimalCareClinic-.*-mac\.zip" release/latest-mac.yml
       - name: Smoke test (app starts and renders the login screen)
         run: '"release/mac-universal/Animal Care Clinic.app/Contents/MacOS/Animal Care Clinic" --smoke'
+      - name: Desktop features on macOS (menu-bar icon, login item, device name)
+        run: |
+          out=$("release/mac-universal/Animal Care Clinic.app/Contents/MacOS/Animal Care Clinic" --smoke --smoke-desktop 2>&1 | tee /dev/stderr | grep SMOKE-DESKTOP)
+          echo "$out" | grep -q '"tray":true'
+          echo "$out" | grep -q '"platform":"darwin"'
       - uses: actions/upload-artifact@v4
         with:
           name: animal-care-clinic-macos
