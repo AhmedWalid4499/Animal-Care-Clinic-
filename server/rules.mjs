@@ -3,8 +3,9 @@
 // ASSISTANT front desk, read-only visits except the pre-diagnosis (they send the patient to the vet's queue).
 import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 
-const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types']);
-const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations']);
+// drugs: the dose calculator's list (doses decide what the calculator says), so only the Admin edits it.
+const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs']);
+const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
 // Assistants record the pre-diagnosis: they may create a visit that only waits for the vet (no vet, diagnosis,

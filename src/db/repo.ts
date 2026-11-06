@@ -4,7 +4,7 @@ import { all, audit, get, insert, nowIso, run, tx, update, uuid } from './core';
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Drug, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -732,4 +732,30 @@ export function ownersOwing(): AgingRow[] {
      WHERE i.status IN ('UNPAID','PARTIAL')
      GROUP BY o.id HAVING balance > 0 ORDER BY oldest`,
   );
+}
+
+// ---------------------------------------------------------------- drugs + treatment templates (schema v7)
+export const listDrugs = (activeOnly = false) =>
+  all<Drug>(`SELECT * FROM drugs ${activeOnly ? 'WHERE is_active = 1' : ''} ORDER BY is_active DESC, name COLLATE NOCASE`);
+export type DrugInput = Omit<Drug, 'id'>;
+export function saveDrug(d: DrugInput, id?: string): string {
+  const values = { ...d, name: d.name.trim(), species: blank(d.species), frequency: blank(d.frequency), notes: blank(d.notes) };
+  return tx(() => (id ? (update('drugs', id, values), id) : insert('drugs', values)));
+}
+export const listTemplates = (activeOnly = false) =>
+  all<TreatmentTemplate>(`SELECT * FROM treatment_templates ${activeOnly ? 'WHERE is_active = 1' : ''} ORDER BY is_active DESC, name COLLATE NOCASE`);
+export const templateRx = (tpl: TreatmentTemplate): TemplateRx[] => {
+  try {
+    const v = JSON.parse(tpl.prescriptions ?? '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+};
+export function saveTemplate(d: { name: string; diagnosis: string; treatment_notes: string; prescriptions: TemplateRx[]; is_active?: number }, userId: string | null, id?: string): string {
+  const values = {
+    name: d.name.trim(), diagnosis: blank(d.diagnosis), treatment_notes: blank(d.treatment_notes),
+    prescriptions: JSON.stringify(d.prescriptions.filter((r) => r.drug.trim())), is_active: d.is_active ?? 1,
+  };
+  return tx(() => (id ? (update('treatment_templates', id, values), id) : insert('treatment_templates', { ...values, created_by: userId })));
 }

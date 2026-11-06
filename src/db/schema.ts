@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -22,6 +22,34 @@ const visitIntake = `stage TEXT NOT NULL DEFAULT 'DONE' CHECK (stage IN ('WAITIN
   intake_at TEXT`;
 const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+
+// Dose calculator and treatment templates (schema v7, 6 Nov 2026). drugs: the clinic's own list, entered by the Admin;
+// the app only does the arithmetic (dose_mg_kg × weight, ÷ concentration per ml/tablet, capped at max_mg).
+// treatment_templates.prescriptions is JSON: [{ drug, drug_id?, dose, frequency, duration_days, instructions }].
+const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  dose_mg_kg REAL NOT NULL,
+  concentration REAL,
+  unit TEXT NOT NULL DEFAULT 'ml' CHECK (unit IN ('ml','tablet','capsule','mg')),
+  max_mg REAL,
+  frequency TEXT,
+  duration_days INTEGER,
+  species TEXT,
+  notes TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  ${ts}
+);
+CREATE TABLE IF NOT EXISTS treatment_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  diagnosis TEXT,
+  treatment_notes TEXT,
+  prescriptions TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  ${ts}
+);`;
 
 export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -227,6 +255,8 @@ CREATE TABLE clinic_settings (
   ${ts}
 );
 
+${calcTables}
+
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -291,12 +321,14 @@ export const MIGRATIONS: Record<number, string> = {
     ALTER TABLE pets ADD COLUMN alert_flags TEXT;
     ALTER TABLE pets ADD COLUMN alert_note TEXT;
   `,
+  // v7 (6 Nov 2026): the drug list for the dose calculator, and treatment templates.
+  7: calcTables,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */

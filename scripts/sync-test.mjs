@@ -564,6 +564,22 @@ await step('patient alert reaches the vet', async () => {
     `alert accepted from the assistant: ${r.rejected.length === 0}; shown in the doctor's queue: ${!!shown.v}`);
 });
 
+await step('drugs and treatment templates: who may change them', async () => {
+  // Schema v7 tables. The drug list decides what the dose calculator says: Admin only. Templates: vets (Admin, Doctor).
+  const at = nowIso();
+  const drug = (id) => ({ tbl: 'drugs', id, op: 'upsert', at, cols: { id, name: 'Test drug', dose_mg_kg: 1, concentration: 10, unit: 'ml', is_active: 1, created_at: at, updated_at: at } });
+  const tpl = (id) => ({ tbl: 'treatment_templates', id, op: 'upsert', at, cols: { id, name: 'Test template', diagnosis: 'x', prescriptions: '[]', is_active: 1, created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskDrug = await push(drug(crypto.randomUUID()), 'desk');
+  const deskTpl = await push(tpl(crypto.randomUUID()), 'desk');
+  const docDrug = await push(drug(crypto.randomUUID()), 'doctor');
+  const docTpl = await push(tpl(crypto.randomUUID()), 'doctor');
+  const adminDrug = await push(drug(crypto.randomUUID()), 'admin');
+  check('calc-tables-rules', 'Only the Admin edits the drug list; Admins and Doctors save treatment templates; Assistants neither',
+    deskDrug.rejected.length === 1 && deskTpl.rejected.length === 1 && docDrug.rejected.length === 1 && docTpl.rejected.length === 0 && adminDrug.rejected.length === 0,
+    `assistant drug: ${deskDrug.rejected[0]?.reason ?? 'ACCEPTED'}; assistant template: ${deskTpl.rejected[0]?.reason ?? 'ACCEPTED'}; doctor drug: ${docDrug.rejected[0]?.reason ?? 'ACCEPTED'}; doctor template: ${docTpl.rejected.length ? 'REFUSED' : 'accepted'}; admin drug: ${adminDrug.rejected.length ? 'REFUSED' : 'accepted'}`);
+});
+
 await step('phase5: password reset', async () => {
   await go(A, '#/settings?tab=users');
   await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();

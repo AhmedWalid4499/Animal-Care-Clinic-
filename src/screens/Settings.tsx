@@ -19,9 +19,10 @@ import { UpdatesSection } from '../components/Updates';
 import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
 import { serverUrl } from '../sync/engine';
+import { DrugsTab, TemplatesTab } from './SettingsClinical';
 import { PRICE_CATEGORIES, ROLES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
-type Tab = 'clinic' | 'prices' | 'vaccines' | 'users' | 'devices' | 'data';
+type Tab = 'clinic' | 'prices' | 'vaccines' | 'drugs' | 'templates' | 'users' | 'devices' | 'data';
 
 export function Settings() {
   const { t } = useApp();
@@ -31,7 +32,7 @@ export function Settings() {
     <div className="page">
       <PageHead title={t('settings.title')} />
       <div className="tabs" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['clinic', 'prices', 'vaccines', 'users', ...(serverUrl() ? ['devices'] : []), 'data'] as Tab[]).map((k) => (
+        {(['clinic', 'prices', 'vaccines', 'drugs', 'templates', 'users', ...(serverUrl() ? ['devices'] : []), 'data'] as Tab[]).map((k) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>{t(`settings.${k}`)}</button>
         ))}
       </div>
@@ -39,6 +40,8 @@ export function Settings() {
         {tab === 'clinic' && <ClinicTab />}
         {tab === 'prices' && <PricesTab />}
         {tab === 'vaccines' && <VaccinesTab />}
+        {tab === 'drugs' && <DrugsTab />}
+        {tab === 'templates' && <TemplatesTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'devices' && <DevicesTab />}
         {tab === 'data' && <DataTab />}

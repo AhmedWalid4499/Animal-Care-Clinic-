@@ -193,7 +193,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .form-section { padding: 18px 0; border-bottom: 1px solid var(--rule); }
 .form-section > h2 { margin-bottom: 12px; }
 .repeat { display: grid; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px dashed var(--rule); }
-.repeat.rx { grid-template-columns: 2fr 1fr 1.3fr 70px 2fr auto; }
+.repeat.rx { grid-template-columns: 2fr 1.5fr 1.2fr 64px 1.6fr auto; }
 .repeat.vx { grid-template-columns: 2fr 1.2fr 1.2fr 1fr auto; }
 .actionbar { position: sticky; bottom: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--rule); padding: 12px 0; display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; z-index: 5; }
 .note { padding: 10px 12px; border-inline-start: 3px solid var(--accent); background: var(--accent-soft); font-size: 13px; margin: 0 0 14px; border-radius: 0 var(--radius) var(--radius) 0; }
@@ -469,3 +469,11 @@ table.t tr.on td { background: var(--accent-soft); font-weight: 600; }
   .reports .tiles { grid-template-columns: repeat(5, 1fr); }
   .reports .chart-box { height: 200px !important; }
 }
+
+/* Dose calculator + treatment templates (6 Nov 2026) */
+.dose-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: -4px 0 10px; padding: 6px 10px; font-size: 13px; background: var(--accent-soft); border-inline-start: 3px solid var(--accent); border-radius: 0 var(--radius) var(--radius) 0; }
+.dose-hint.warn { background: var(--warn-soft); border-color: var(--warn); }
+.dose-hint.bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); font-weight: 600; }
+.dose-hint .btn { margin-inline-start: auto; }
+.tpl-bar { gap: 8px; }
+.tpl-list { max-height: 50vh; overflow-y: auto; }

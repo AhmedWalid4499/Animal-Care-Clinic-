@@ -36,6 +36,8 @@ users (clinic staff) ──< visits.vet_id, invoices.created_by
 | **invoices** | owner_id → owners, pet_id? → pets, visit_id? → visits, number (sequential, e.g. INV-2026-0001), issued_at, subtotal, discount, total, status `UNPAID \| PARTIAL \| PAID \| VOID`, created_by → users, notes | Totals recomputed from items. `status` derived from payments. |
 | **invoice_items** | invoice_id → invoices, price_item_id? → price_items, description, qty, unit_price, line_total | Copy name and price at creation (price list may change later). |
 | **payments** | invoice_id → invoices, amount, method `CASH \| INSTAPAY \| CARD \| OTHER`, paid_at, received_by → users, reference | Sum of payments vs total → invoice status. |
+| **drugs** (v7) | name, dose_mg_kg, concentration (mg per unit), unit `ml \| tablet \| capsule \| mg`, max_mg, frequency, duration_days, species (comma-separated, empty = all), notes, is_active | The clinic's own list for the dose calculator; Admin only. The app only does the arithmetic. |
+| **treatment_templates** (v7) | name, diagnosis, treatment_notes, prescriptions (JSON: drug, dose, frequency, duration_days, instructions), is_active, created_by → users | Fills a visit in one tap; blank doses of listed drugs are worked out from the pet's weight. Admins and Doctors. |
 | **clinic_settings** | single row: name_en, name_ar, logo_url, phone, whatsapp, address, currency (EGP), locale_default, receipt_footer | Loaded once per request. |
 | **audit_log** | user_id, table_name, record_id, action `CREATE \| UPDATE \| DELETE \| LOGIN`, diff (jsonb), at | Who changed what. Append-only. |
 
