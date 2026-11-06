@@ -270,6 +270,7 @@ await step('stock: running low, restock, invoice takes out, void gives back', as
   const onHand = async (name) => Number(await win.locator('.stock table.t tbody tr', { hasText: name }).locator('td').nth(1).innerText());
   await go('#/');
   await win.locator('.low-stock', { hasText: 'Deworming' }).waitFor();
+  await win.locator('.low-stock', { hasText: 'VX-2609' }).waitFor(); // demo vaccine batch expiring in 20 days
   await shot('dashboard-low-stock');
   await win.locator('.side .nav a', { hasText: 'Stock' }).click();
   await win.locator('.stock table.t tr', { hasText: 'Deworming' }).locator('.badge.warn').waitFor();
@@ -277,7 +278,13 @@ await step('stock: running low, restock, invoice takes out, void gives back', as
   if ((await onHand('Vaccine administration')) !== 23) throw new Error(`vaccines on hand after the invoice: ${await onHand('Vaccine administration')}`);
   await win.locator('.stock table.t tr', { hasText: 'Deworming' }).getByRole('button', { name: 'Restock' }).click();
   await win.getByLabel('How many arrived').fill('10');
+  await win.locator('.dialog').getByLabel('Batch').fill('DW-77');
+  await win.locator('.dialog').getByLabel('Expires').fill('2027-03-01');
   await win.locator('.dialog').getByRole('button', { name: 'Save' }).click();
+  // Expiring soon: the older vaccine batch, of which 7 are probably left (23 on hand − 16 from the newer batch).
+  const exp = win.locator('.expiring tr', { hasText: 'VX-2609' });
+  await exp.waitFor();
+  if (!(await exp.innerText()).includes('7')) throw new Error(`expiring row: ${await exp.innerText()}`);
   await win.locator('.stock table.t tr', { hasText: 'Deworming' }).locator('.badge.ok').waitFor();
   if ((await onHand('Deworming')) !== 13) throw new Error(`deworming after restock: ${await onHand('Deworming')}`);
   await shot('stock');
@@ -293,7 +300,28 @@ await step('stock: running low, restock, invoice takes out, void gives back', as
   if ((await onHand('Vaccine administration')) !== 24) throw new Error(`vaccines after voiding: ${await onHand('Vaccine administration')}`);
   if (await win.locator('.side .nav a', { hasText: 'Stock' }).count() !== 1) throw new Error('no Stock in the sidebar');
   await go('#/');
-  if (await win.locator('.low-stock').count()) throw new Error('running low still shown after restocking');
+  // The note stays for the expiring vaccine batch, but nothing is running low any more.
+  if (await win.locator('.low-stock', { hasText: 'Running low' }).count()) throw new Error('running low still shown after restocking');
+  await win.locator('.low-stock', { hasText: 'Expiring soon' }).waitFor();
+});
+
+// Expenses and profit (Admin).
+await step('expenses and profit', async () => {
+  await go('#/reports?view=expenses');
+  await win.locator('table.expenses tr', { hasText: 'Landlord (demo)' }).waitFor();
+  await win.getByRole('button', { name: 'Add expense' }).click();
+  await win.getByLabel('Amount (EGP)').fill('1500');
+  await win.locator('.dialog').getByLabel('Category').selectOption('UTILITIES');
+  await win.locator('.dialog').getByLabel('Paid to').fill('Electricity company');
+  await win.locator('.dialog').getByRole('button', { name: 'Save' }).click();
+  await win.locator('table.expenses tr', { hasText: 'Electricity company' }).waitFor();
+  const total = await win.locator('.tile.main b').innerText();
+  // Demo: rent 8,000 + supplies 1,250 + 1,500 now.
+  if (!total.replace(/[^\d]/g, '').startsWith('10750')) throw new Error(`month total: ${total}`);
+  await shot('reports-expenses');
+  await win.locator('.reports .tabs button', { hasText: 'Monthly' }).click();
+  await win.locator('.tile', { hasText: 'Profit' }).waitFor();
+  await shot('report-month-profit');
 });
 
 // Prescription sheet for the owner, "not seen in a while", activity log (7 Nov 2026).

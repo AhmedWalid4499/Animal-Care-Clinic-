@@ -599,6 +599,19 @@ await step('stock moves: who may add them', async () => {
     `assistant invoice move: ${deskInvoice.rejected[0]?.reason ?? 'accepted'}; assistant move without invoice: ${deskBare.rejected[0]?.reason ?? 'ACCEPTED'}; assistant restock: ${deskRestock.rejected[0]?.reason ?? 'ACCEPTED'}; doctor correction: ${docAdjust.rejected[0]?.reason ?? 'ACCEPTED'}; admin restock: ${adminRestock.rejected[0]?.reason ?? 'accepted'}; admin edits it later: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
 });
 
+await step('expenses: admin only', async () => {
+  // Schema v10. The clinic's own spending (rent, salaries…) is the Admin's, like the reports that show it.
+  const at = nowIso();
+  const exp = (id) => ({ tbl: 'expenses', id, op: 'upsert', at, cols: { id, spent_at: at.slice(0, 10), category: 'RENT', amount: 100000, method: 'CASH', status: 'ACTIVE', created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const desk = await push(exp(crypto.randomUUID()), 'desk');
+  const doc = await push(exp(crypto.randomUUID()), 'doctor');
+  const admin = await push(exp(crypto.randomUUID()), 'admin');
+  check('expenses-rules', 'Only the Admin records the clinic\'s expenses',
+    desk.rejected.length === 1 && doc.rejected.length === 1 && admin.rejected.length === 0,
+    `assistant: ${desk.rejected[0]?.reason ?? 'ACCEPTED'}; doctor: ${doc.rejected[0]?.reason ?? 'ACCEPTED'}; admin: ${admin.rejected.length ? 'REFUSED' : 'accepted'}`);
+});
+
 await step('phase5: password reset', async () => {
   await go(A, '#/settings?tab=users');
   await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();

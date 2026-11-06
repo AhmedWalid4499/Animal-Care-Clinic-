@@ -4,7 +4,8 @@
 import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 
 // drugs: the dose calculator's list (doses decide what the calculator says), so only the Admin edits it.
-const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs']);
+// expenses: the clinic's own spending (rent, salaries…), Admin only like the reports that use it.
+const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'expenses']);
 const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);

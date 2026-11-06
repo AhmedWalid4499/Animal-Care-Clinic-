@@ -199,7 +199,17 @@ export function seedDemo() {
     const item = (en: string) => get<{ id: string }>('SELECT id FROM price_items WHERE name_en = ?', [en])!.id;
     run('UPDATE price_items SET track_stock = 1, low_stock = 5 WHERE name_en = ?', ['Vaccine administration']);
     run('UPDATE price_items SET track_stock = 1, low_stock = 4 WHERE name_en = ?', ['Deworming']);
-    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 24, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10) });
+    // Two vaccine deliveries: the older batch (8 doses) expires in 20 days, so it shows under "Expiring soon".
+    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 8, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-60, 10), batch_no: 'VX-2609', expires_at: addDays(t, 20) });
+    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 16, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10), batch_no: 'VX-2611', expires_at: addDays(t, 300) });
+    // Expenses (demo): this month's rent and supplies, last month's too, so the monthly report shows profit.
+    const month0 = t.slice(0, 7);
+    const lastMonth = new Date(`${month0}-15T12:00:00`); lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const month1 = lastMonth.toISOString().slice(0, 7);
+    for (const [m, extra] of [[month0, 0], [month1, 1]] as const) {
+      insert('expenses', { spent_at: `${m}-01`, category: 'RENT', amount: 800000, method: 'INSTAPAY', payee: 'Landlord (demo)', user_id: vetId, status: 'ACTIVE' });
+      insert('expenses', { spent_at: `${m}-0${3 + extra}`, category: 'SUPPLIES', amount: 125000 + extra * 30000, method: 'CASH', payee: 'Supplier (demo)', user_id: vetId, status: 'ACTIVE' });
+    }
     insert('stock_moves', { price_item_id: item('Deworming'), qty: 3, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10) });
   });
 }

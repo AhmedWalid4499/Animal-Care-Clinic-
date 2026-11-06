@@ -4,7 +4,7 @@ import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Drug, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Drug, Expense, ExpenseCategory, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -691,11 +691,11 @@ export function monthStartIso(month: string) {
 const startOfMonthIso = monthStartIso;
 const localMonth = (iso: string) => localDateOf(iso).slice(0, 7);
 /** Invoiced (non-void totals by issue month) and collected (payments by payment month) for the `n` months ending at `month`. */
-export function revenueByMonth(month: string, n = 12): { month: string; invoiced: number; collected: number }[] {
+export function revenueByMonth(month: string, n = 12): { month: string; invoiced: number; collected: number; spent: number }[] {
   const first = monthAdd(month, -(n - 1));
   const from = startOfMonthIso(first);
   const to = startOfMonthIso(monthAdd(month, 1));
-  const out = Array.from({ length: n }, (_, i) => ({ month: monthAdd(first, i), invoiced: 0, collected: 0 }));
+  const out = Array.from({ length: n }, (_, i) => ({ month: monthAdd(first, i), invoiced: 0, collected: 0, spent: 0 }));
   const at = new Map(out.map((r) => [r.month, r]));
   for (const i of all<{ issued_at: string; total: number }>("SELECT issued_at, total FROM invoices WHERE status <> 'VOID' AND issued_at >= ? AND issued_at < ?", [from, to])) {
     const r = at.get(localMonth(i.issued_at));
@@ -704,6 +704,11 @@ export function revenueByMonth(month: string, n = 12): { month: string; invoiced
   for (const p of paymentsBetween(from, to)) {
     const r = at.get(localMonth(p.paid_at));
     if (r) r.collected += p.amount;
+  }
+  // Expenses are dated by local day (spent_at = YYYY-MM-DD), so the month is its first 7 characters.
+  for (const e of all<{ spent_at: string; amount: number }>("SELECT spent_at, amount FROM expenses WHERE status = 'ACTIVE' AND spent_at >= ? AND spent_at < ?", [`${first}-01`, `${monthAdd(month, 1)}-01`])) {
+    const r = at.get(e.spent_at.slice(0, 7));
+    if (r) r.spent += e.amount;
   }
   return out;
 }
@@ -793,8 +798,11 @@ export const stockLevels = () =>
 /** Tracked, active items at or below their warning level (no level set = warn at 0). */
 export const lowStock = () => stockLevels().filter((r) => r.is_active && r.on_hand <= (r.low_stock ?? 0));
 /** Restock (+qty) or a count correction: `counted` = what is on the shelf, the move is the difference. */
-export function restock(priceItemId: string, qty: number, note: string, userId: string | null) {
-  tx(() => insert('stock_moves', { price_item_id: priceItemId, qty, reason: 'RESTOCK', note: blank(note), user_id: userId, at: nowIso() }));
+export function restock(priceItemId: string, qty: number, note: string, userId: string | null, batch?: { batch_no?: string; expires_at?: string }) {
+  tx(() => insert('stock_moves', {
+    price_item_id: priceItemId, qty, reason: 'RESTOCK', note: blank(note), user_id: userId, at: nowIso(),
+    batch_no: blank(batch?.batch_no ?? null), expires_at: blank(batch?.expires_at ?? null),
+  }));
 }
 export function correctStock(priceItemId: string, counted: number, note: string, userId: string | null) {
   tx(() => {
@@ -899,3 +907,51 @@ export function activityLog(f: { userId?: string; from?: string; to?: string; gr
     args,
   );
 }
+
+// ---------------------------------------------------------------- stock batches & expiry (7 Nov 2026 change request)
+export interface BatchLeft { price_item_id: string; name_en: string; name_ar: string; category: string; batch_no: string | null; expires_at: string | null; left: number }
+/**
+ * What is probably still on the shelf, batch by batch: the quantity on hand is taken from the most recent deliveries
+ * (first in, first out), so a batch counts only while it can still be part of what is left.
+ */
+export function batchesInStock(): BatchLeft[] {
+  const out: BatchLeft[] = [];
+  const restocks = all<{ price_item_id: string; qty: number; batch_no: string | null; expires_at: string | null }>(
+    "SELECT price_item_id, qty, batch_no, expires_at FROM stock_moves WHERE reason = 'RESTOCK' ORDER BY at DESC",
+  );
+  for (const it of stockLevels().filter((r) => r.is_active && r.on_hand > 0)) {
+    let remaining = it.on_hand;
+    for (const r of restocks) {
+      if (r.price_item_id !== it.id) continue;
+      if (remaining <= 1e-9) break;
+      const left = Math.min(r.qty, remaining);
+      remaining -= left;
+      if (r.batch_no || r.expires_at) out.push({ price_item_id: it.id, name_en: it.name_en, name_ar: it.name_ar, category: it.category, batch_no: r.batch_no, expires_at: r.expires_at, left });
+    }
+  }
+  return out;
+}
+/** Batches still on the shelf that expire within `days` (or already have), soonest first. */
+export const expiringStock = (days = 30) =>
+  batchesInStock().filter((b) => b.expires_at && b.expires_at <= addDays(today(), days)).sort((a, b) => a.expires_at!.localeCompare(b.expires_at!));
+
+// ---------------------------------------------------------------- expenses (Admin; 7 Nov 2026 change request)
+export interface ExpenseInput { spent_at: string; category: ExpenseCategory; amount: number; method: PaymentMethod; payee: string; note: string }
+export interface ExpenseRow extends Expense { user_name: string | null }
+export function saveExpense(d: ExpenseInput, userId: string | null, id?: string): string {
+  const values = { spent_at: d.spent_at, category: d.category, amount: Math.round(d.amount), method: d.method, payee: blank(d.payee), note: blank(d.note) };
+  return tx(() => {
+    if (id) { update('expenses', id, values); return id; }
+    return insert('expenses', { ...values, user_id: userId, status: 'ACTIVE' });
+  });
+}
+export function voidExpense(id: string) {
+  tx(() => update('expenses', id, { status: 'VOID' }));
+}
+/** Active expenses between two local dates (from inclusive, to exclusive), newest first. */
+export const expensesBetween = (fromDate: string, toDate: string) =>
+  all<ExpenseRow>(
+    `SELECT e.*, u.name user_name FROM expenses e LEFT JOIN users u ON u.id = e.user_id
+     WHERE e.status = 'ACTIVE' AND e.spent_at >= ? AND e.spent_at < ? ORDER BY e.spent_at DESC, e.created_at DESC`,
+    [fromDate, toDate],
+  );

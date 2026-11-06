@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { correctStock, lowStock, restock, stockHistory, stockLevels, type StockRow } from '../db/repo';
+import { correctStock, expiringStock, lowStock, restock, stockHistory, stockLevels, type StockRow } from '../db/repo';
+import { daysBetween, today } from '../lib/dates';
 import { Badge, Dialog, Field, Icon } from '../components/ui';
 import { PageHead } from '../components/Layout';
 
@@ -13,6 +14,7 @@ export function StockPage() {
   const { t, fmt, locale, isAdmin } = useApp();
   const nav = useNavigate();
   const rows = useQuery(stockLevels);
+  const expiring = useQuery(() => expiringStock(30));
   const [act, setAct] = useState<Action | null>(null);
   const name = (r: StockRow) => (locale === 'ar' ? r.name_ar : r.name_en);
   return (
@@ -54,6 +56,28 @@ export function StockPage() {
           </table>
         </div>
       )}
+      {expiring.length > 0 && (
+        <section className="section expiring" style={{ marginTop: 22 }}>
+          <header><h2>⏳ {t('stock.expiringTitle')}</h2><span className="count">{expiring.length}</span></header>
+          <p className="muted small">{t('stock.expiringHint')}</p>
+          <table className="t">
+            <thead><tr><th>{t('stock.item')}</th><th>{t('stock.batch')}</th><th>{t('stock.expires')}</th><th className="r">{t('stock.left')}</th></tr></thead>
+            <tbody>
+              {expiring.map((b, i) => {
+                const n = daysBetween(today(), b.expires_at!);
+                return (
+                  <tr key={i}>
+                    <td><b>{locale === 'ar' ? b.name_ar : b.name_en}</b></td>
+                    <td className="ltr">{b.batch_no ?? '—'}</td>
+                    <td>{fmt.date(b.expires_at!)} <Badge kind={n < 0 ? 'bad' : 'warn'}>{n < 0 ? t('stock.expired') : t('stock.inDays', { n })}</Badge></td>
+                    <td className="r num">{fmt.num(b.left, 2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      )}
       {act && act.kind !== 'history' && <MoveDialog row={act.row} kind={act.kind} name={name(act.row)} onClose={() => setAct(null)} />}
       {act?.kind === 'history' && <HistoryDialog row={act.row} name={name(act.row)} onClose={() => setAct(null)} />}
     </div>
@@ -64,10 +88,12 @@ function MoveDialog({ row, kind, name, onClose }: { row: StockRow; kind: 'restoc
   const { t, fmt, toast, user } = useApp();
   const [qty, setQty] = useState('');
   const [note, setNote] = useState('');
+  const [batch, setBatch] = useState('');
+  const [expires, setExpires] = useState('');
   const v = Number(qty.replace(',', '.'));
   const valid = qty.trim() !== '' && Number.isFinite(v) && (kind === 'restock' ? v > 0 : v >= 0);
   const save = () => {
-    if (kind === 'restock') restock(row.id, v, note, user?.id ?? null);
+    if (kind === 'restock') restock(row.id, v, note, user?.id ?? null, { batch_no: batch, expires_at: expires });
     else correctStock(row.id, v, note, user?.id ?? null);
     toast(t('app.saved'));
     onClose();
@@ -82,6 +108,12 @@ function MoveDialog({ row, kind, name, onClose }: { row: StockRow; kind: 'restoc
       <Field label={kind === 'restock' ? t('stock.received') : t('stock.counted')} hint={kind === 'count' ? t('stock.countHint') : undefined}>
         <input type="number" min="0" step="any" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} autoFocus />
       </Field>
+      {kind === 'restock' && (
+        <div className="grid g2">
+          <Field label={t('stock.batch')} optional><input type="text" className="ltr" value={batch} onChange={(e) => setBatch(e.target.value)} /></Field>
+          <Field label={t('stock.expires')} optional><input type="date" value={expires} min={today()} onChange={(e) => setExpires(e.target.value)} /></Field>
+        </div>
+      )}
       <Field label={t('common.notes')} optional>
         <input type="text" value={note} placeholder={kind === 'restock' ? t('stock.notePh') : ''} onChange={(e) => setNote(e.target.value)} />
       </Field>
@@ -106,7 +138,7 @@ function HistoryDialog({ row, name, onClose }: { row: StockRow; name: string; on
                 <td>{t(`stock.reason.${m.reason}`)}{m.invoice_number ? <span className="ltr muted"> · {m.invoice_number}</span> : null}</td>
                 <td className={`r num ${m.qty < 0 ? 'neg' : 'pos'}`}>{m.qty > 0 ? '+' : ''}{fmt.num(m.qty, 2)}</td>
                 <td>{m.user_name ?? '—'}</td>
-                <td className="muted">{m.note ?? ''}</td>
+                <td className="muted">{[m.batch_no ? `${t('stock.batch')} ${m.batch_no}` : null, m.expires_at ? `${t('stock.expires')} ${fmt.date(m.expires_at)}` : null, m.note].filter(Boolean).join(' · ')}</td>
               </tr>
             ))}
           </tbody>
@@ -121,13 +153,27 @@ export function LowStockSection() {
   const { t, fmt, locale } = useApp();
   const nav = useNavigate();
   const rows = useQuery(lowStock);
-  if (!rows.length) return null;
+  const expiring = useQuery(() => expiringStock(30));
+  if (!rows.length && !expiring.length) return null;
   return (
     <div className="note warn low-stock" role="status">
-      <b>📦 {t('stock.runningLow')}</b>{' '}
-      {rows.map((r, i) => (
-        <span key={r.id}>{i ? ' · ' : ''}{locale === 'ar' ? r.name_ar : r.name_en}: <b className="num">{fmt.num(r.on_hand, 2)}</b></span>
-      ))}{' '}
+      {rows.length > 0 && (
+        <div>
+          <b>📦 {t('stock.runningLow')}</b>{' '}
+          {rows.map((r, i) => (
+            <span key={r.id}>{i ? ' · ' : ''}{locale === 'ar' ? r.name_ar : r.name_en}: <b className="num">{fmt.num(r.on_hand, 2)}</b></span>
+          ))}
+        </div>
+      )}
+      {expiring.length > 0 && (
+        <div>
+          <b>⏳ {t('stock.expiringSoon')}</b>{' '}
+          {expiring.slice(0, 4).map((b, i) => (
+            <span key={i}>{i ? ' · ' : ''}{locale === 'ar' ? b.name_ar : b.name_en}{b.batch_no ? <span className="ltr"> ({b.batch_no})</span> : null}: {fmt.date(b.expires_at!)}</span>
+          ))}
+          {expiring.length > 4 ? ` +${expiring.length - 4}` : ''}
+        </div>
+      )}
       <button type="button" className="linkbtn" onClick={() => nav('/stock')}>{t('stock.open')}</button>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { getAppointment, getPet, getVisit, lastWeight, listDrugs, listTemplates, listVaccineTypes, listVets, saveTemplate, saveVisit, templateRx, type VisitInput } from '../db/repo';
+import { batchesInStock, getAppointment, getPet, getVisit, lastWeight, listDrugs, listTemplates, listVaccineTypes, listVets, saveTemplate, saveVisit, templateRx, type VisitInput } from '../db/repo';
 import { allergyMatch, calcDose, doseText, findDrug } from '../lib/dose';
 import { addDays, fromLocalInput, localDateOf, nowLocalInput, toLocalInput } from '../lib/dates';
 import { Dialog, Field, Icon, PetAlerts, PetAvatar, PetPicker } from '../components/ui';
@@ -73,6 +73,8 @@ export function VisitFormPage() {
   const appt = useMemo(() => (appointmentId ? getAppointment(appointmentId) : undefined), [appointmentId]);
   const vets = useQuery(listVets);
   const vtypes = useQuery(() => listVaccineTypes(true).filter((v) => !pet || v.species.split(',').includes(pet.species) || pet.species === 'OTHER'), [pet?.species]);
+  // Vaccine batches still on the shelf (Stock → restock with a batch number): pick instead of typing.
+  const vxBatches = useQuery(() => batchesInStock().filter((b) => b.category === 'VACCINE' && b.batch_no));
   const key = draftKey(petId, visitId);
 
   const initial = useMemo<Form>(() => {
@@ -299,6 +301,7 @@ export function VisitFormPage() {
         <div className="form-section">
           <div className="row" style={{ marginBottom: 4 }}>
             <h2 className="spacer">💉 {t('visits.vaccinationsGiven')}</h2>
+            <datalist id="vx-batches">{vxBatches.map((b, k) => <option key={k} value={b.batch_no!}>{`${b.name_en}${b.expires_at ? ` · ${fmt.date(b.expires_at)}` : ''}`}</option>)}</datalist>
             <button
               type="button"
               className="btn sm"
@@ -320,7 +323,7 @@ export function VisitFormPage() {
               </Field>
               <Field label={t('petRecord.administered')}><input type="date" value={x.administered_at} onChange={(e) => setVx(i, { administered_at: e.target.value })} required /></Field>
               <Field label={t('visits.nextDue')}><input type="date" value={x.next_due_at} onChange={(e) => setVx(i, { next_due_at: e.target.value, dueTouched: true })} /></Field>
-              <Field label={t('visits.batch')}><input type="text" className="ltr" value={x.batch_no} onChange={(e) => setVx(i, { batch_no: e.target.value })} /></Field>
+              <Field label={t('visits.batch')}><input type="text" className="ltr" list="vx-batches" value={x.batch_no} onChange={(e) => setVx(i, { batch_no: e.target.value })} /></Field>
               {!x.id ? (
                 <button type="button" className="btn ghost sm" aria-label={t('common.remove')} onClick={() => set('vaccinations', f.vaccinations.filter((_, j) => j !== i))}><Icon name="x" /></button>
               ) : <span />}
