@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -41,6 +41,24 @@ const stockTable = `CREATE TABLE IF NOT EXISTS stock_moves (
 );
 CREATE INDEX IF NOT EXISTS stock_moves_item ON stock_moves(price_item_id);
 CREATE INDEX IF NOT EXISTS stock_moves_invoice ON stock_moves(invoice_id);`;
+// Schema v10 (7 Nov 2026): a restock can say which batch arrived and when it expires (Stock → expiring soon), and the
+// clinic's own expenses (Admin) so the monthly report shows profit. Expenses are voided, never deleted.
+const stockBatchCols = `ALTER TABLE stock_moves ADD COLUMN batch_no TEXT;
+ALTER TABLE stock_moves ADD COLUMN expires_at TEXT;`;
+export const EXPENSE_CATEGORIES_SQL = "'RENT','SALARIES','SUPPLIES','UTILITIES','EQUIPMENT','MAINTENANCE','MARKETING','OTHER'";
+const expensesTable = `CREATE TABLE IF NOT EXISTS expenses (
+  id TEXT PRIMARY KEY,
+  spent_at TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN (${EXPENSE_CATEGORIES_SQL})),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  method TEXT NOT NULL DEFAULT 'CASH' CHECK (method IN ('CASH','INSTAPAY','CARD','OTHER')),
+  payee TEXT,
+  note TEXT,
+  user_id TEXT REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','VOID')),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS expenses_date ON expenses(spent_at);`;
 const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -275,6 +293,8 @@ CREATE TABLE clinic_settings (
 
 ${calcTables}
 ${stockTable}
+${stockBatchCols}
+${expensesTable}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -350,12 +370,17 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v9 (7 Nov 2026): "not seen in a while" list — when the owner was last sent the check-up reminder.
   9: `ALTER TABLE pets ADD COLUMN recall_sent_at TEXT;`,
+  // v10 (7 Nov 2026): stock batch + expiry, clinic expenses.
+  10: `
+    ${stockBatchCols}
+    ${expensesTable}
+  `,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */

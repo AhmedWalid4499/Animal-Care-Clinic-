@@ -10,10 +10,11 @@ import {
 import { addDays, daysBetween, localDateOf, startOfDayIso, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { Badge, Icon, WaButton } from '../components/ui';
+import { ExpensesReport } from './Expenses';
 import { PageHead } from '../components/Layout';
 import { PAYMENT_METHODS } from '../db/types';
 
-type View = 'day' | 'month';
+type View = 'day' | 'month' | 'expenses';
 /** "1 payment" / "3 payments" (reports.paymentsOne / reports.paymentsN). */
 const plural = (t: (k: string, v?: Record<string, string | number>) => string, what: 'payments' | 'owners' | 'invoices', n: number) =>
   n === 1 ? t(`reports.${what}One`) : t(`reports.${what}N`, { n });
@@ -21,18 +22,19 @@ const plural = (t: (k: string, v?: Record<string, string | number>) => string, w
 export function Reports() {
   const { t } = useApp();
   const [sp, setSp] = useSearchParams();
-  const view: View = sp.get('view') === 'month' ? 'month' : 'day';
+  const v = sp.get('view');
+  const view: View = v === 'month' || v === 'expenses' ? v : 'day';
   return (
     <div className="page reports">
       <PageHead title={t('reports.title')}>
         <button className="btn primary no-print" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
       </PageHead>
       <div className="tabs no-print" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['day', 'month'] as View[]).map((k) => (
+        {(['day', 'month', 'expenses'] as View[]).map((k) => (
           <button key={k} className={view === k ? 'on' : ''} onClick={() => setSp({ view: k }, { replace: true })}>{t(`reports.${k}`)}</button>
         ))}
       </div>
-      <div key={view} className="tab-enter">{view === 'day' ? <DayReport /> : <MonthReport />}</div>
+      <div key={view} className="tab-enter">{view === 'day' ? <DayReport /> : view === 'month' ? <MonthReport /> : <ExpensesReport Stepper={Stepper} />}</div>
     </div>
   );
 }
@@ -175,10 +177,11 @@ function MonthReport() {
   const owing = useQuery(ownersOwing);
   const settings = useQuery(getSettings);
   const clinic = locale === 'ar' ? settings.name_ar : settings.name_en;
-  const cur = revenue[revenue.length - 1] ?? { invoiced: 0, collected: 0 };
+  const cur = revenue[revenue.length - 1] ?? { invoiced: 0, collected: 0, spent: 0 };
+  const profit = cur.collected - cur.spent;
   const visitTotal = visits.reduce((s, v) => s + v.n, 0);
   const owed = owing.reduce((s, o) => s + o.balance, 0);
-  const chart = revenue.map((r) => ({ ...r, label: monthShort.format(new Date(`${r.month}-01T12:00:00`)), egp: r.collected / 100 }));
+  const chart = revenue.map((r) => ({ ...r, label: monthShort.format(new Date(`${r.month}-01T12:00:00`)), egp: r.collected / 100, spentEgp: r.spent / 100 }));
   const bucket = (days: number) => (days > 90 ? 'bad' : days > 60 ? 'bad' : days > 30 ? 'warn' : 'info');
 
   return (
@@ -189,6 +192,8 @@ function MonthReport() {
 
       <div className="tiles">
         <div className="tile main"><span>{t('reports.collected')}</span><b className="num">{fmt.money(cur.collected)}</b></div>
+        <div className="tile"><span>{t('reports.spent')}</span><b className="num">{fmt.money(cur.spent)}</b></div>
+        <div className={`tile ${profit < 0 ? 'neg' : ''}`}><span>{t('reports.profit')}</span><b className="num">{fmt.money(profit)}</b><small>{t('reports.profitHint')}</small></div>
         <div className="tile"><span>{t('reports.invoiced')}</span><b className="num">{fmt.money(cur.invoiced)}</b></div>
         <div className="tile"><span>{t('reports.visits')}</span><b className="num">{fmt.num(visitTotal, 0)}</b></div>
         <div className="tile"><span>{t('reports.owedNow')}</span><b className="num">{fmt.money(owed)}</b><small>{plural(t, 'owners', owing.length)}</small></div>
@@ -206,19 +211,20 @@ function MonthReport() {
               <Tooltip
                 cursor={{ fill: 'var(--bg-2)' }}
                 contentStyle={{ background: 'var(--bg)', border: '1px solid var(--rule-2)', borderRadius: 4, color: 'var(--ink)' }}
-                formatter={(v: number) => [fmt.money(v * 100), t('reports.collected')]}
+                formatter={(v: number, name: string) => [fmt.money(v * 100), name === 'spentEgp' ? t('reports.spent') : t('reports.collected')]}
                 labelFormatter={(_l, p) => (p?.[0] ? label((p[0].payload as { month: string }).month) : '')}
               />
               <Bar dataKey="egp" fill="var(--accent)" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false} />
+              {chart.some((r) => r.spent > 0) && <Bar dataKey="spentEgp" fill="var(--ink-3)" radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false} />}
             </BarChart>
           </ResponsiveContainer>
         </div>
         <div className="tablewrap">
           <table className="t compact">
-            <thead><tr><th>{t('reports.monthCol')}</th><th className="r">{t('reports.invoiced')}</th><th className="r">{t('reports.collected')}</th></tr></thead>
+            <thead><tr><th>{t('reports.monthCol')}</th><th className="r">{t('reports.invoiced')}</th><th className="r">{t('reports.collected')}</th><th className="r">{t('reports.spent')}</th><th className="r">{t('reports.profit')}</th></tr></thead>
             <tbody>
               {revenue.slice().reverse().map((r) => (
-                <tr key={r.month} className={r.month === month ? 'on' : ''}><td>{label(r.month)}</td><td className="r num">{fmt.money(r.invoiced)}</td><td className="r num">{fmt.money(r.collected)}</td></tr>
+                <tr key={r.month} className={r.month === month ? 'on' : ''}><td>{label(r.month)}</td><td className="r num">{fmt.money(r.invoiced)}</td><td className="r num">{fmt.money(r.collected)}</td><td className="r num">{fmt.money(r.spent)}</td><td className={`r num ${r.collected - r.spent < 0 ? 'neg' : ''}`}>{fmt.money(r.collected - r.spent)}</td></tr>
               ))}
             </tbody>
           </table>
