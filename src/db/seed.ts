@@ -182,5 +182,14 @@ export function seedDemo() {
     inv(1, o1, luna, lv3, [['Consultation', 1, 30000], ['IV fluids', 1, 25000], ['Medication', 2, 8500]], 72000, 150);
     inv(2, o2, rocky, rv, [['Consultation', 1, 30000], ['Flea/tick treatment', 1, 35000]], 30000, 33);
     inv(3, o3, mishmish, mm, [['Vaccine administration', 1, 45000]], 0, 10);
+
+    // Dose calculator and templates (demo only). These are EXAMPLES for trying the screens, marked "(demo)":
+    // the clinic enters its own drug list and doses in Settings → Drugs.
+    insert('drugs', { name: 'Meloxicam 1.5 mg/ml (demo)', dose_mg_kg: 0.1, concentration: 1.5, unit: 'ml', frequency: 'Once daily', duration_days: 3, species: 'DOG,CAT' });
+    insert('drugs', { name: 'Amoxicillin 250 mg tablet (demo)', dose_mg_kg: 20, concentration: 250, unit: 'tablet', max_mg: 500, frequency: 'Every 12 h', duration_days: 7, species: 'DOG,CAT' });
+    insert('treatment_templates', {
+      name: 'Gastroenteritis, standard (demo)', diagnosis: 'Acute gastroenteritis', treatment_notes: 'Bland diet 3 days, fresh water, recheck if vomiting continues',
+      prescriptions: JSON.stringify([{ drug: 'Meloxicam 1.5 mg/ml (demo)', dose: '', frequency: '', duration_days: '', instructions: 'With food' }]), created_by: vetId,
+    });
   });
 }

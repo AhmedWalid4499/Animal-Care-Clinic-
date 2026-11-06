@@ -230,6 +230,39 @@ await step('reports: end-of-day cash and monthly', async () => {
   await shot('report-month');
 });
 
+// Dose calculator + treatment templates (demo drugs/template from SEED_DEMO).
+await step('dose calculator and treatment templates', async () => {
+  await go('#/settings?tab=drugs');
+  await win.locator('table.t tr', { hasText: 'Meloxicam 1.5 mg/ml (demo)' }).waitFor();
+  await shot('settings-drugs');
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.waitForSelector('.tabs');
+  await win.locator('.pagehead').getByRole('button', { name: 'New visit' }).click();
+  await win.getByRole('button', { name: 'Use template' }).click();
+  await win.locator('.tpl-list li', { hasText: 'Gastroenteritis, standard (demo)' }).click();
+  const diag = await win.getByLabel('Diagnosis').inputValue();
+  if (diag !== 'Acute gastroenteritis') throw new Error(`template diagnosis not filled: "${diag}"`);
+  const firstDose = await win.locator('.repeat.rx').first().getByLabel('Dose').inputValue();
+  if (firstDose !== '0.4 mg (0.27 ml)') throw new Error(`meloxicam dose for 4.35 kg: "${firstDose}"`);
+  await win.locator('.dose-hint', { hasText: '4.35 kg × 0.1 mg/kg = 0.4 mg' }).waitFor();
+  // Add amoxicillin by hand and take the calculated dose.
+  await win.getByRole('button', { name: 'Add drug' }).click();
+  await win.locator('.repeat.rx').nth(1).getByLabel('Drug').fill('Amoxicillin 250 mg tablet (demo)');
+  await win.getByRole('button', { name: 'Use this dose' }).click();
+  const amox = await win.locator('.repeat.rx').nth(1).getByLabel('Dose').inputValue();
+  if (amox !== '87 mg (0.25 tablets)') throw new Error(`amoxicillin dose for 4.35 kg: "${amox}"`);
+  await shot('visit-dose-calculator');
+  // Save the visit's treatment as a new template.
+  await win.getByRole('button', { name: 'Save as template' }).click();
+  await win.locator('.dialog input[type=text]').fill('Gastro + antibiotic');
+  await win.locator('.dialog .btn.primary').click();
+  await win.getByRole('button', { name: 'Cancel' }).last().click();
+  await go('#/settings?tab=templates');
+  await win.locator('table.t tr', { hasText: 'Gastro + antibiotic' }).waitFor();
+});
+
 await step('dark mode', async () => {
   await go('#/');
   await win.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));

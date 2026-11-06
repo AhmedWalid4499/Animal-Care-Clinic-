@@ -80,3 +80,17 @@ export interface ClinicSettings {
   id: 1; name_en: string; name_ar: string; logo_url: string | null; phone: string | null; whatsapp: string | null;
   address: string | null; currency: string; locale_default: Locale; receipt_footer: string | null;
 }
+
+// Dose calculator and treatment templates (schema v7).
+export const DRUG_UNITS = ['ml', 'tablet', 'capsule', 'mg'] as const;
+export type DrugUnit = (typeof DRUG_UNITS)[number];
+/** One drug in the clinic's own list. dose_mg_kg per dose; concentration = mg per ml / tablet / capsule. */
+export interface Drug {
+  id: string; name: string; dose_mg_kg: number; concentration: number | null; unit: DrugUnit; max_mg: number | null;
+  frequency: string | null; duration_days: number | null; species: string | null; notes: string | null; is_active: number;
+}
+export interface TemplateRx { drug: string; dose: string; frequency: string; duration_days: string; instructions: string }
+export interface TreatmentTemplate {
+  id: string; name: string; diagnosis: string | null; treatment_notes: string | null; prescriptions: string | null;
+  is_active: number; created_by: string | null;
+}
