@@ -141,6 +141,6 @@ export function PetFormPage() {
 
 function strip(p: Pet): PetInput {
   const rest: Record<string, unknown> = { ...p };
-  for (const k of ['id', 'owner_name', 'owner_phone', 'owner_whatsapp', 'created_at', 'updated_at']) delete rest[k];
+  for (const k of ['id', 'owner_name', 'owner_phone', 'owner_whatsapp', 'created_at', 'updated_at', 'recall_sent_at']) delete rest[k];
   return rest as unknown as PetInput;
 }

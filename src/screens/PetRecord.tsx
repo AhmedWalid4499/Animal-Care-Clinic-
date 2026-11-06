@@ -120,6 +120,7 @@ function Timeline({ petId }: { petId: string }) {
                 ) : (
                   <button className="btn ghost sm" onClick={() => nav(`/invoices/new?visit=${v.id}`)}><Icon name="receipt" /> {t('petRecord.createInvoice')}</button>
                 )}
+                {v.prescriptions.length > 0 && <button className="btn ghost sm" onClick={() => nav(`/visits/${v.id}/prescription`)}><Icon name="print" /> {t('rxSheet.button')}</button>}
                 {(canVisit || (canIntake && v.stage === 'WAITING')) && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
               </div>
               {v.complaint && <p><span className="muted">{t('visits.complaint')}:</span> {v.complaint}</p>}

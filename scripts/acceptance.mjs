@@ -414,6 +414,8 @@ await app.close();
   // …nor stock (schema v8).
   db.run('DROP TABLE stock_moves');
   for (const c of ['track_stock', 'low_stock']) db.run(`ALTER TABLE price_items DROP COLUMN ${c}`);
+  // …nor the check-up reminder stamp (schema v9).
+  db.run('ALTER TABLE pets DROP COLUMN recall_sent_at');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
@@ -432,7 +434,7 @@ const afterRelaunch = counts(openDbFile());
     const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
     const roles = db2.exec('SELECT role, COUNT(*) FROM users GROUP BY role')[0].values.map((r) => `${r[0]}×${r[1]}`).join(', ');
     const settingsLink = await win.locator('.nav a[href="#/settings"]').count();
-    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '8' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
+    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '9' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
       `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
   }
   check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',

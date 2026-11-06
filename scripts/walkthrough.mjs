@@ -296,6 +296,53 @@ await step('stock: running low, restock, invoice takes out, void gives back', as
   if (await win.locator('.low-stock').count()) throw new Error('running low still shown after restocking');
 });
 
+// Prescription sheet for the owner, "not seen in a while", activity log (7 Nov 2026).
+await step('prescription sheet for the owner', async () => {
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.waitForSelector('.tabs');
+  // The timeline's gastritis visit has two prescriptions.
+  await win.locator('.tl > li', { hasText: 'Gastritis' }).getByRole('button', { name: 'Prescription' }).click();
+  await win.locator('.rx-sheet', { hasText: 'Metoclopramide' }).waitFor();
+  await win.locator('.rx-sheet', { hasText: 'For how long' }).waitFor({ timeout: 1000 }).catch(() => {}); // app is in English → English sheet
+  await win.locator('.seg button', { hasText: 'العربية' }).click();
+  await win.locator('.rx-sheet[dir=rtl]', { hasText: 'روشتة علاج' }).waitFor();
+  if (!(await win.locator('.rx-sheet', { hasText: '5 يوم' }).count())) throw new Error('Arabic sheet: duration missing');
+  await shot('prescription-sheet-ar');
+  await win.locator('.seg button', { hasText: 'English' }).click();
+  await win.locator('.rx-sheet[dir=ltr]', { hasText: 'Twice daily' }).waitFor();
+  await shot('prescription-sheet-en');
+});
+
+await step('not seen in a while', async () => {
+  await go('#/reminders?tab=recall');
+  const zeus = win.locator('.recall .list li', { hasText: 'Zeus' });
+  await zeus.waitFor();
+  if (!(await zeus.innerText()).includes('14 mo ago')) throw new Error(`Zeus row: ${await zeus.innerText()}`);
+  // Mishmish (seen 12 months ago) has an appointment today: not on the list.
+  if (await win.locator('.recall .list li', { hasText: 'مشمش' }).count()) throw new Error('a pet with an appointment is on the list');
+  await shot('recall');
+  await win.locator('.seg button', { hasText: '18 months' }).click();
+  await win.locator('.recall .list li', { hasText: 'Zeus' }).waitFor({ state: 'detached' });
+  await win.locator('.seg button', { hasText: '12 months' }).click();
+  await zeus.waitFor();
+});
+
+await step('activity log', async () => {
+  await go('#/settings?tab=activity');
+  // The template saved earlier in this walkthrough, by the Admin.
+  await win.locator('table.activity tr', { hasText: 'Added treatment template' }).first().waitFor();
+  await win.locator('table.activity tr', { hasText: 'Signed in' }).first().waitFor();
+  await shot('settings-activity');
+  await win.getByLabel('What').selectOption('stock');
+  await win.locator('table.activity tr', { hasText: 'Added stock movement' }).first().waitFor();
+  if (await win.locator('table.activity tr', { hasText: 'Signed in' }).count()) throw new Error('filter by kind still shows sign-ins');
+  await win.locator('table.activity tbody tr').first().click();
+  await win.locator('.dialog', { hasText: 'qty' }).waitFor();
+  await win.keyboard.press('Escape');
+});
+
 await step('dark mode', async () => {
   await go('#/');
   await win.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));

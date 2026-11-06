@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -117,6 +117,7 @@ CREATE TABLE pets (
   notes TEXT,
   alert_flags TEXT,
   alert_note TEXT,
+  recall_sent_at TEXT,
   ${ts}
 );
 CREATE INDEX pets_owner ON pets(owner_id);
@@ -347,6 +348,8 @@ export const MIGRATIONS: Record<number, string> = {
     ALTER TABLE price_items ADD COLUMN low_stock REAL;
     ${stockTable}
   `,
+  // v9 (7 Nov 2026): "not seen in a while" list — when the owner was last sent the check-up reminder.
+  9: `ALTER TABLE pets ADD COLUMN recall_sent_at TEXT;`,
 };
 
 /** Tables included in the one-click export, in dependency order. */
