@@ -23,6 +23,8 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - Invoice `total` = Σ `line_total` − `discount`; `status` recomputed on every payment write (`UNPAID` / `PARTIAL` / `PAID`).
 - Vaccination `next_due_at` default = `administered_at + vaccine_types.interval_days`; editable.
 - Dashboard "due" = latest vaccination per (pet, type) with `next_due_at ≤ today + 7d`, pet `ACTIVE`.
+- Reports leave out VOID invoices and their payments, and group days/months in local time (moments are stored UTC). "Taken by" = `payments.received_by`.
+- Patient alerts: `pets.alert_flags` (comma-separated, `ALERT_FLAGS` in `src/db/types.ts`) + `pets.alert_note`; render with `PetAlerts` wherever a pet is handled.
 
 ## Screens (`SCOPE.md §4`) → routes
 Routes are hash routes (`#/owners`) because the app loads from `file://`.
@@ -34,10 +36,13 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/owners`, `/owners/new` | 2 Owners |
 | `/owners/[id]` | 3 Owner detail |
 | `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|files`) | 4 Pet record |
+| `/pets/[id]/certificate` | Vaccination certificate, A5, English + Arabic (change request 6 Nov) |
 | `/pets/[id]/visits/new`, `/visits/[id]/edit` | 5 Visit |
 | `/intake/new`, `/pets/[id]/intake`, `/visits/[id]/intake` | 5a Pre-diagnosis — Assistants, Doctors, Admin (Phase 5 change request; New patient on `/intake/new`; queue on the dashboard) |
 | `/appointments` (`?view=day\|week`) | 6 Appointments |
+| `/reminders` | Reminders: tomorrow's appointments + this week's due vaccinations, each with WhatsApp (change request 6 Nov) |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
+| `/reports` (`?view=day&date=` \| `?view=month&month=`) | Reports — Admin only: end-of-day cash (by method, by staff, payments, open invoices) and monthly (12-month revenue chart, visits by type, top services, who owes money by age) (change request 6 Nov) |
 | `/settings` (clinic, prices, vaccines, users, devices, export, clinic server) | 8 Settings — Admin only |
 | `/account` | Settings for Doctors and Assistants (nav "Settings" for non-Admins): check for updates / restart to update (the auto-update on/off switch stays Admin-only), language, theme, password (`src/screens/MySettings.tsx`) |
 

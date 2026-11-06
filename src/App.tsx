@@ -15,6 +15,7 @@ import { Settings } from './screens/Settings';
 import { MySettings } from './screens/MySettings';
 import { Reminders } from './screens/Reminders';
 import { VaccinationCertificate } from './screens/Certificate';
+import { Reports } from './screens/Reports';
 import { useEffect, type ReactNode } from 'react';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
@@ -72,6 +73,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="invoices/:id" element={<InvoiceDetail />} />
           <Route path="invoices/:id/edit" element={<InvoiceFormPage />} />
           <Route path="invoices/:id/print" element={<InvoicePrint />} />
+          <Route path="reports" element={<AdminOnly><Reports /></AdminOnly>} />
           <Route path="settings" element={<AdminOnly><Settings /></AdminOnly>} />
           <Route path="account" element={<MySettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />

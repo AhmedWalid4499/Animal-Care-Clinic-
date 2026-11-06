@@ -216,6 +216,20 @@ await step('patient alerts, certificate, reminders', async () => {
   await shot('reminders');
 });
 
+// Reports for the Admin: today's cash (the partial payment taken above) and the monthly report.
+await step('reports: end-of-day cash and monthly', async () => {
+  await win.locator('.side .nav a', { hasText: 'Reports' }).click();
+  await win.locator('.tile.main', { hasText: 'Collected' }).waitFor();
+  const rows = await win.locator('.reports table.t').nth(1).locator('tbody tr.link').count();
+  if (rows < 1) throw new Error('no payments in today\'s cash report');
+  await win.locator('.reports table.t', { hasText: 'Dr. Waleed El-Bourgy' }).first().waitFor();
+  await shot('report-day');
+  await win.locator('.reports .tabs button', { hasText: 'Monthly' }).click();
+  await win.locator('.recharts-bar-rectangle >> visible=true').first().waitFor();
+  await win.locator('.reports h2', { hasText: 'Who owes money' }).waitFor();
+  await shot('report-month');
+});
+
 await step('dark mode', async () => {
   await go('#/');
   await win.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));

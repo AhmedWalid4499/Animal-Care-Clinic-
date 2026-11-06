@@ -1,7 +1,7 @@
 // All reads and writes the screens use. Every write runs inside tx() and is audited (CLAUDE.md rules).
 import bcrypt from 'bcryptjs';
 import { all, audit, get, insert, nowIso, run, tx, update, uuid } from './core';
-import { addDays, today, toDateStr } from '../lib/dates';
+import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
   Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
@@ -654,3 +654,82 @@ export function importOwnersPets(rows: ImportRow[]) {
   return result;
 }
 
+
+// ---------------------------------------------------------------- reports (6 Nov 2026 change requests, Admin only)
+// Moments are UTC in the database; days and months are grouped in the clinic's local time (Africa/Cairo) here.
+// Payments and items of VOID invoices are left out everywhere.
+export interface PaymentRow {
+  id: string; invoice_id: string; amount: number; method: PaymentMethod; paid_at: string; reference: string | null;
+  number: string; owner_id: string; owner_name: string; pet_name: string | null; received_by_name: string | null;
+}
+/** Payments taken between two moments, oldest first, with who took each one. */
+export function paymentsBetween(fromIso: string, toIso: string): PaymentRow[] {
+  return all<PaymentRow>(
+    `SELECT p.id, p.invoice_id, p.amount, p.method, p.paid_at, p.reference, i.number, i.owner_id, o.full_name owner_name,
+            pt.name pet_name, u.name received_by_name
+     FROM payments p JOIN invoices i ON i.id = p.invoice_id AND i.status <> 'VOID' JOIN owners o ON o.id = i.owner_id
+       LEFT JOIN pets pt ON pt.id = i.pet_id LEFT JOIN users u ON u.id = p.received_by
+     WHERE p.paid_at >= ? AND p.paid_at < ? ORDER BY p.paid_at`,
+    [fromIso, toIso],
+  );
+}
+/** First day of the month `n` months after `month` ('YYYY-MM'). */
+export function monthAdd(month: string, n: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+/** Local midnight on the 1st of 'YYYY-MM', as an ISO moment. */
+export function monthStartIso(month: string) {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(y, m - 1, 1).toISOString();
+}
+const startOfMonthIso = monthStartIso;
+const localMonth = (iso: string) => localDateOf(iso).slice(0, 7);
+/** Invoiced (non-void totals by issue month) and collected (payments by payment month) for the `n` months ending at `month`. */
+export function revenueByMonth(month: string, n = 12): { month: string; invoiced: number; collected: number }[] {
+  const first = monthAdd(month, -(n - 1));
+  const from = startOfMonthIso(first);
+  const to = startOfMonthIso(monthAdd(month, 1));
+  const out = Array.from({ length: n }, (_, i) => ({ month: monthAdd(first, i), invoiced: 0, collected: 0 }));
+  const at = new Map(out.map((r) => [r.month, r]));
+  for (const i of all<{ issued_at: string; total: number }>("SELECT issued_at, total FROM invoices WHERE status <> 'VOID' AND issued_at >= ? AND issued_at < ?", [from, to])) {
+    const r = at.get(localMonth(i.issued_at));
+    if (r) r.invoiced += i.total;
+  }
+  for (const p of paymentsBetween(from, to)) {
+    const r = at.get(localMonth(p.paid_at));
+    if (r) r.collected += p.amount;
+  }
+  return out;
+}
+/** Finished visits in a period, by type. */
+export function visitsByType(fromIso: string, toIso: string): { type: VisitType; n: number }[] {
+  return all<{ type: VisitType; n: number }>(
+    "SELECT type, COUNT(*) n FROM visits WHERE stage = 'DONE' AND visited_at >= ? AND visited_at < ? GROUP BY type ORDER BY n DESC",
+    [fromIso, toIso],
+  );
+}
+/** Best-selling services and items in a period (invoices not void), by revenue. */
+export function topServices(fromIso: string, toIso: string, limit = 10) {
+  return all<{ name_en: string | null; name_ar: string | null; description: string; qty: number; revenue: number }>(
+    `SELECT pi.name_en, pi.name_ar, MIN(ii.description) description, SUM(ii.qty) qty, SUM(ii.line_total) revenue
+     FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id AND i.status <> 'VOID'
+       LEFT JOIN price_items pi ON pi.id = ii.price_item_id
+     WHERE i.issued_at >= ? AND i.issued_at < ?
+     GROUP BY COALESCE(ii.price_item_id, lower(trim(ii.description)))
+     ORDER BY revenue DESC LIMIT ?`,
+    [fromIso, toIso, limit],
+  );
+}
+export interface AgingRow { owner_id: string; owner_name: string; phone: string; whatsapp: string | null; balance: number; oldest: string; invoices: number }
+/** Owners who owe money, oldest debt first: balance of their open invoices and the date of the oldest one. */
+export function ownersOwing(): AgingRow[] {
+  return all<AgingRow>(
+    `SELECT o.id owner_id, o.full_name owner_name, o.phone, o.whatsapp, COUNT(*) invoices, MIN(i.issued_at) oldest,
+            SUM(i.total - COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0)) balance
+     FROM invoices i JOIN owners o ON o.id = i.owner_id
+     WHERE i.status IN ('UNPAID','PARTIAL')
+     GROUP BY o.id HAVING balance > 0 ORDER BY oldest`,
+  );
+}
