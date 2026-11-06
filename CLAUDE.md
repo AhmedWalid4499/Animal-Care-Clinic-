@@ -30,12 +30,13 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - Expenses (schema v10, Admin only in `server/rules.mjs`): `expenses` (local date `spent_at`, piastres, `status` ACTIVE/VOID, never deleted); Reports → Expenses; monthly report profit = payments collected − active expenses.
 - Lab results (schema v11, `lab_results`, clinical: Admin + Doctor): one row per value with the range used (`ref_low`/`ref_high`); no ranges are built in — a new row takes the last unit/range used for that analyte (same species first); flagged H/L and charted per analyte (`src/screens/Labs.tsx`). Corrections update the row (audit keeps the old value).
 - Consent forms (schema v11, `consents`): bilingual text in i18n `consent.text.*` (wording to be confirmed by Dr. Waleed), signature = PNG data URL; any role may record one, nobody may change it (`server/rules.mjs`); listed in the pet's Files tab.
+- In-patients (schema v12): `admissions` (IN/OUT, never deleted) + `care_tasks` (one row per treatment time, DUE/DONE/SKIPPED). Admin + Doctor admit, add treatments and discharge; an Assistant may only tick a task (status/done_at/done_by = self/note, `server/rules.mjs`). Overdue = DUE more than 10 min past `due_at`: red on `/ward`, a note on the dashboard, and `WardWatcher` (mounted in `Layout`) toasts + raises a system notification once per task per computer.
 - Patient alerts: `pets.alert_flags` (comma-separated, `ALERT_FLAGS` in `src/db/types.ts`) + `pets.alert_note`; render with `PetAlerts` wherever a pet is handled.
 
 ## Screens (`SCOPE.md §4`) → routes
 Routes are hash routes (`#/owners`) because the app loads from `file://`.
 
-Sidebar (7 Nov 2026, at Ahmed's request): Dashboard · Owners · Appointments · **Pricing** (`/invoices`, `/reports`, `/prices`, with tabs on top: `PricingTabs` in `src/components/Sections.tsx`) · **Stock** (`/stock`, `/stock/vaccines`, `/stock/drugs`: `StockTabs`) · **Treatment templates** (`/templates`, Admin + Doctor) · Settings. Old `/settings?tab=prices|vaccines|drugs|templates` links redirect.
+Sidebar (7 Nov 2026, at Ahmed's request): Dashboard · Owners · Appointments · **Pricing** (`/invoices`, `/reports`, `/prices`, with tabs on top: `PricingTabs` in `src/components/Sections.tsx`) · **In-patients** (`/ward`) · **Stock** (`/stock`, `/stock/vaccines`, `/stock/drugs`: `StockTabs`) · **Treatment templates** (`/templates`, Admin + Doctor) · Settings. Old `/settings?tab=prices|vaccines|drugs|templates` links redirect.
 
 | Route | Screen |
 |---|---|
@@ -52,6 +53,7 @@ Sidebar (7 Nov 2026, at Ahmed's request): Dashboard · Owners · Appointments ·
 | `/appointments` (`?view=day\|week`) | 6 Appointments |
 | `/reminders` (`?tab=recall`) | Reminders: tomorrow's appointments + this week's due vaccinations, each with WhatsApp (change request 6 Nov). Tab "Not seen in a while": active pets with no visit in 6/12/18/24 months and nothing booked, WhatsApp check-up reminder stamps `pets.recall_sent_at` (schema v9, change request 7 Nov) |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
+| `/ward` | In-patients: admitted animals with timed treatments, ticked by anyone (change request 7 Nov) |
 | `/stock` | Stock — everyone sees levels and history; Admin restocks and corrects counts (change request 6 Nov) |
 | `/stock/vaccines`, `/stock/drugs` | Vaccine catalogue and drug list (Admin), moved from Settings 7 Nov |
 | `/prices` | Price list (Admin), under Pricing, moved from Settings 7 Nov |

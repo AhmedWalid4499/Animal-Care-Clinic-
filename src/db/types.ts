@@ -85,6 +85,14 @@ export interface Consent {
   id: string; pet_id: string; visit_id: string | null; procedure: string; anaesthesia: number; estimate: number | null; notes: string | null;
   signer_name: string; signature: string; signed_at: string; user_id: string | null; created_at: string;
 }
+export interface Admission {
+  id: string; pet_id: string; visit_id: string | null; admitted_at: string; reason: string | null; cage: string | null; vet_id: string | null;
+  status: 'IN' | 'OUT'; discharged_at: string | null; discharge_note: string | null; user_id: string | null; created_at: string;
+}
+export type CareTaskStatus = 'DUE' | 'DONE' | 'SKIPPED';
+export interface CareTask {
+  id: string; admission_id: string; task: string; due_at: string; status: CareTaskStatus; done_at: string | null; done_by: string | null; note: string | null;
+}
 export const EXPENSE_CATEGORIES = ['RENT', 'SALARIES', 'SUPPLIES', 'UTILITIES', 'EQUIPMENT', 'MAINTENANCE', 'MARKETING', 'OTHER'] as const;
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
 export interface Expense {

@@ -433,7 +433,8 @@ await step('notify: visits', async () => {
   const notBookedToday = `SELECT id, data FROM rows p WHERE tbl = 'pets' AND NOT deleted AND NOT EXISTS (SELECT 1 FROM rows a WHERE a.tbl = 'appointments' AND a.data->>'pet_id' = p.id
     AND ((a.data->>'scheduled_at')::timestamptz AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date) ORDER BY id LIMIT 2`;
   const [booked, walkIn] = (await pool.query(notBookedToday)).rows;
-  const today = new Date(Date.now() + 5 * 60_000).toISOString();
+  // Booked for right now (not a few minutes ahead, which near midnight Cairo time would already be tomorrow).
+  const today = new Date().toISOString();
   const ap = crypto.randomUUID();
   await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: ap, op: 'upsert', at: nowIso(), cols: { id: ap, pet_id: booked.id, owner_id: booked.data.owner_id, scheduled_at: today, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED', created_at: nowIso(), updated_at: nowIso() } }] }, tokens.desk);
   for (const p of [booked, walkIn]) {
@@ -614,6 +615,28 @@ await step('lab results and consent forms: who may change them', async () => {
   check('labs-consent-rules', 'Doctors record lab results, assistants cannot; anyone records a signed consent form, nobody changes it afterwards',
     deskLab.rejected.length === 1 && docLab.rejected.length === 0 && deskConsent.rejected.length === 0 && adminEdit.rejected.length === 1,
     `assistant lab result: ${deskLab.rejected[0]?.reason ?? 'ACCEPTED'}; doctor lab result: ${docLab.rejected.length ? 'REFUSED' : 'accepted'}; assistant consent: ${deskConsent.rejected.length ? 'REFUSED' : 'accepted'}; admin edits the signed form: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('in-patient board: who may change what', async () => {
+  // Schema v12. Vets admit and plan treatments; an assistant only ticks a treatment as given (in their own name).
+  const at = nowIso();
+  const adm = crypto.randomUUID();
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const admission = { tbl: 'admissions', id: adm, op: 'upsert', at, cols: { id: adm, pet_id: crypto.randomUUID(), admitted_at: at, status: 'IN', created_at: at, updated_at: at } };
+  const task = (id) => ({ tbl: 'care_tasks', id, op: 'upsert', at, cols: { id, admission_id: adm, task: 'Fluids', due_at: at, status: 'DUE', created_at: at, updated_at: at } });
+  const deskAdmit = await push({ ...admission, id: crypto.randomUUID(), cols: { ...admission.cols, id: undefined } }, 'desk');
+  const docAdmit = await push(admission, 'doctor');
+  const tid = crypto.randomUUID();
+  const deskTask = await push(task(crypto.randomUUID()), 'desk');
+  await push(task(tid), 'doctor');
+  const users = (await api('/api/sync/pull?since=0&limit=5000', null, tokens.admin)).body.rows.filter((r) => r.tbl === 'users');
+  const deskId = users.find((u) => u.data?.email === 'desk@test.local')?.id;
+  const later = new Date(Date.now() + 1000).toISOString();
+  const tick = await push({ tbl: 'care_tasks', id: tid, op: 'upsert', at: later, cols: { status: 'DONE', done_at: later, done_by: deskId, updated_at: later } }, 'desk');
+  const rename = await push({ tbl: 'care_tasks', id: tid, op: 'upsert', at: later, cols: { task: 'Something else', updated_at: later } }, 'desk');
+  check('ward-rules', 'Doctors admit and plan treatments; an assistant can only tick a treatment as given',
+    deskAdmit.rejected.length === 1 && docAdmit.rejected.length === 0 && deskTask.rejected.length === 1 && tick.rejected.length === 0 && rename.rejected.length === 1,
+    `assistant admits: ${deskAdmit.rejected[0]?.reason ?? 'ACCEPTED'}; doctor admits: ${docAdmit.rejected.length ? 'REFUSED' : 'accepted'}; assistant adds a treatment: ${deskTask.rejected[0]?.reason ?? 'ACCEPTED'}; assistant ticks it given: ${tick.rejected[0]?.reason ?? 'accepted'}; assistant renames it: ${rename.rejected[0]?.reason ?? 'ACCEPTED'}`);
 });
 
 await step('expenses: admin only', async () => {

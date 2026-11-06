@@ -4,7 +4,7 @@ import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Consent, Drug, Expense, ExpenseCategory, LabResult, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, LabResult, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -1009,3 +1009,56 @@ const consentSql = `SELECT c.*, u.name user_name, p.name pet_name, p.species, o.
   FROM consents c JOIN pets p ON p.id = c.pet_id JOIN owners o ON o.id = p.owner_id LEFT JOIN users u ON u.id = c.user_id`;
 export const getConsent = (id: string) => get<ConsentRow>(`${consentSql} WHERE c.id = ?`, [id]);
 export const petConsents = (petId: string) => all<ConsentRow>(`${consentSql} WHERE c.pet_id = ? ORDER BY c.signed_at DESC`, [petId]);
+
+// ---------------------------------------------------------------- in-patient board (7 Nov 2026 change request)
+export interface WardTask extends CareTask { done_by_name: string | null }
+export interface WardRow extends Admission {
+  pet_name: string; species: Species; alert_flags: string | null; alert_note: string | null; owner_name: string; owner_phone: string;
+  vet_name: string | null; tasks: WardTask[];
+}
+export function admitPet(d: { pet_id: string; visit_id?: string | null; reason: string; cage: string; vet_id: string | null }, userId: string | null): string {
+  return tx(() => insert('admissions', {
+    pet_id: d.pet_id, visit_id: d.visit_id ?? null, admitted_at: nowIso(), reason: blank(d.reason), cage: blank(d.cage), vet_id: d.vet_id, status: 'IN', user_id: userId,
+  }));
+}
+/** A treatment at `first_at`, repeated every `every_hours` for `times` doses: one task row per time. */
+export function addCareTasks(admissionId: string, d: { task: string; first_at: string; every_hours: number | null; times: number }): number {
+  const n = d.every_hours ? Math.max(1, Math.min(60, Math.round(d.times))) : 1;
+  const start = new Date(d.first_at).getTime();
+  tx(() => {
+    for (let i = 0; i < n; i++) {
+      insert('care_tasks', { admission_id: admissionId, task: d.task.trim(), due_at: new Date(start + i * (d.every_hours ?? 0) * 3600_000).toISOString(), status: 'DUE' });
+    }
+  });
+  return n;
+}
+export function tickTask(id: string, status: CareTaskStatus, userId: string | null, note?: string) {
+  tx(() => update('care_tasks', id, status === 'DUE' ? { status, done_at: null, done_by: null } : { status, done_at: nowIso(), done_by: userId, ...(note ? { note } : {}) }));
+}
+export function dischargePet(id: string, note: string) {
+  tx(() => {
+    update('admissions', id, { status: 'OUT', discharged_at: nowIso(), discharge_note: blank(note) });
+    // Treatments not given by then are left as they are (DUE) on the record: the board only shows admitted pets.
+  });
+}
+export function wardBoard(): WardRow[] {
+  const rows = all<Omit<WardRow, 'tasks'>>(
+    `SELECT a.*, p.name pet_name, p.species, p.alert_flags, p.alert_note, o.full_name owner_name, o.phone owner_phone, u.name vet_name
+     FROM admissions a JOIN pets p ON p.id = a.pet_id JOIN owners o ON o.id = p.owner_id LEFT JOIN users u ON u.id = a.vet_id
+     WHERE a.status = 'IN' ORDER BY a.cage IS NULL, a.cage, a.admitted_at`,
+  );
+  if (!rows.length) return [];
+  const tasks = all<WardTask>(
+    `SELECT t.*, u.name done_by_name FROM care_tasks t JOIN admissions a ON a.id = t.admission_id LEFT JOIN users u ON u.id = t.done_by
+     WHERE a.status = 'IN' ORDER BY t.due_at`,
+  );
+  return rows.map((r) => ({ ...r, tasks: tasks.filter((t) => t.admission_id === r.id) }));
+}
+/** Treatments still not given `graceMin` minutes after they were due, for admitted pets. */
+export const overdueTasks = (graceMin = 10) =>
+  all<WardTask & { pet_name: string; cage: string | null }>(
+    `SELECT t.*, NULL done_by_name, p.name pet_name, a.cage FROM care_tasks t JOIN admissions a ON a.id = t.admission_id JOIN pets p ON p.id = a.pet_id
+     WHERE a.status = 'IN' AND t.status = 'DUE' AND t.due_at < ? ORDER BY t.due_at`,
+    [new Date(Date.now() - graceMin * 60_000).toISOString()],
+  );
+export const petAdmission = (petId: string) => get<Admission>("SELECT * FROM admissions WHERE pet_id = ? AND status = 'IN'", [petId]);

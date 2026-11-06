@@ -4,7 +4,7 @@ import { get } from '../db/core';
 import { saveNotifyOff } from '../db/repo';
 import type { User } from '../db/types';
 import { isDesktop, platform } from '../lib/platform';
-import { serverUrl } from '../sync/engine';
+import { onRefused, serverUrl } from '../sync/engine';
 import {
   NOTIFY_KINDS, enablePush, markRead, onArrival, pushPermission, pushSupported, routeFor, useNotifications,
   type ClinicNotification, type NotifyKind,
@@ -146,6 +146,16 @@ export function NotificationBell({ floating }: { floating?: boolean }) {
       )}
     </div>
   );
+}
+
+/** The clinic server refused one of this computer's changes: say what and why (it was undone here). */
+export function RefusedAnnouncer() {
+  const { t, toast } = useApp();
+  useEffect(() => onRefused((list) => {
+    const first = list[0];
+    toast(`⚠ ${t('sync.refusedToast', { what: t(`activity.table.${first.tbl}`), reason: first.reason })}${list.length > 1 ? ` (+${list.length - 1})` : ''}`);
+  }), [t, toast]);
+  return null;
 }
 
 /** New arrivals: a toast in the app, and a system notification when the desktop window is hidden or in the tray. */

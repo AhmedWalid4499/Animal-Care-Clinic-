@@ -332,6 +332,35 @@ await step('expenses and profit', async () => {
   await shot('report-month-profit');
 });
 
+// In-patient board (7 Nov 2026). Demo: Rocky in cage A1 with an overdue fluids change.
+await step('in-patient board', async () => {
+  await go('#/');
+  await win.locator('.ward-note', { hasText: 'Rocky' }).waitFor();
+  await win.locator('.ward-note', { hasText: '1 treatment(s) overdue' }).waitFor();
+  await win.locator('.side .nav a', { hasText: 'In-patients' }).click();
+  const rocky = win.locator('.ward-card', { hasText: 'Rocky' });
+  await rocky.locator('li.overdue', { hasText: 'IV fluids bag change' }).waitFor();
+  await shot('ward');
+  await rocky.locator('li.overdue').getByRole('button', { name: 'Given' }).click();
+  await rocky.locator('li.overdue').waitFor({ state: 'detached' });
+  // Admit Max for the night with a treatment every 12 hours, three times.
+  await win.getByRole('button', { name: 'Admit a patient' }).click();
+  await win.locator('.dialog .searchbox input').fill('Max');
+  await win.locator('.dialog .picker button', { hasText: 'Max' }).first().click();
+  await win.locator('.dialog').getByLabel('Cage').fill('B2');
+  await win.locator('.dialog .btn.primary').click();
+  const max = win.locator('.ward-card', { hasText: 'Max' });
+  await max.getByRole('button', { name: 'Add treatment' }).click();
+  await win.locator('.dialog').getByLabel('Treatment').fill('Meloxicam 0.6 ml by mouth');
+  await win.locator('.dialog').getByLabel('Repeat').selectOption('12');
+  await win.locator('.dialog .btn.primary').click();
+  if ((await max.locator('.tasks li', { hasText: 'Meloxicam' }).count()) !== 3) throw new Error('three treatment times expected');
+  await shot('ward-two-patients');
+  await max.getByRole('button', { name: 'Discharge' }).click();
+  await win.locator('.dialog .btn.primary').click();
+  await max.waitFor({ state: 'detached' });
+});
+
 // Lab results and the consent form (7 Nov 2026).
 await step('lab results with trend', async () => {
   await go('#/owners');
