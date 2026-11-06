@@ -39,6 +39,7 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/appointments` (`?view=day\|week`) | 6 Appointments |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
 | `/settings` (clinic, prices, vaccines, users, devices, export, clinic server) | 8 Settings — Admin only |
+| `/account` | Settings for Doctors and Assistants (nav "Settings" for non-Admins): check for updates / restart to update (the auto-update on/off switch stays Admin-only), language, theme, password (`src/screens/MySettings.tsx`) |
 
 ## The one integration
 WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in `lib/whatsapp.ts` (AR/EN): vaccination reminder, appointment reminder, invoice balance. Set `reminder_sent_at` when the button is clicked. **No WhatsApp Business API** — out of scope.
