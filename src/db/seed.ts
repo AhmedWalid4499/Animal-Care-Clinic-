@@ -145,6 +145,13 @@ export function seedDemo() {
     insert('prescriptions', { visit_id: lv3, drug: 'Metoclopramide', dose: '0.5 ml', frequency: 'Twice daily', duration_days: 5, instructions: 'Before food' });
     insert('prescriptions', { visit_id: lv3, drug: 'Probiotic paste', dose: '1 g', frequency: 'Once daily', duration_days: 7 });
     visit(luna, 30, 'CHECKUP', { weight_kg: 4.2, temperature_c: 38.5, complaint: 'Weight check', diagnosis: 'Good recovery' });
+    // Lab results (demo values and ranges, not clinical guidance): kidney panel at the emergency and a month ago.
+    const lab = (daysAgo: number, analyte: string, value: number, unit: string, lo: number, hi: number) =>
+      insert('lab_results', { pet_id: luna, visit_id: daysAgo === 150 ? lv3 : null, taken_at: addDays(t, -daysAgo), panel: 'Kidney panel (demo)', analyte, value, unit, ref_low: lo, ref_high: hi, user_id: vetId });
+    lab(150, 'Creatinine', 2.6, 'mg/dL', 0.8, 2.4);
+    lab(150, 'BUN', 38, 'mg/dL', 16, 36);
+    lab(30, 'Creatinine', 1.9, 'mg/dL', 0.8, 2.4);
+    lab(30, 'BUN', 30, 'mg/dL', 16, 36);
 
     const mv = visit(max, 90, 'VACCINATION', { weight_kg: 31.5, temperature_c: 38.7 });
     vacc(max, mv, 'Deworming', 88, 90); // due in 2 days

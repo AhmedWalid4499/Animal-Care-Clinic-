@@ -18,6 +18,7 @@ import { VaccinationCertificate } from './screens/Certificate';
 import { Reports } from './screens/Reports';
 import { StockPage } from './screens/Stock';
 import { PrescriptionPrint } from './screens/Prescription';
+import { ConsentNew, ConsentView } from './screens/Consent';
 import { DrugsPage, PricesPage, TemplatesPage, VaccinesPage } from './components/Sections';
 import { useEffect, type ReactNode } from 'react';
 import { ForcedPasswordChange } from './components/Account';
@@ -63,6 +64,8 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="pets/:id/edit" element={<PetFormPage />} />
           <Route path="pets/:id/print" element={<PetSummaryPrint />} />
           <Route path="pets/:id/certificate" element={<VaccinationCertificate />} />
+          <Route path="pets/:id/consent/new" element={<ConsentNew />} />
+          <Route path="consents/:id" element={<ConsentView />} />
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
           <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />

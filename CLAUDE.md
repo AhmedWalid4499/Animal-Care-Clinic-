@@ -28,6 +28,8 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - Stock (schema v8): price items with `track_stock` are counted; `stock_moves` is append-only and on hand = Σ `qty`. Invoices reconcile their own moves in `syncInvoiceStock` (`repo.ts`) on every save and void, so never write INVOICE moves elsewhere. Restock / count correction are Admin only (`server/rules.mjs`); the dashboard shows "Running low" at or below `low_stock`.
 - Stock batches (schema v10): a RESTOCK move may carry `batch_no` + `expires_at`; `batchesInStock()` assumes first in, first out (on hand is taken from the newest deliveries) to say which batches are probably still on the shelf; Stock and the dashboard warn 30 days before expiry; the visit form suggests in-stock vaccine batch numbers.
 - Expenses (schema v10, Admin only in `server/rules.mjs`): `expenses` (local date `spent_at`, piastres, `status` ACTIVE/VOID, never deleted); Reports → Expenses; monthly report profit = payments collected − active expenses.
+- Lab results (schema v11, `lab_results`, clinical: Admin + Doctor): one row per value with the range used (`ref_low`/`ref_high`); no ranges are built in — a new row takes the last unit/range used for that analyte (same species first); flagged H/L and charted per analyte (`src/screens/Labs.tsx`). Corrections update the row (audit keeps the old value).
+- Consent forms (schema v11, `consents`): bilingual text in i18n `consent.text.*` (wording to be confirmed by Dr. Waleed), signature = PNG data URL; any role may record one, nobody may change it (`server/rules.mjs`); listed in the pet's Files tab.
 - Patient alerts: `pets.alert_flags` (comma-separated, `ALERT_FLAGS` in `src/db/types.ts`) + `pets.alert_note`; render with `PetAlerts` wherever a pet is handled.
 
 ## Screens (`SCOPE.md §4`) → routes
@@ -41,7 +43,8 @@ Sidebar (7 Nov 2026, at Ahmed's request): Dashboard · Owners · Appointments ·
 | `/` | 1 Dashboard |
 | `/owners`, `/owners/new` | 2 Owners |
 | `/owners/[id]` | 3 Owner detail |
-| `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|files`) | 4 Pet record |
+| `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|labs\|files`) | 4 Pet record (Lab results tab: change request 7 Nov) |
+| `/pets/[id]/consent/new`, `/consents/[id]` | Consent form signed on screen, A5 English + Arabic (change request 7 Nov) |
 | `/pets/[id]/certificate` | Vaccination certificate, A5, English + Arabic (change request 6 Nov) |
 | `/pets/[id]/visits/new`, `/visits/[id]/edit` | 5 Visit |
 | `/visits/[id]/prescription` | Prescription for the owner, A5, Arabic or English (chosen on the sheet, not the app language) + WhatsApp text (change request 7 Nov) |

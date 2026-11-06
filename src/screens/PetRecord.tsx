@@ -4,17 +4,17 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useApp, useQuery } from '../lib/app';
 import {
   addAttachment, getAttachmentBytes, getPet, getSettings, lastWeight, markVaccinationReminded, petAppointments, petAttachments,
-  petVaccinations, petVisits, petWeights, visitInvoice,
-} from '../db/repo';
+  petVaccinations, petVisits, petWeights, visitInvoice, petConsents } from '../db/repo';
 import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
 import { Badge, Field, Icon, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { LabsTab } from './Labs';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 
-type Tab = 'timeline' | 'vaccinations' | 'weight' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'weight' | 'labs' | 'files';
 
 export function PetRecord() {
   const { id = '' } = useParams();
@@ -38,6 +38,7 @@ export function PetRecord() {
         />
         <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
         <button className="btn" onClick={() => nav(`/pets/${id}/certificate`)}><Icon name="print" /> {t('certificate.button')}</button>
+        {pet.status === 'ACTIVE' && <button className="btn" onClick={() => nav(`/pets/${id}/consent/new`)}><Icon name="edit" /> {t('consent.button')}</button>}
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
         {canIntake && pet.status === 'ACTIVE' && (
           <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
@@ -78,7 +79,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'weight', 'files'] as Tab[]).map((k) => (
+        {(['timeline', 'vaccinations', 'weight', 'labs', 'files'] as Tab[]).map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -88,6 +89,7 @@ export function PetRecord() {
         {tab === 'timeline' && <Timeline petId={id} />}
         {tab === 'vaccinations' && <Vaccinations petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
+        {tab === 'labs' && <LabsTab petId={id} />}
         {tab === 'files' && <Files petId={id} />}
       </div>
     </div>
@@ -248,6 +250,8 @@ function WeightChart({ petId }: { petId: string }) {
 function Files({ petId }: { petId: string }) {
   const { t, fmt, user, toast } = useApp();
   const files = useQuery(() => petAttachments(petId), [petId]);
+  const consents = useQuery(() => petConsents(petId), [petId]);
+  const nav = useNavigate();
   const [kind, setKind] = useState<AttachmentKind>('LAB');
   const [fetching, setFetching] = useState<string | null>(null);
   const upload = async () => {
@@ -262,6 +266,19 @@ function Files({ petId }: { petId: string }) {
   };
   return (
     <div>
+      {consents.length > 0 && (
+        <section className="section consents">
+          <header><h2>✍ {t('consent.signedForms')}</h2><span className="count">{consents.length}</span></header>
+          <ul className="list">
+            {consents.map((c) => (
+              <li key={c.id} className="link" onClick={() => nav(`/consents/${c.id}`)}>
+                <div className="main-col"><b>{c.procedure}</b><div className="sub">{fmt.dateTime(c.signed_at)} · {c.signer_name}</div></div>
+                <Icon name="print" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="row" style={{ margin: '14px 0' }}>
         <Field label={t('petRecord.kind')}>
           <select value={kind} onChange={(e) => setKind(e.target.value as AttachmentKind)}>

@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -59,6 +59,40 @@ const expensesTable = `CREATE TABLE IF NOT EXISTS expenses (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS expenses_date ON expenses(spent_at);`;
+// Schema v11 (7 Nov 2026): lab results (one row per value, with the reference range used, so trends can be charted) and
+// signed consent forms (append-only: a signed form is never changed; the signature is a PNG data URL).
+const clinicalDocs = `CREATE TABLE IF NOT EXISTS lab_results (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  taken_at TEXT NOT NULL,
+  panel TEXT,
+  analyte TEXT NOT NULL,
+  value REAL,
+  value_text TEXT,
+  unit TEXT,
+  ref_low REAL,
+  ref_high REAL,
+  note TEXT,
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS lab_results_pet ON lab_results(pet_id, taken_at);
+CREATE TABLE IF NOT EXISTS consents (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  procedure TEXT NOT NULL,
+  anaesthesia INTEGER NOT NULL DEFAULT 1,
+  estimate INTEGER,
+  notes TEXT,
+  signer_name TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  signed_at TEXT NOT NULL,
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS consents_pet ON consents(pet_id);`;
 const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -295,6 +329,7 @@ ${calcTables}
 ${stockTable}
 ${stockBatchCols}
 ${expensesTable}
+${clinicalDocs}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -375,12 +410,14 @@ export const MIGRATIONS: Record<number, string> = {
     ${stockBatchCols}
     ${expensesTable}
   `,
+  // v11 (7 Nov 2026): lab results, signed consent forms.
+  11: clinicalDocs,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */

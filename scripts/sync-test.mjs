@@ -599,6 +599,23 @@ await step('stock moves: who may add them', async () => {
     `assistant invoice move: ${deskInvoice.rejected[0]?.reason ?? 'accepted'}; assistant move without invoice: ${deskBare.rejected[0]?.reason ?? 'ACCEPTED'}; assistant restock: ${deskRestock.rejected[0]?.reason ?? 'ACCEPTED'}; doctor correction: ${docAdjust.rejected[0]?.reason ?? 'ACCEPTED'}; admin restock: ${adminRestock.rejected[0]?.reason ?? 'accepted'}; admin edits it later: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
 });
 
+await step('lab results and consent forms: who may change them', async () => {
+  // Schema v11. Lab results are clinical (vets); a signed consent form can be recorded by anyone but never changed.
+  const at = nowIso();
+  const pet = crypto.randomUUID();
+  const lab = (id) => ({ tbl: 'lab_results', id, op: 'upsert', at, cols: { id, pet_id: pet, taken_at: at.slice(0, 10), analyte: 'Creatinine', value: 1.2, created_at: at, updated_at: at } });
+  const consent = (id, procedure = 'Spay') => ({ tbl: 'consents', id, op: 'upsert', at, cols: { id, pet_id: pet, procedure, anaesthesia: 1, signer_name: 'Owner', signature: 'data:image/png;base64,AAAA', signed_at: at, created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskLab = await push(lab(crypto.randomUUID()), 'desk');
+  const docLab = await push(lab(crypto.randomUUID()), 'doctor');
+  const cid = crypto.randomUUID();
+  const deskConsent = await push(consent(cid), 'desk');
+  const adminEdit = await push(consent(cid, 'Something else'), 'admin');
+  check('labs-consent-rules', 'Doctors record lab results, assistants cannot; anyone records a signed consent form, nobody changes it afterwards',
+    deskLab.rejected.length === 1 && docLab.rejected.length === 0 && deskConsent.rejected.length === 0 && adminEdit.rejected.length === 1,
+    `assistant lab result: ${deskLab.rejected[0]?.reason ?? 'ACCEPTED'}; doctor lab result: ${docLab.rejected.length ? 'REFUSED' : 'accepted'}; assistant consent: ${deskConsent.rejected.length ? 'REFUSED' : 'accepted'}; admin edits the signed form: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
 await step('expenses: admin only', async () => {
   // Schema v10. The clinic's own spending (rent, salaries…) is the Admin's, like the reports that show it.
   const at = nowIso();
