@@ -512,6 +512,45 @@ await step('phase5: pre-diagnosis', async () => {
     `vet's notification: ${note?.event ?? 'none'}; in the vet's queue as emergency: ${!!inQueue.v}; doctor's laptop shows "with the vet": ${!!withVet.v}; visit form shows complaint "${shown}", heart rate ${hrShown}; saved as one visit (${visits}), stage ${v.stage}, vet = admin: ${v.vet_id === adminId}, intake by the doctor: ${v.intake_by === doctorId}, temperature corrected to ${v.temperature_c}; invoice offered: ${invoiceOffered}; queue empty after: ${!!emptied.v}; "visit recorded" sent at intake: ${earlyVisitNote}`);
 });
 
+await step('phase5: assistant pre-diagnosis', async () => {
+  // The front desk (an Assistant) registers a new patient and sends the pre-diagnosis, as the app's "New patient" does:
+  // owner + pet + a visit that only waits for the vet, in one push.
+  const deskId = (await pool.query("SELECT id FROM rows WHERE tbl = 'users' AND data->>'email' = 'desk@test.local'")).rows[0].id;
+  const [o, p, v] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  const at = nowIso();
+  const push = (changes, who = 'desk') => api('/api/sync/push', { changes }, tokens[who]).then((r) => r.body);
+  const sent = await push([
+    { tbl: 'owners', id: o, op: 'upsert', at, cols: { id: o, full_name: 'Hoda Sami', phone: '01099887766', status: 'ACTIVE', created_at: at, updated_at: at } },
+    { tbl: 'pets', id: p, op: 'upsert', at, cols: { id: p, owner_id: o, name: 'Simba', species: 'CAT', sex: 'UNKNOWN', is_neutered: 0, dob_is_estimate: 0, status: 'ACTIVE', created_at: at, updated_at: at } },
+    { tbl: 'visits', id: v, op: 'upsert', at, cols: {
+      id: v, pet_id: p, type: 'CHECKUP', stage: 'WAITING', vet_id: null, visited_at: at, intake_by: deskId, intake_at: at, complaint: 'Not eating for two days',
+      urgency: 'SOON', heart_rate: 150, diagnosis: null, treatment_notes: null, follow_up_at: null, invoice_id: null, created_at: at, updated_at: at } },
+  ]);
+  // The vets are told; the assistant is not told about their own patient.
+  const docNote = await until(async () => (await notesFor('doctor')).find((n) => n.kind === 'queue' && n.data.visit_id === v), 10_000);
+  const adminNote = (await notesFor('admin')).find((n) => n.kind === 'queue' && n.data.visit_id === v);
+  const ownNote = (await notesFor('desk')).filter((n) => n.kind === 'queue' && n.data.visit_id === v).length;
+  // The doctor's laptop (B) shows the patient in the queue, sent by Reception.
+  await go(B, '#/');
+  const onB = await until(async () => (await B.win.locator('.section.queue li', { hasText: 'Simba' }).count()) === 1, 10_000, 200);
+  const byShown = onB.v ? await B.win.locator('.section.queue li', { hasText: 'Simba' }).innerText() : '';
+  await B.win.screenshot({ path: path.join(out, 'B-queue-from-assistant.png') });
+  // While waiting the assistant may correct the intake, but not write a diagnosis.
+  const fix = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { heart_rate: 140, intake_notes: 'Owner says vomited once', updated_at: nowIso() } }]);
+  const diag = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { diagnosis: 'Hairball', updated_at: nowIso() } }]);
+  const rx = crypto.randomUUID();
+  const presc = await push([{ tbl: 'prescriptions', id: rx, op: 'upsert', at: nowIso(), cols: { id: rx, visit_id: v, drug: 'Maropitant', created_at: nowIso(), updated_at: nowIso() } }]);
+  // Once the doctor takes the patient, the pre-diagnosis is the doctor's.
+  await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { stage: 'WITH_VET', vet_id: doctorId, updated_at: nowIso() } }], 'doctor');
+  const late = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { complaint: 'Changed later', updated_at: nowIso() } }]);
+  const row = (await pool.query("SELECT data FROM rows WHERE tbl = 'visits' AND id = $1", [v])).rows[0]?.data ?? {};
+  check('assistant-intake', 'An Assistant records the pre-diagnosis for a new patient; the doctor and the admin are notified and see it in the queue; diagnosis and prescriptions stay with the vets',
+    sent.rejected.length === 0 && !!docNote.v && !!adminNote && ownNote === 0 && !!onB.v && /Reception/.test(byShown) &&
+      fix.rejected.length === 0 && diag.rejected.length === 1 && presc.rejected.length === 1 && late.rejected.length === 1 &&
+      row.stage === 'WITH_VET' && row.intake_by === deskId && Number(row.heart_rate) === 140 && row.diagnosis == null && row.complaint === 'Not eating for two days',
+    `new patient + pre-diagnosis accepted: ${sent.rejected.length === 0}; doctor notified: ${docNote.v ? docNote.v.event : 'no'}, admin: ${adminNote ? adminNote.event : 'no'}, assistant about own patient: ${ownNote}; in the doctor's queue: ${!!onB.v} ("${byShown.replace(/\s+/g, ' ').trim()}"); correction while waiting accepted: ${fix.rejected.length === 0}; diagnosis refused: ${diag.rejected[0]?.reason ?? 'NO'}; prescription refused: ${presc.rejected[0]?.reason ?? 'NO'}; edit after the doctor took it refused: ${late.rejected[0]?.reason ?? 'NO'}`);
+});
+
 await step('phase5: password reset', async () => {
   await go(A, '#/settings?tab=users');
   await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();

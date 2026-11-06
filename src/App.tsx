@@ -28,6 +28,13 @@ function ClinicalOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// Pre-diagnosis: Assistants too (they send the patient to the vet; the diagnosis stays with Admins and Doctors).
+function IntakeAllowed({ children }: { children: ReactNode }) {
+  const { canIntake, t } = useApp();
+  if (!canIntake) return <div className="page"><p className="note warn">{t('visits.vetOnly')}</p></div>;
+  return <>{children}</>;
+}
+
 /** Routes follow CLAUDE.md "Screens → routes". HashRouter because the desktop app loads from file://. */
 export function App({ firstRun }: { firstRun: boolean }) {
   const { user, setUser } = useApp();
@@ -51,9 +58,9 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
           <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
-          <Route path="intake/new" element={<ClinicalOnly><VisitPickPet intake /></ClinicalOnly>} />
-          <Route path="pets/:petId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />
-          <Route path="visits/:visitId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />
+          <Route path="intake/new" element={<IntakeAllowed><VisitPickPet intake /></IntakeAllowed>} />
+          <Route path="pets/:petId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />
+          <Route path="visits/:visitId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />
           <Route path="appointments" element={<Appointments />} />
           <Route path="invoices" element={<InvoicesList />} />
           <Route path="invoices/new" element={<InvoiceFormPage />} />

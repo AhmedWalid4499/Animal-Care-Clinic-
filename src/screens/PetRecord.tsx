@@ -20,7 +20,7 @@ export function PetRecord() {
   const { id = '' } = useParams();
   const [sp, setSp] = useSearchParams();
   const tab = (sp.get('tab') as Tab) || 'timeline';
-  const { t, fmt, canVisit, locale } = useApp();
+  const { t, fmt, canVisit, canIntake, locale } = useApp();
   const nav = useNavigate();
   const pet = useQuery(() => getPet(id), [id]);
   const settings = useQuery(getSettings);
@@ -38,11 +38,11 @@ export function PetRecord() {
         />
         <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
+        {canIntake && pet.status === 'ACTIVE' && (
+          <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
+        )}
         {canVisit && pet.status === 'ACTIVE' && (
-          <>
-            <button className="btn" onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
-            <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
-          </>
+          <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
         )}
       </PageHead>
 
@@ -93,7 +93,7 @@ export function PetRecord() {
 }
 
 function Timeline({ petId }: { petId: string }) {
-  const { t, fmt, canVisit } = useApp();
+  const { t, fmt, canVisit, canIntake } = useApp();
   const nav = useNavigate();
   const visits = useQuery(() => petVisits(petId), [petId]);
   if (!visits.length) return <p className="empty">{t('petRecord.noVisits')}</p>;
@@ -118,7 +118,7 @@ function Timeline({ petId }: { petId: string }) {
                 ) : (
                   <button className="btn ghost sm" onClick={() => nav(`/invoices/new?visit=${v.id}`)}><Icon name="receipt" /> {t('petRecord.createInvoice')}</button>
                 )}
-                {canVisit && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
+                {(canVisit || (canIntake && v.stage === 'WAITING')) && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
               </div>
               {v.complaint && <p><span className="muted">{t('visits.complaint')}:</span> {v.complaint}</p>}
               {v.intake_at && (v.history || v.intake_notes) && (
