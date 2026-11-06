@@ -20,7 +20,9 @@ export function Appointments() {
   const view = (sp.get('view') as 'day' | 'week') || 'day';
   const date = sp.get('date') || today();
   const openId = sp.get('open');
-  const [editing, setEditing] = useState<{ id?: string; at?: string } | null>(openId ? { id: openId } : null);
+  // ?new=1 (the dashboard's "Book appointment"): open a new booking straight away.
+  const fresh = () => ({ at: `${date}T${String(Math.max(OPEN_HOUR, new Date().getHours() + 1)).padStart(2, '0')}:00` });
+  const [editing, setEditing] = useState<{ id?: string; at?: string } | null>(openId ? { id: openId } : sp.get('new') ? fresh() : null);
   // A notification clicked while this screen is already open changes ?open= without remounting it.
   useEffect(() => {
     if (openId) setEditing({ id: openId });

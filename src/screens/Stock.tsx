@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { correctStock, expiringStock, lowStock, restock, stockHistory, stockLevels, type StockRow } from '../db/repo';
+import { correctStock, expiringStock, lowDrugs, lowStock, restock, stockHistory, stockLevels, type StockRow } from '../db/repo';
 import { daysBetween, today } from '../lib/dates';
 import { Badge, Dialog, Field, Icon } from '../components/ui';
 import { PageHead } from '../components/Layout';
@@ -155,8 +155,9 @@ export function LowStockSection() {
   const { t, fmt, locale } = useApp();
   const nav = useNavigate();
   const rows = useQuery(lowStock);
+  const drugs = useQuery(lowDrugs);
   const expiring = useQuery(() => expiringStock(30));
-  if (!rows.length && !expiring.length) return null;
+  if (!rows.length && !expiring.length && !drugs.length) return null;
   return (
     <div className="note warn low-stock" role="status">
       {rows.length > 0 && (
@@ -164,6 +165,14 @@ export function LowStockSection() {
           <b>📦 {t('stock.runningLow')}</b>{' '}
           {rows.map((r, i) => (
             <span key={r.id}>{i ? ' · ' : ''}{locale === 'ar' ? r.name_ar : r.name_en}: <b className="num">{fmt.num(r.on_hand, 2)}</b></span>
+          ))}
+        </div>
+      )}
+      {drugs.length > 0 && (
+        <div>
+          <b>💊 {t('drugs.runningLow')}</b>{' '}
+          {drugs.map((d, i) => (
+            <span key={d.id}>{i ? ' · ' : ''}{d.name}: <b className="num">{fmt.num(d.stock_qty ?? 0, 2)}</b>{d.stock_unit ? ` ${d.stock_unit}` : ''}</span>
           ))}
         </div>
       )}
@@ -176,7 +185,7 @@ export function LowStockSection() {
           {expiring.length > 4 ? ` +${expiring.length - 4}` : ''}
         </div>
       )}
-      <button type="button" className="linkbtn" onClick={() => nav('/stock')}>{t('stock.open')}</button>
+      <button type="button" className="linkbtn" onClick={() => nav(drugs.length && !rows.length && !expiring.length ? '/stock/drugs' : '/stock')}>{t('stock.open')}</button>
     </div>
   );
 }

@@ -748,7 +748,7 @@ export const listDrugs = (activeOnly = false) =>
   all<Drug>(`SELECT * FROM drugs ${activeOnly ? 'WHERE is_active = 1' : ''} ORDER BY is_active DESC, name COLLATE NOCASE`);
 export type DrugInput = Omit<Drug, 'id'>;
 export function saveDrug(d: DrugInput, id?: string): string {
-  const values = { ...d, name: d.name.trim(), species: blank(d.species), frequency: blank(d.frequency), notes: blank(d.notes) };
+  const values = { ...d, name: d.name.trim(), species: blank(d.species), frequency: blank(d.frequency), notes: blank(d.notes), stock_unit: blank(d.stock_unit) };
   return tx(() => (id ? (update('drugs', id, values), id) : insert('drugs', values)));
 }
 export const listTemplates = (activeOnly = false) =>
@@ -761,9 +761,9 @@ export const templateRx = (tpl: TreatmentTemplate): TemplateRx[] => {
     return [];
   }
 };
-export function saveTemplate(d: { name: string; diagnosis: string; treatment_notes: string; prescriptions: TemplateRx[]; is_active?: number }, userId: string | null, id?: string): string {
+export function saveTemplate(d: { name: string; diagnosis: string; treatment_notes: string; prescriptions: TemplateRx[]; is_active?: number; owner_note?: string }, userId: string | null, id?: string): string {
   const values = {
-    name: d.name.trim(), diagnosis: blank(d.diagnosis), treatment_notes: blank(d.treatment_notes),
+    name: d.name.trim(), diagnosis: blank(d.diagnosis), treatment_notes: blank(d.treatment_notes), owner_note: blank(d.owner_note ?? ''),
     prescriptions: JSON.stringify(d.prescriptions.filter((r) => r.drug.trim())), is_active: d.is_active ?? 1,
   };
   return tx(() => (id ? (update('treatment_templates', id, values), id) : insert('treatment_templates', { ...values, created_by: userId })));
@@ -1062,3 +1062,21 @@ export const overdueTasks = (graceMin = 10) =>
     [new Date(Date.now() - graceMin * 60_000).toISOString()],
   );
 export const petAdmission = (petId: string) => get<Admission>("SELECT * FROM admissions WHERE pet_id = ? AND status = 'IN'", [petId]);
+
+// ---------------------------------------------------------------- drug counts (7 Nov 2026, at Ahmed's request)
+/** Set how many of a drug the clinic has now (Stock → Drugs → Count). */
+export function setDrugCount(id: string, qty: number | null) {
+  tx(() => update('drugs', id, { stock_qty: qty }));
+}
+/** Active drugs with a count at or below their warning level (no level set = warn at 0). */
+export const lowDrugs = () =>
+  all<Drug>('SELECT * FROM drugs WHERE is_active = 1 AND stock_qty IS NOT NULL AND stock_qty <= COALESCE(low_stock, 0) ORDER BY name COLLATE NOCASE');
+export const getTemplate = (id: string) => get<TreatmentTemplate>('SELECT * FROM treatment_templates WHERE id = ?', [id]);
+
+/** Dashboard: open invoices and what is still owed on them (VOID left out). */
+export function openBalance(): { n: number; due: number } {
+  return get<{ n: number; due: number }>(
+    `SELECT COUNT(*) n, COALESCE(SUM(i.total - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0)), 0) due
+     FROM invoices i WHERE i.status IN ('UNPAID','PARTIAL')`,
+  ) ?? { n: 0, due: 0 };
+}

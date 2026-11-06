@@ -203,24 +203,6 @@ function DischargeDialog({ row, onClose }: { row: WardRow; onClose: () => void }
   );
 }
 
-/** Dashboard: who is staying in, and how many treatments are late. Nothing when the ward is empty. */
-export function WardSection() {
-  const { t } = useApp();
-  const nav = useNavigate();
-  useMinute();
-  const rows = useQuery(wardBoard);
-  if (!rows.length) return null;
-  const late = rows.reduce((s, r) => s + r.tasks.filter(isOverdue).length, 0);
-  return (
-    <div className={`note ${late ? 'warn' : ''} ward-note`} role="status">
-      <b>🏥 {t('ward.inNow', { n: rows.length })}</b>{' '}
-      {rows.map((r) => r.pet_name).join(' · ')}
-      {late > 0 && <> · <b className="neg">⏰ {t('ward.overdueN', { n: late })}</b></>}{' '}
-      <button type="button" className="linkbtn" onClick={() => nav('/ward')}>{t('ward.open')}</button>
-    </div>
-  );
-}
-
 /**
  * Runs everywhere the app is open: once a minute, a treatment that became overdue raises a toast and, when the
  * window is hidden or in the tray, a system notification (each task once per computer).

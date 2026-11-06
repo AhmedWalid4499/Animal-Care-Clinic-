@@ -17,7 +17,7 @@ import { Reminders } from './screens/Reminders';
 import { VaccinationCertificate } from './screens/Certificate';
 import { Reports } from './screens/Reports';
 import { StockPage } from './screens/Stock';
-import { PrescriptionPrint } from './screens/Prescription';
+import { PrescriptionPrint, TemplatePrint } from './screens/Prescription';
 import { ConsentNew, ConsentView } from './screens/Consent';
 import { Ward } from './screens/Ward';
 import { DrugsPage, PricesPage, TemplatesPage, VaccinesPage } from './components/Sections';
@@ -88,6 +88,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="stock/drugs" element={<AdminOnly><DrugsPage /></AdminOnly>} />
           <Route path="prices" element={<AdminOnly><PricesPage /></AdminOnly>} />
           <Route path="templates" element={<ClinicalOnly><TemplatesPage /></ClinicalOnly>} />
+          <Route path="templates/:id/print" element={<ClinicalOnly><TemplatePrint /></ClinicalOnly>} />
           <Route path="settings" element={<AdminOnly><Settings /></AdminOnly>} />
           <Route path="account" element={<MySettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -121,9 +121,10 @@ export type DrugUnit = (typeof DRUG_UNITS)[number];
 export interface Drug {
   id: string; name: string; dose_mg_kg: number; concentration: number | null; unit: DrugUnit; max_mg: number | null;
   frequency: string | null; duration_days: number | null; species: string | null; notes: string | null; is_active: number;
+  stock_qty: number | null; stock_unit: string | null; low_stock: number | null;
 }
 export interface TemplateRx { drug: string; dose: string; frequency: string; duration_days: string; instructions: string }
 export interface TreatmentTemplate {
   id: string; name: string; diagnosis: string | null; treatment_notes: string | null; prescriptions: string | null;
-  is_active: number; created_by: string | null;
+  is_active: number; created_by: string | null; owner_note: string | null;
 }

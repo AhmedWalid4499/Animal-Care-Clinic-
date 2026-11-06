@@ -61,6 +61,25 @@ await step('quick search', async () => {
 await win.getByRole('button', { name: 'English' }).click();
 await shot('dashboard-en');
 
+// The dashboard (redone 7 Nov 2026): greeting, quick actions, today at a glance.
+await step('dashboard: quick actions and today at a glance', async () => {
+  await win.locator('.dash-hello h1', { hasText: 'Waleed' }).waitFor();
+  const quick = (await win.locator('.quick .quick-btn').allInnerTexts()).map((s) => s.replace(/\d+$/, '').trim());
+  for (const label of ['New visit', 'Pre-diagnosis', 'Book appointment', 'New owner', 'Reminders', 'New invoice']) {
+    if (!quick.some((q) => q.startsWith(label))) throw new Error(`quick action missing: ${label} (${quick.join(' | ')})`);
+  }
+  const apptCard = win.locator('.glance-card', { hasText: "Today's appointments" });
+  if (!(await apptCard.locator('b').innerText()).match(/^\d+$/)) throw new Error('appointments card has no number');
+  await win.locator('.glance-card', { hasText: 'In-patients' }).locator('.g-sub', { hasText: 'overdue' }).waitFor(); // demo: Rocky's fluids
+  await win.locator('.glance-card', { hasText: 'Open invoices' }).waitFor();
+  await win.locator('.low-stock', { hasText: 'Amoxicillin' }).waitFor(); // demo drug count 2 ≤ 3
+  // "Book appointment" opens a new booking straight away.
+  await win.locator('.quick').getByRole('button', { name: 'Book appointment' }).click();
+  await win.locator('.dialog input[type=datetime-local]').waitFor();
+  await win.keyboard.press('Escape');
+  await go('#/');
+});
+
 await step('owners', async () => {
   await go('#/owners');
   await shot('owners-en');
@@ -212,7 +231,7 @@ await step('patient alerts, certificate, reminders', async () => {
   await shot('vaccination-certificate');
   // Reminders: tomorrow's appointments + this week's vaccinations, each with WhatsApp.
   await go('#/');
-  await win.locator('.pagehead').getByRole('button', { name: /Reminders/ }).click();
+  await win.locator('.quick').getByRole('button', { name: /Reminders/ }).click();
   await win.locator('.reminders h2', { hasText: 'Vaccinations due this week' }).waitFor();
   if ((await win.locator('.reminders .btn.wa').count()) < 1) throw new Error('no WhatsApp buttons on the reminders list');
   await shot('reminders');
@@ -309,7 +328,7 @@ await step('stock: running low, restock, invoice takes out, void gives back', as
   if (await win.locator('.side .nav a', { hasText: 'Stock' }).count() !== 1) throw new Error('no Stock in the sidebar');
   await go('#/');
   // The note stays for the expiring vaccine batch, but nothing is running low any more.
-  if (await win.locator('.low-stock', { hasText: 'Running low' }).count()) throw new Error('running low still shown after restocking');
+  if (await win.locator('.low-stock', { hasText: 'Deworming' }).count()) throw new Error('running low still shown after restocking');
   await win.locator('.low-stock', { hasText: 'Expiring soon' }).waitFor();
 });
 
@@ -332,12 +351,38 @@ await step('expenses and profit', async () => {
   await shot('report-month-profit');
 });
 
+// Drug counts and a treatment template printed for the owner (7 Nov 2026).
+await step('drug counts', async () => {
+  await go('#/stock/drugs');
+  const amox = win.locator('table.t tr', { hasText: 'Amoxicillin' });
+  await amox.locator('.badge.warn').waitFor();
+  const melox = win.locator('table.t tr', { hasText: 'Meloxicam' });
+  await melox.getByRole('button', { name: 'Count' }).click();
+  await win.locator('.dialog input[type=number]').fill('5');
+  await win.locator('.dialog .btn.primary').click();
+  await melox.locator('b.num', { hasText: '5' }).waitFor();
+  await shot('drugs-counts');
+});
+
+await step('treatment template printed for the owner', async () => {
+  await go('#/templates');
+  await win.locator('table.t tr', { hasText: 'Gastroenteritis, standard (demo)' }).getByRole('button', { name: 'Print' }).click();
+  await win.locator('.rx-howto', { hasText: 'bland meals' }).waitFor();
+  await win.locator('.rx-howto', { hasText: 'With food' }).waitFor();
+  // Without a patient the dose is a blank to write on; with Luna it is worked out from her weight.
+  if (!(await win.locator('.rx-sheet tbody .blank').count())) throw new Error('no blank dose line');
+  await win.locator('.tpl-patient .searchbox input').fill('Luna');
+  await win.locator('.tpl-patient .picker button', { hasText: 'Luna' }).first().click();
+  await win.locator('.rx-sheet', { hasText: '0.27 ml' }).waitFor();
+  await win.locator('.rx-sheet', { hasText: 'Mona Hassan' }).waitFor();
+  await shot('template-prescription');
+});
+
 // In-patient board (7 Nov 2026). Demo: Rocky in cage A1 with an overdue fluids change.
 await step('in-patient board', async () => {
   await go('#/');
-  await win.locator('.ward-note', { hasText: 'Rocky' }).waitFor();
-  await win.locator('.ward-note', { hasText: '1 treatment(s) overdue' }).waitFor();
-  await win.locator('.side .nav a', { hasText: 'In-patients' }).click();
+  await win.locator('.glance-card', { hasText: 'In-patients' }).locator('.g-sub', { hasText: '1 treatment(s) overdue' }).waitFor();
+  await win.locator('.glance-card', { hasText: 'In-patients' }).click(); // the card opens the board
   const rocky = win.locator('.ward-card', { hasText: 'Rocky' });
   await rocky.locator('li.overdue', { hasText: 'IV fluids bag change' }).waitFor();
   await shot('ward');
