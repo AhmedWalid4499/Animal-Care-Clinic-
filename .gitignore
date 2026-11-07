@@ -10,3 +10,4 @@ dist-cloud/
 sync-test-out/
 data-files/
 .sync-test-old-server/
+release-ia32/

@@ -124,6 +124,12 @@ function setupWindows() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = console;
+  // 32-bit Windows installs update from their own feed (ia32.yml, see electron-builder.ia32.cjs): latest.yml is the
+  // 64-bit installer. Setting a channel also allows downgrades, which we don't want.
+  if (process.arch === 'ia32') {
+    autoUpdater.channel = 'ia32';
+    autoUpdater.allowDowngrade = false;
+  }
   autoUpdater.on('checking-for-update', () => publish({ status: 'checking', error: null }));
   autoUpdater.on('update-not-available', () => publish({ status: 'none' }));
   autoUpdater.on('update-available', (i) => publish({ status: 'downloading', version: i.version, progress: 0 }));

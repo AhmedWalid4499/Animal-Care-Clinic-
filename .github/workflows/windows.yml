@@ -43,10 +43,27 @@ jobs:
           cat release/latest.yml
           grep -q "url: AnimalCareClinic-Setup-.*\.exe" release/latest.yml
           grep -q "provider: github" "release/win-unpacked/resources/app-update.yml"
+      # 32-bit build (electron-builder.ia32.cjs): same app from the same dist/, for 32-bit Windows 10/11 PCs.
+      - run: npm run dist:win32
+      - name: Smoke test, 32-bit (app starts and renders the login screen)
+        run: .\release-ia32\win-ia32-unpacked\"Animal Care Clinic.exe" --smoke
+        shell: pwsh
+      - name: 32-bit update feed is published as ia32.yml (64-bit keeps latest.yml)
+        shell: bash
+        run: |
+          mv release-ia32/latest.yml release-ia32/ia32.yml
+          cat release-ia32/ia32.yml
+          grep -q "url: AnimalCareClinic-Setup-.*-32bit\.exe" release-ia32/ia32.yml
+          grep -q "provider: github" "release-ia32/win-ia32-unpacked/resources/app-update.yml"
       - uses: actions/upload-artifact@v4
         with:
           name: animal-care-clinic-windows
           path: release/*.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: animal-care-clinic-windows-32bit
+          path: release-ia32/*.exe
           if-no-files-found: error
       - name: Upload release files (installer, portable, update feed)
         if: inputs.version
@@ -57,4 +74,15 @@ jobs:
             release/*.exe
             release/*.exe.blockmap
             release/latest.yml
+          if-no-files-found: error
+      # Its own artifact, so the files stay flat (one folder) when the release job merges them.
+      - name: Upload release files, 32-bit (installer, portable, ia32.yml)
+        if: inputs.version
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-32bit
+          path: |
+            release-ia32/*.exe
+            release-ia32/*.exe.blockmap
+            release-ia32/ia32.yml
           if-no-files-found: error

@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "start": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:win32": "electron-builder --win --ia32 --config electron-builder.ia32.cjs --publish never",
     "dist:mac": "npm run build && electron-builder --mac --universal --publish never",
     "dist:linux": "npm run build && electron-builder --linux dir",
     "dist:win:linux": "npm run build && electron-builder --win --x64 --publish never -c.win.signAndEditExecutable=false",
