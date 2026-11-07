@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import ar from '../i18n/ar.json';
 import en from '../i18n/en.json';
-import { getVersion, setActor, subscribe } from '../db/core';
+import { get, getVersion, setActor, subscribe } from '../db/core';
 import type { Locale, User } from '../db/types';
 
 const messages = { ar, en } as const;
@@ -87,6 +87,29 @@ export function AppProvider({ children, defaultLocale }: { children: ReactNode; 
   const [user, setUserState] = useState<User | null>(null);
   const [theme, setThemeState] = useState<Theme>(() => (safeGet('theme') as Theme) || 'system');
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
+  // The signed-in person's row can change under them: the Admin makes them an Admin (or a Doctor…), renames or
+  // deactivates them, on this or another computer. Their screens follow at once, without signing out.
+  const dbVersion = useSyncExternalStore(subscribe, getVersion);
+  const [roleNote, setRoleNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    let fresh: User | undefined;
+    try {
+      fresh = get<User>('SELECT * FROM users WHERE id = ?', [user.id]);
+    } catch {
+      return; // database not open yet
+    }
+    if (!fresh) return;
+    if (!Number(fresh.is_active)) {
+      setActor(null);
+      setUserState(null);
+      return;
+    }
+    if (fresh.role !== user.role || fresh.name !== user.name) {
+      if (fresh.role !== user.role) setRoleNote(fresh.role);
+      setUserState({ ...user, role: fresh.role, name: fresh.name });
+    }
+  }, [dbVersion, user]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -105,6 +128,14 @@ export function AppProvider({ children, defaultLocale }: { children: ReactNode; 
     },
     [locale],
   );
+
+  useEffect(() => {
+    if (!roleNote) return;
+    const id = Date.now() + Math.random();
+    setToasts((x) => [...x, { id, msg: t('settings.roleChangedYou', { role: t(`roles.${roleNote}`) }) }]);
+    setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), 4000);
+    setRoleNote(null);
+  }, [roleNote, t]);
 
   const value = useMemo<Ctx>(
     () => ({

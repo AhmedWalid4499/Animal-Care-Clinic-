@@ -225,6 +225,7 @@ function UsersTab() {
   return (
     <>
       <p className="muted small" style={{ marginTop: 0 }}>{t('settings.roleHint')}</p>
+      <p className="note" style={{ marginTop: 0 }}>👑 {t('settings.adminHint')}</p>
       <div className="row end" style={{ marginBottom: 10 }}>
         <button className="btn primary" onClick={() => setEdit({ name: '', email: '', role: 'ASSISTANT', locale: 'ar', is_active: 1 })}><Icon name="plus" /> {t('settings.addUser')}</button>
       </div>
