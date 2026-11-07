@@ -265,6 +265,33 @@ await step('doctor signs in on the other laptop', async () => {
     `invite text has email, temporary password and server: ${invited}; keeping the temporary password refused: ${sameRefused}; new password works on the server: ${!!synced.v}, temporary one no longer: ${oldFails}`);
 });
 
+await step('admin makes someone else an admin', async () => {
+  // The Admin promotes the Doctor on laptop A; on laptop B, where the Doctor is signed in, the Admin screens appear
+  // without signing out, and the server lets them do Admin things. Then back to Doctor for the rest of the test.
+  const setRole = async (role) => {
+    await go(A, '#/settings?tab=users');
+    await A.win.locator('tr.link', { hasText: 'doctor@test.local' }).click();
+    await A.win.locator('.dialog select').first().selectOption(role);
+    await A.win.locator('.dialog .btn.primary').click();
+  };
+  await setRole('ADMIN');
+  let promoted, told = false, asAdmin = {};
+  try {
+  promoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 1, 15_000, 300);
+  told = promoted.v ? (await B.win.locator('.toasts').innerText()).includes('Admin') || (await B.win.locator('.toasts').innerText()).includes('مدير') : false;
+  const at = new Date().toISOString(); // (nowIso is defined further down)
+  const pid = crypto.randomUUID();
+  const docToken = (await api('/api/login', { email: 'doctor@test.local', password: DOCTOR_PW, deviceId: 'test-promote' })).body.token;
+  asAdmin = (await api('/api/sync/push', { changes: [{ tbl: 'price_items', id: pid, op: 'upsert', at, cols: { id: pid, name_en: 'Promotion test', name_ar: 'اختبار', category: 'OTHER', unit_price: 100, is_active: 0, created_at: at, updated_at: at } }] }, docToken)).body;
+  } finally {
+    await setRole('DOCTOR'); // always put the Doctor back, or later checks run with two Admins
+  }
+  const demoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 0, 15_000, 300);
+  check('admin-promote', 'The Admin can make anyone an Admin: their screens and rights change at once, without signing out',
+    !!promoted?.v && told && asAdmin.rejected?.length === 0 && !!demoted.v,
+    `doctor's laptop shows Admin Settings: ${!!promoted?.v} (told: ${told}); server accepts an Admin-only change from them: ${asAdmin.rejected?.length === 0}; back to Doctor on their laptop: ${!!demoted.v}`);
+});
+
 await step('server enforces roles', async () => {
   const desk = (await api('/api/login', { email: 'desk@test.local', password: 'Welcome2026!', deviceId: 'test-desk' })).body;
   const vacc = (await pool.query("SELECT id FROM rows WHERE tbl = 'vaccinations' LIMIT 1")).rows[0].id;
