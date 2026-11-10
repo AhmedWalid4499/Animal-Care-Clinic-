@@ -217,9 +217,6 @@ export function TemplateDialog({ item, onClose }: { item: Partial<TreatmentTempl
         <Field label={t('templates.name')} className="span2"><input type="text" value={f.name} placeholder={t('templates.namePh')} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label={t('visits.diagnosis')} className="span2" optional><input type="text" value={f.diagnosis} onChange={(e) => setF({ ...f, diagnosis: e.target.value })} /></Field>
         <Field label={t('visits.treatment')} className="span2" optional><textarea value={f.treatment_notes} onChange={(e) => setF({ ...f, treatment_notes: e.target.value })} /></Field>
-        <Field label={t('templates.ownerNote')} className="span2" optional hint={t('templates.ownerNoteHint')}>
-          <textarea rows={3} value={f.owner_note} placeholder={t('templates.ownerNotePh')} onChange={(e) => setF({ ...f, owner_note: e.target.value })} />
-        </Field>
       </div>
       <div className="row" style={{ margin: '12px 0 4px' }}>
         <h3 className="spacer" style={{ margin: 0 }}>💊 {t('visits.prescriptions')}</h3>

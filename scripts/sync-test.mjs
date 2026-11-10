@@ -213,6 +213,11 @@ await step('live: B → A', async () => {
 
 let doctorId = null;
 let deskTemp = null;
+// Settings → Users: the role checkboxes (Admin, Doctor, Assistant, in that order); ticks exactly these.
+const ROLE_ORDER = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
+async function setRoles(dlg, roles) {
+  for (const [i, r] of ROLE_ORDER.entries()) await dlg.locator('.role-checks input[type=checkbox]').nth(i).setChecked(roles.includes(r));
+}
 const DOCTOR_PW = 'Doctor-own-2026';
 let inviteText = '';
 await step('admin adds users', async () => {
@@ -222,7 +227,7 @@ await step('admin adds users', async () => {
     const dlg = A.win.locator('.dialog');
     await dlg.locator('input[type=text]').first().fill(name);
     await dlg.locator('input[type=email]').fill(email);
-    await dlg.locator('select').first().selectOption(role);
+    await setRoles(dlg, [role]);
     await dlg.locator('input[name=temp-password]').fill('Welcome2026!');
     await dlg.locator('footer .btn.primary').click();
     // Then the sign-in details to send by WhatsApp or email.
@@ -271,13 +276,14 @@ await step('admin makes someone else an admin', async () => {
   const setRole = async (role) => {
     await go(A, '#/settings?tab=users');
     await A.win.locator('tr.link', { hasText: 'doctor@test.local' }).click();
-    await A.win.locator('.dialog select').first().selectOption(role);
+    await setRoles(A.win.locator('.dialog'), role === 'ADMIN' ? ['ADMIN', 'DOCTOR'] : [role]); // Admin and Doctor: two roles at once
     await A.win.locator('.dialog .btn.primary').click();
   };
   await setRole('ADMIN');
-  let promoted, told = false, asAdmin = {};
+  let promoted, told = false, asAdmin = {}, bothRoles = false;
   try {
   promoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 1, 15_000, 300);
+  bothRoles = /Admin · Doctor|مدير · طبيب/.test(await B.win.locator('.side-foot').innerText());
   told = promoted.v ? (await B.win.locator('.toasts').innerText()).includes('Admin') || (await B.win.locator('.toasts').innerText()).includes('مدير') : false;
   const at = new Date().toISOString(); // (nowIso is defined further down)
   const pid = crypto.randomUUID();
@@ -288,8 +294,8 @@ await step('admin makes someone else an admin', async () => {
   }
   const demoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 0, 15_000, 300);
   check('admin-promote', 'The Admin can make anyone an Admin: their screens and rights change at once, without signing out',
-    !!promoted?.v && told && asAdmin.rejected?.length === 0 && !!demoted.v,
-    `doctor's laptop shows Admin Settings: ${!!promoted?.v} (told: ${told}); server accepts an Admin-only change from them: ${asAdmin.rejected?.length === 0}; back to Doctor on their laptop: ${!!demoted.v}`);
+    !!promoted?.v && told && bothRoles && asAdmin.rejected?.length === 0 && !!demoted.v,
+    `doctor's laptop shows Admin Settings: ${!!promoted?.v} (told: ${told}; shown as Admin and Doctor: ${bothRoles}); server accepts an Admin-only change from them: ${asAdmin.rejected?.length === 0}; back to Doctor on their laptop: ${!!demoted.v}`);
 });
 
 await step('server enforces roles', async () => {

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useQuery, type Theme } from '../lib/app';
 import { getSettings } from '../db/repo';
+import { userRoles } from '../db/types';
 import { Icon } from './ui';
 import { UpdateBanner } from './Updates';
 import { SyncBadge } from './SyncBadge';
@@ -77,7 +78,7 @@ export function Layout() {
             </div>
             <div className="who">
               <b>{user?.name}</b>
-              <span className="muted">{t(`roles.${user?.role}`)}</span>
+              <span className="muted">{userRoles(user).map((r) => t(`roles.${r}`)).join(' · ')}</span>
             </div>
             <button className="linkbtn" onClick={() => setLocale(locale === 'ar' ? 'en' : 'ar')}>{t('app.language')}</button>
             <button className="linkbtn" onClick={() => setTheme(nextTheme[theme])}>

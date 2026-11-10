@@ -20,7 +20,7 @@ import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
 import { serverUrl } from '../sync/engine';
 import { ActivityTab } from './Activity';
-import { PRICE_CATEGORIES, ROLES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
+import { PRICE_CATEGORIES, ROLES, SPECIES, highestRole, userRoles, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
 type Tab = 'clinic' | 'users' | 'devices' | 'activity' | 'data';
 // Moved out of Settings (7 Nov 2026): old links still land in the right place.
@@ -221,7 +221,7 @@ function UsersTab() {
   const { t } = useApp();
   const rows = useQuery(listUsers);
   const [edit, setEdit] = useState<Partial<User> | null>(null);
-  const [invite, setInvite] = useState<{ person: Pick<User, 'name' | 'email' | 'role'>; password: string } | null>(null);
+  const [invite, setInvite] = useState<{ person: Pick<User, 'name' | 'email' | 'role' | 'roles'>; password: string } | null>(null);
   return (
     <>
       <p className="muted small" style={{ marginTop: 0 }}>{t('settings.roleHint')}</p>
@@ -235,7 +235,7 @@ function UsersTab() {
         <tbody>
           {rows.map((u) => (
             <tr key={u.id} className={`link ${u.is_active ? '' : 'greyed'}`} onClick={() => setEdit(u)}>
-              <td><b>{u.name}</b></td><td className="ltr">{u.email}</td><td>{t(`roles.${u.role}`)}</td><td>{u.locale === 'ar' ? 'العربية' : 'English'}</td>
+              <td><b>{u.name}</b></td><td className="ltr">{u.email}</td><td>{userRoles(u).map((r) => t(`roles.${r}`)).join(' · ')}</td><td>{u.locale === 'ar' ? 'العربية' : 'English'}</td>
               <td>{u.is_active ? t('common.active') : t('common.inactive')}{u.is_active && u.must_change_password ? <span className="muted small"> · {t('settings.mustChange')}</span> : null}</td>
             </tr>
           ))}
@@ -248,10 +248,11 @@ function UsersTab() {
   );
 }
 
-function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose: () => void; onInvite: (person: Pick<User, 'name' | 'email' | 'role'>, password: string) => void }) {
+function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose: () => void; onInvite: (person: Pick<User, 'name' | 'email' | 'role' | 'roles'>, password: string) => void }) {
   const { t, toast } = useApp();
   // A new person gets a temporary password (shown, so it can be sent); they choose their own at first sign-in.
   const [f, setF] = useState({ ...item, password: item.id ? '' : tempPassword() });
+  const [roles, setRoles] = useState<Role[]>(() => (item.id ? userRoles(item as User) : [item.role ?? 'ASSISTANT']));
   const [err, setErr] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   return (
@@ -259,11 +260,11 @@ function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose:
       title={t('settings.users')}
       onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button>
-        <button className="btn primary" disabled={!f.name || !f.email} onClick={() => {
+        <button className="btn primary" disabled={!f.name || !f.email || !roles.length} onClick={() => {
           try {
-            saveUser({ name: f.name!, email: f.email!, role: f.role as Role, locale: f.locale as 'ar' | 'en', is_active: !!f.is_active, password: f.password || undefined }, item.id);
+            saveUser({ name: f.name!, email: f.email!, roles, locale: f.locale as 'ar' | 'en', is_active: !!f.is_active, password: f.password || undefined }, item.id);
             toast(t('app.saved'));
-            if (f.password) onInvite({ name: f.name!, email: f.email!, role: f.role as Role }, f.password);
+            if (f.password) onInvite({ name: f.name!, email: f.email!, role: highestRole(roles), roles: roles.join(',') }, f.password);
             else onClose();
           } catch (e) {
             const m = String((e as Error).message);
@@ -275,10 +276,14 @@ function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose:
       <div className="grid g2">
         <Field label={t('settings.userName')}><input type="text" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label={t('settings.email')}><input type="email" className="ltr" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-        <Field label={t('settings.role')}>
-          <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Role })}>
-            {ROLES.map((r) => <option key={r} value={r}>{t(`roles.${r}`)}</option>)}
-          </select>
+        <Field label={t('settings.roles')} hint={t('settings.rolesHint')} group>
+          <div className="row role-checks">
+            {ROLES.map((r) => (
+              <label key={r} className="check">
+                <input type="checkbox" checked={roles.includes(r)} onChange={(e) => setRoles(e.target.checked ? ROLES.filter((x) => x === r || roles.includes(x)) : roles.filter((x) => x !== r))} /> {t(`roles.${r}`)}
+              </label>
+            ))}
+          </div>
         </Field>
         <Field label={t('settings.locale')}>
           <select value={f.locale} onChange={(e) => setF({ ...f, locale: e.target.value as 'ar' | 'en' })}>
@@ -306,7 +311,7 @@ function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose:
           onClose={() => setConfirmReset(false)}
           onConfirm={() => {
             const pw = resetPassword(item.id!);
-            onInvite({ name: item.name!, email: item.email!, role: item.role as Role }, pw);
+            onInvite({ name: item.name!, email: item.email!, role: item.role as Role, roles: item.roles ?? null }, pw);
           }}
         />
       )}

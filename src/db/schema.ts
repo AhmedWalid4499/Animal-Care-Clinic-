@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -128,6 +128,10 @@ const v13Cols = `ALTER TABLE drugs ADD COLUMN stock_qty REAL;
 ALTER TABLE drugs ADD COLUMN stock_unit TEXT;
 ALTER TABLE drugs ADD COLUMN low_stock REAL;
 ALTER TABLE treatment_templates ADD COLUMN owner_note TEXT;`;
+// Schema v14 (10 Nov 2026, customer request): a person can hold several roles (e.g. Admin and Doctor). users.roles is
+// the comma-separated list; users.role stays the highest of them (Admin > Doctor > Assistant) and is what decides
+// permissions here and on the server, so older apps and the server rules keep working unchanged.
+const v14Cols = `ALTER TABLE users ADD COLUMN roles TEXT;`;
 const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -367,6 +371,7 @@ ${expensesTable}
 ${clinicalDocs}
 ${wardTables}
 ${v13Cols}
+${v14Cols}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -453,6 +458,8 @@ export const MIGRATIONS: Record<number, string> = {
   12: wardTables,
   // v13 (7 Nov 2026): drug counts, owner instructions on templates.
   13: v13Cols,
+  // v14 (10 Nov 2026): several roles per person.
+  14: v14Cols,
 };
 
 /** Tables included in the one-click export, in dependency order. */

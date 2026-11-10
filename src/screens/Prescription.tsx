@@ -74,7 +74,7 @@ export function PrescriptionPrint() {
           {visit.diagnosis && <p className="small">{L('visits.diagnosis')}: {visit.diagnosis}</p>}
           <table>
             <thead>
-              <tr><th>{L('visits.drug')}</th><th>{L('visits.dose')}</th><th>{L('rxSheet.howOften')}</th><th>{L('rxSheet.howLong')}</th></tr>
+              <tr><th>{L('rxSheet.rx')}</th><th>{L('visits.dose')}</th><th>{L('rxSheet.howOften')}</th><th>{L('rxSheet.howLong')}</th></tr>
             </thead>
             <tbody>
               {visit.prescriptions.length === 0 && <tr><td colSpan={4}>{L('rxSheet.none')}</td></tr>}
@@ -101,7 +101,7 @@ export function PrescriptionPrint() {
 
 /**
  * A treatment template as a prescription for the owner (7 Nov 2026, at Ahmed's request): the template's medicines,
- * how often and for how long, and its short "how to use" note. Choose a patient to fill in the name and work out
+ * how often and for how long (the separate "how to use" box was removed 10 Nov at the customer's request). Choose a patient to fill in the name and work out
  * the doses left blank from the pet's weight; without one, the sheet has blank lines to write on.
  */
 export function TemplatePrint() {
@@ -124,7 +124,6 @@ export function TemplatePrint() {
     const dose = r.dose || (d && kg ? doseText(calcDose(d, kg, pet), d, unitLabel) : '');
     return { ...r, dose };
   });
-  const howTo = [tpl.owner_note, ...rows.filter((r) => r.instructions).map((r) => `${r.drug}: ${r.instructions}`)].filter(Boolean) as string[];
   const today = new Date().toISOString();
   return (
     <div className="page">
@@ -158,12 +157,12 @@ export function TemplatePrint() {
           </div>
           {tpl.diagnosis && <p className="small">{L('visits.diagnosis')}: <span dir="auto">{tpl.diagnosis}</span></p>}
           <table>
-            <thead><tr><th>{L('visits.drug')}</th><th>{L('visits.dose')}</th><th>{L('rxSheet.howOften')}</th><th>{L('rxSheet.howLong')}</th></tr></thead>
+            <thead><tr><th>{L('rxSheet.rx')}</th><th>{L('visits.dose')}</th><th>{L('rxSheet.howOften')}</th><th>{L('rxSheet.howLong')}</th></tr></thead>
             <tbody>
               {rows.length === 0 && <tr><td colSpan={4}>{L('rxSheet.none')}</td></tr>}
               {rows.map((r, i) => (
                 <tr key={i}>
-                  <td><b dir="auto">{r.drug}</b></td>
+                  <td><b dir="auto">{r.drug}</b>{r.instructions ? <div className="small" dir="auto">{r.instructions}</div> : null}</td>
                   <td>{r.dose ? <span dir="auto">{r.dose}</span> : <span className="blank" />}</td>
                   <td><span dir="auto">{r.frequency || '—'}</span></td>
                   <td>{r.duration_days ? L('rxSheet.forDays', { n: r.duration_days }) : '—'}</td>
@@ -171,12 +170,6 @@ export function TemplatePrint() {
               ))}
             </tbody>
           </table>
-          {howTo.length > 0 && (
-            <div className="rx-howto">
-              <b>{L('templates.howTo')}</b>
-              <ul>{howTo.map((h, i) => <li key={i} dir="auto">{h}</li>)}</ul>
-            </div>
-          )}
           <div className="rx-sign"><div className="line" />{L('certificate.signature')}</div>
           <div className="foot">{L('rxSheet.foot')}</div>
         </div>

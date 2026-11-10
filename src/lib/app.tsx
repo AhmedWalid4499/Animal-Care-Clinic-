@@ -105,9 +105,9 @@ export function AppProvider({ children, defaultLocale }: { children: ReactNode; 
       setUserState(null);
       return;
     }
-    if (fresh.role !== user.role || fresh.name !== user.name) {
-      if (fresh.role !== user.role) setRoleNote(fresh.role);
-      setUserState({ ...user, role: fresh.role, name: fresh.name });
+    if (fresh.role !== user.role || fresh.name !== user.name || (fresh.roles ?? null) !== (user.roles ?? null)) {
+      if (fresh.role !== user.role || (fresh.roles ?? null) !== (user.roles ?? null)) setRoleNote(fresh.roles ?? fresh.role);
+      setUserState({ ...user, role: fresh.role, roles: fresh.roles ?? null, name: fresh.name });
     }
   }, [dbVersion, user]);
 
@@ -132,7 +132,7 @@ export function AppProvider({ children, defaultLocale }: { children: ReactNode; 
   useEffect(() => {
     if (!roleNote) return;
     const id = Date.now() + Math.random();
-    setToasts((x) => [...x, { id, msg: t('settings.roleChangedYou', { role: t(`roles.${roleNote}`) }) }]);
+    setToasts((x) => [...x, { id, msg: t('settings.roleChangedYou', { role: roleNote.split(',').map((r) => t(`roles.${r}`)).join(' · ') }) }]);
     setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), 4000);
     setRoleNote(null);
   }, [roleNote, t]);
