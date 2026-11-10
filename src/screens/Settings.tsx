@@ -15,19 +15,20 @@ import { Confirm, Dialog, Field, Icon, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { SyncPanel } from '../components/SyncBadge';
 import { ServerBackupPanel } from '../components/ServerBackup';
-import { UpdatesSection } from '../components/Updates';
+import { UpdatesSection, useUpdateState } from '../components/Updates';
 import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
 import { serverUrl } from '../sync/engine';
 import { ActivityTab } from './Activity';
 import { PRICE_CATEGORIES, ROLES, SPECIES, highestRole, userRoles, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
-type Tab = 'clinic' | 'users' | 'devices' | 'activity' | 'data';
+type Tab = 'clinic' | 'updates' | 'users' | 'devices' | 'activity' | 'data';
 // Moved out of Settings (7 Nov 2026): old links still land in the right place.
 const MOVED: Record<string, string> = { prices: '/prices', vaccines: '/stock/vaccines', drugs: '/stock/drugs', templates: '/templates' };
 
 export function Settings() {
   const { t } = useApp();
+  const updateReady = useUpdateState()?.status === 'ready';
   const [sp, setSp] = useSearchParams();
   const tab = (sp.get('tab') as Tab) || 'clinic';
   if (MOVED[tab]) return <Navigate to={MOVED[tab]} replace />;
@@ -35,12 +36,15 @@ export function Settings() {
     <div className="page">
       <PageHead title={t('settings.title')} />
       <div className="tabs" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['clinic', 'users', ...(serverUrl() ? ['devices'] : []), 'activity', 'data'] as Tab[]).map((k) => (
-          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>{t(`settings.${k}`)}</button>
+        {(['clinic', ...(isDesktop ? ['updates'] : []), 'users', ...(serverUrl() ? ['devices'] : []), 'activity', 'data'] as Tab[]).map((k) => (
+          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
+            {t(`settings.${k}`)}{k === 'updates' && updateReady ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
+          </button>
         ))}
       </div>
       <div key={tab} className="tab-enter">
         {tab === 'clinic' && <ClinicTab />}
+        {tab === 'updates' && <UpdatesSection />}
         {tab === 'users' && <UsersTab />}
         {tab === 'devices' && <DevicesTab />}
         {tab === 'activity' && <ActivityTab />}
@@ -432,7 +436,6 @@ function DataTab() {
         </div>
         {result && <pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{result}</pre>}
       </div>
-      {isDesktop && <UpdatesSection />}
       {restore && (
         <Confirm
           title={t('settings.restore')}

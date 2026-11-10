@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useQuery, type Theme } from '../lib/app';
 import { getSettings } from '../db/repo';
 import { userRoles } from '../db/types';
 import { Icon } from './ui';
-import { UpdateBanner } from './Updates';
+import { SideUpdateStatus, UpdateBanner, useUpdateState } from './Updates';
 import { SyncBadge } from './SyncBadge';
 import { signOutSync } from '../sync/engine';
 import { dropPushSubscription } from '../sync/notify';
@@ -23,18 +23,21 @@ export function Layout() {
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [pathname]);
-  const items = [
-    { to: '/', icon: 'home', label: t('nav.dashboard'), end: true },
-    { to: '/owners', icon: 'users', label: t('nav.owners') },
-    { to: '/appointments', icon: 'calendar', label: t('nav.appointments') },
-    // Pricing: Invoices, Reports and the Price list (the tabs on top of each move between them).
-    { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices'] },
-    // Stock sits in the sidebar only: the phone's bottom bar is full (it is reachable from the dashboard's "Running low" note).
-    { to: '/ward', icon: 'stethoscope', label: t('ward.title'), sideOnly: true },
-    { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true },
-    ...(canVisit ? [{ to: '/templates', icon: 'clipboard', label: t('settings.templates'), sideOnly: true }] : []),
+  const updateReady = useUpdateState()?.status === 'ready';
+  // Sidebar groups (10 Nov 2026, "the UI is a bit confusing"): the day's work first, then the clinic's books and
+  // supplies, then Settings. The phone's bottom bar shows the items without `sideOnly`.
+  type Item = { to: string; icon: string; label: string; end?: boolean; also?: string[]; sideOnly?: boolean; group: 'day' | 'clinic' | 'system'; dot?: boolean };
+  const items: Item[] = [
+    { to: '/', icon: 'home', label: t('nav.dashboard'), end: true, group: 'day' },
+    { to: '/owners', icon: 'users', label: t('nav.owners'), group: 'day' },
+    { to: '/appointments', icon: 'calendar', label: t('nav.appointments'), group: 'day' },
+    { to: '/ward', icon: 'stethoscope', label: t('ward.title'), sideOnly: true, group: 'day' },
+    // Invoices, Reports and the Price list (the tabs on top of each move between them).
+    { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices'], group: 'clinic' },
+    { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true, group: 'clinic' },
+    ...(canVisit ? [{ to: '/templates', icon: 'clipboard', label: t('settings.templates'), sideOnly: true, group: 'clinic' as const }] : []),
     // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
-    { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings') },
+    { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings'), group: 'system', dot: updateReady },
   ];
   const inSection = (i: { also?: string[] }) => !!i.also?.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const clinicName = locale === 'ar' ? settings.name_ar : settings.name_en;
@@ -60,10 +63,13 @@ export function Layout() {
             </div>
           )}
           <nav className="nav">
-            {items.map((i) => (
-              <NavLink key={i.to} to={i.to} end={i.end} className={({ isActive }) => (isActive || inSection(i) ? 'active' : '')}>
-                <Icon name={i.icon} /> {i.label}
-              </NavLink>
+            {items.map((i, n) => (
+              <Fragment key={i.to}>
+                {(n === 0 || items[n - 1].group !== i.group) && (i.group === 'system' ? <hr className="nav-sep" /> : <div className="nav-group">{t(`nav.group.${i.group}`)}</div>)}
+                <NavLink to={i.to} end={i.end} className={({ isActive }) => (isActive || inSection(i) ? 'active' : '')}>
+                  <Icon name={i.icon} /> {i.label}{i.dot ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
+                </NavLink>
+              </Fragment>
             ))}
           </nav>
           {canVisit && (
@@ -76,6 +82,7 @@ export function Layout() {
               <SyncBadge />
               <NotificationBell />
             </div>
+            <SideUpdateStatus />
             <div className="who">
               <b>{user?.name}</b>
               <span className="muted">{userRoles(user).map((r) => t(`roles.${r}`)).join(' · ')}</span>

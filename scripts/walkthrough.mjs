@@ -181,6 +181,10 @@ await step('settings', async () => {
   await shot('settings-vaccines');
   await go('#/settings?tab=data');
   await shot('settings-data');
+  // Updates have their own tab now (10 Nov 2026), not inside Data & backup.
+  if (await win.locator('.tab-enter h2', { hasText: 'Updates' }).count()) throw new Error('Updates still under Data & backup');
+  await go('#/settings?tab=updates');
+  await win.locator('.form-section h2', { hasText: 'Updates' }).waitFor();
 });
 
 // The updater only runs in an installed app; push its "update downloaded" state from the main process to
@@ -188,8 +192,11 @@ await step('settings', async () => {
 await step('update ready banner', async () => {
   const ready = { current: '0.1.0', auto: true, supported: true, reason: null, status: 'ready', version: '0.1.7', progress: 100, error: null, releasesUrl: '' };
   await app.evaluate(({ BrowserWindow }, st) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', st), ready);
-  await win.locator('.update-banner').waitFor();
+  await win.locator('.update-banner.ready').waitFor();
   await win.getByRole('checkbox', { name: 'Update automatically' }).waitFor();
+  // The sidebar says so too, with a restart button, and Settings gets a dot.
+  await win.locator('.side-update.ready', { hasText: 'restart now' }).waitFor();
+  await win.locator('.side .nav a .dot-badge').waitFor();
   await shot('update-ready');
   await win.locator('.update-banner .btn.ghost').click(); // Later
   if (await win.locator('.update-banner').count()) throw new Error('Later did not hide the banner');
@@ -241,10 +248,10 @@ await step('patient alerts, certificate, reminders', async () => {
 await step('reports: end-of-day cash and monthly', async () => {
   // Pricing in the sidebar holds Invoices, Reports and the Price list.
   const navText = await win.locator('.side .nav').innerText();
-  if (!navText.includes('Pricing') || navText.includes('Reports') || /\bInvoices\b/.test(navText)) throw new Error(`sidebar: ${navText.replace(/\n/g, ' | ')}`);
-  await win.locator('.side .nav a', { hasText: 'Pricing' }).click();
+  if (!navText.includes('Invoices & prices') || navText.includes('Reports')) throw new Error(`sidebar: ${navText.replace(/\n/g, ' | ')}`);
+  await win.locator('.side .nav a', { hasText: 'Invoices & prices' }).click();
   await win.locator('.section-tabs a', { hasText: 'Reports' }).click();
-  await win.locator('.side .nav a.active', { hasText: 'Pricing' }).waitFor();
+  await win.locator('.side .nav a.active', { hasText: 'Invoices & prices' }).waitFor();
   if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Invoices|Reports|Price list') throw new Error('pricing tabs');
   await win.locator('.tile.main', { hasText: 'Collected' }).waitFor();
   const rows = await win.locator('.reports table.t').nth(1).locator('tbody tr.link').count();
@@ -430,7 +437,8 @@ await step('lab results with trend', async () => {
 });
 
 await step('consent form signed on screen', async () => {
-  await win.locator('.pagehead').getByRole('button', { name: 'Consent form' }).click();
+  await win.locator('.pagehead').getByRole('button', { name: 'Print & forms' }).click();
+  await win.getByRole('menuitem', { name: 'Consent form' }).click();
   await win.getByLabel('Procedure').fill('Spay (ovariohysterectomy)');
   await win.getByLabel('Estimated cost (EGP)').fill('2500');
   const sign = win.getByRole('button', { name: 'Sign and save' });

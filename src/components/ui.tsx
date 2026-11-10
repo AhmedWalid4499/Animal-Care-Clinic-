@@ -204,3 +204,36 @@ export function imageToDataUrl(file: File | Blob, max = 360): Promise<string> {
     img.src = url;
   });
 }
+
+/** A button that opens a short list of actions (e.g. the pet record's "Print & forms"). Closes on choice, click outside or Esc. */
+export function MenuButton({ label, icon, items }: { label: string; icon?: string; items: { label: string; icon?: string; onClick: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  return (
+    <div className="menu-wrap" ref={ref}>
+      <button type="button" className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {icon && <Icon name={icon} />} {label} <span aria-hidden className="caret">▾</span>
+      </button>
+      {open && (
+        <div className="menu" role="menu">
+          {items.map((it) => (
+            <button key={it.label} type="button" role="menuitem" onClick={() => { setOpen(false); it.onClick(); }}>
+              {it.icon && <Icon name={it.icon} />} {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
