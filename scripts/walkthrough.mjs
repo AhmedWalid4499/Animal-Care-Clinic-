@@ -367,8 +367,10 @@ await step('drug counts', async () => {
 await step('treatment template printed for the owner', async () => {
   await go('#/templates');
   await win.locator('table.t tr', { hasText: 'Gastroenteritis, standard (demo)' }).getByRole('button', { name: 'Print' }).click();
-  await win.locator('.rx-howto', { hasText: 'bland meals' }).waitFor();
-  await win.locator('.rx-howto', { hasText: 'With food' }).waitFor();
+  // No separate "How to use" box any more (10 Nov 2026); a drug's own instructions stay under its name, headed Rx.
+  await win.locator('.rx-sheet th', { hasText: 'Rx' }).waitFor();
+  await win.locator('.rx-sheet td', { hasText: 'With food' }).waitFor();
+  if (await win.locator('.rx-sheet', { hasText: 'How to use' }).count()) throw new Error('"How to use" still printed');
   // Without a patient the dose is a blank to write on; with Luna it is worked out from her weight.
   if (!(await win.locator('.rx-sheet tbody .blank').count())) throw new Error('no blank dose line');
   await win.locator('.tpl-patient .searchbox input').fill('Luna');

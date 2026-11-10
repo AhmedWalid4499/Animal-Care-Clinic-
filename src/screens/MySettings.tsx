@@ -7,6 +7,7 @@ import { isDesktop } from '../lib/platform';
 import { PageHead } from '../components/Layout';
 import { UpdatesSection } from '../components/Updates';
 import { ChangePasswordDialog } from '../components/Account';
+import { userRoles } from '../db/types';
 
 export function MySettings() {
   const { t, user, isAdmin, locale, setLocale, theme, setTheme } = useApp();
@@ -26,7 +27,7 @@ export function MySettings() {
       <div className="form-section my-account">
         <h2>{t('account.me')}</h2>
         <p>
-          <b>{user.name}</b> <span className="muted">· {t(`roles.${user.role}`)} · <span className="ltr">{user.email}</span></span>
+          <b>{user.name}</b> <span className="muted">· {userRoles(user).map((r) => t(`roles.${r}`)).join(' · ')} · <span className="ltr">{user.email}</span></span>
         </p>
         <div className="grid g2">
           <label className="field">

@@ -6,6 +6,7 @@ import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
   Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, LabResult, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
+import { ROLES, highestRole, userRoles } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
 const digits = (s: string) => s.replace(/\D/g, '');
@@ -28,7 +29,9 @@ export function saveNotifyOff(userId: string, off: string[]) {
 }
 export const listUsers = () => all<User>('SELECT * FROM users ORDER BY role DESC, name');
 /** People who can be the vet on a visit: active Admins and Doctors. */
-export const listVets = () => all<User>("SELECT * FROM users WHERE is_active = 1 AND role IN ('ADMIN','DOCTOR') ORDER BY role = 'ADMIN' DESC, name");
+/** People who can be the vet on a visit: active users who are Doctors (an Admin is one too unless their roles say otherwise). */
+export const listVets = () =>
+  all<User>("SELECT * FROM users WHERE is_active = 1 AND role IN ('ADMIN','DOCTOR') ORDER BY role = 'ADMIN' DESC, name").filter((u) => userRoles(u).includes('DOCTOR'));
 /** A temporary password that is easy to read out or type: no 0/O, 1/l/I. */
 export function tempPassword(): string {
   const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -48,16 +51,20 @@ export function changeOwnPassword(id: string, password: string) {
   return get<User>('SELECT * FROM users WHERE id = ?', [id])!;
 }
 /** A password given by the Admin (new user, or typed in the user dialog) is temporary: the person replaces it. */
-export function saveUser(d: { name: string; email: string; role: Role; locale: 'ar' | 'en'; is_active: boolean; password?: string }, id?: string) {
+export function saveUser(d: { name: string; email: string; roles: Role[]; locale: 'ar' | 'en'; is_active: boolean; password?: string }, id?: string) {
   return tx(() => {
-    const values: Record<string, unknown> = { name: d.name.trim(), email: d.email.trim(), role: d.role, locale: d.locale, is_active: d.is_active ? 1 : 0 };
+    if (!d.roles.length) throw new Error('ROLE_REQUIRED');
+    const role = highestRole(d.roles);
+    const values: Record<string, unknown> = {
+      name: d.name.trim(), email: d.email.trim(), role, roles: ROLES.filter((r) => d.roles.includes(r)).join(','), locale: d.locale, is_active: d.is_active ? 1 : 0,
+    };
     if (d.password) {
       values.password_hash = bcrypt.hashSync(d.password, 10);
       values.must_change_password = 1;
     }
     if (id) {
       const remainingAdmins = get<{ n: number }>("SELECT COUNT(*) n FROM users WHERE role='ADMIN' AND is_active=1 AND id <> ?", [id])!.n;
-      if ((d.role !== 'ADMIN' || !d.is_active) && remainingAdmins === 0) throw new Error('ONE_ADMIN_MINIMUM');
+      if ((role !== 'ADMIN' || !d.is_active) && remainingAdmins === 0) throw new Error('ONE_ADMIN_MINIMUM');
       update('users', id, values);
       return id;
     }

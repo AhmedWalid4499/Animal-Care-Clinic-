@@ -29,7 +29,20 @@ export type Locale = 'ar' | 'en';
 
 export interface User {
   id: string; name: string; email: string; password_hash: string; role: Role; locale: Locale; is_active: number; notify_off?: string | null; must_change_password?: number;
+  roles?: string | null;
 }
+/**
+ * Everything a person is (schema v14: users.roles, e.g. "ADMIN,DOCTOR"). Before v14 there was one role, and an Admin was
+ * the clinic's vet (the old VET role), so an Admin without a list counts as Admin and Doctor.
+ */
+export function userRoles(u: Pick<User, 'role' | 'roles'> | null | undefined): Role[] {
+  if (!u) return [];
+  const list = (u.roles ?? '').split(',').filter((r): r is Role => (ROLES as string[]).includes(r));
+  if (list.length) return ROLES.filter((r) => list.includes(r));
+  return u.role === 'ADMIN' ? ['ADMIN', 'DOCTOR'] : [u.role];
+}
+/** The role that decides permissions: the highest of a person's roles. */
+export const highestRole = (roles: Role[]): Role => ROLES.find((r) => roles.includes(r)) ?? 'ASSISTANT';
 export interface Owner {
   id: string; full_name: string; phone: string; whatsapp: string | null; email: string | null; address: string | null;
   national_id: string | null; notes: string | null; status: 'ACTIVE' | 'ARCHIVED'; created_at: string;
