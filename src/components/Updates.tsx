@@ -1,6 +1,7 @@
 // Automatic updates UI: the "ready to install" banner (everyone) and the Settings section (vet only).
 // The work happens in electron/updater.cjs; this only shows its state and sends the user's choices.
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/app';
 import { isDesktop, updates, type UpdateState } from '../lib/platform';
 
@@ -26,9 +27,9 @@ export function UpdateBanner() {
   if (!st || later) return null;
   if (st.status === 'ready') {
     return (
-      <div className="update-banner no-print" role="status">
+      <div className="update-banner ready no-print" role="status">
         <span>
-          <b>{t('updates.ready', { v: st.version ?? '' })}</b> {t('updates.readyHint')}
+          <b>⬆ {t('updates.bannerReadyTitle', { v: st.version ?? '' })}</b> {t('updates.readyHint')}
         </span>
         <span className="row">
           <button className="btn primary sm" onClick={() => updates.install()}>{t('updates.restart')}</button>
@@ -55,6 +56,32 @@ export function UpdateBanner() {
  * Settings → Data & backup (Admin) and the personal Settings page (everyone else). Anyone may check for an update and
  * restart to install it; switching automatic updates on/off is for the whole computer, so only the Admin can.
  */
+/**
+ * Sidebar (everyone): the installed version, and what the updater is doing. When a new version is ready it turns into
+ * a clear "Restart now" button (10 Nov 2026: updates used to be visible only under Settings → Data & backup).
+ */
+export function SideUpdateStatus() {
+  const { t, isAdmin } = useApp();
+  const nav = useNavigate();
+  const st = useUpdateState();
+  if (!st) return null;
+  const open = () => nav(isAdmin ? '/settings?tab=updates' : '/account');
+  if (st.status === 'ready') {
+    return <button type="button" className="side-update ready" onClick={() => updates.install()}>⬆ {t('updates.sideReady')}</button>;
+  }
+  if (st.status === 'available' && st.reason === 'portable') {
+    return <button type="button" className="side-update ready" onClick={() => updates.openReleases()}>⬆ {t('updates.sideAvailable', { v: st.version ?? '' })}</button>;
+  }
+  if (st.status === 'downloading') {
+    return <button type="button" className="side-update busy" onClick={open}>⟳ {t('updates.sideDownloading', { p: st.progress })}</button>;
+  }
+  return (
+    <button type="button" className="side-update quiet" onClick={open}>
+      {t('updates.sideVersion', { v: st.current })}{st.status === 'none' ? ` · ${t('updates.sideUpToDate')}` : ''}
+    </button>
+  );
+}
+
 export function UpdatesSection({ canChangeAuto = true }: { canChangeAuto?: boolean }) {
   const { t } = useApp();
   const st = useUpdateState();

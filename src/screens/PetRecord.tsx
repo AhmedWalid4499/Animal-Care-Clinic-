@@ -9,7 +9,7 @@ import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Badge, Field, Icon, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Badge, Field, Icon, MenuButton, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { LabsTab } from './Labs';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
@@ -36,9 +36,16 @@ export function PetRecord() {
           phone={pet.owner_whatsapp || pet.owner_phone}
           text={t('wa.pet', { owner: pet.owner_name, clinic: locale === 'ar' ? settings.name_ar : settings.name_en, pet: pet.name })}
         />
-        <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
-        <button className="btn" onClick={() => nav(`/pets/${id}/certificate`)}><Icon name="print" /> {t('certificate.button')}</button>
-        {pet.status === 'ACTIVE' && <button className="btn" onClick={() => nav(`/pets/${id}/consent/new`)}><Icon name="edit" /> {t('consent.button')}</button>}
+        {/* Printouts and forms under one button (10 Nov 2026): the header had seven buttons in a row. */}
+        <MenuButton
+          icon="print"
+          label={t('petRecord.printForms')}
+          items={[
+            { icon: 'print', label: t('petRecord.printSummary'), onClick: () => nav(`/pets/${id}/print`) },
+            { icon: 'print', label: t('certificate.button'), onClick: () => nav(`/pets/${id}/certificate`) },
+            ...(pet.status === 'ACTIVE' ? [{ icon: 'edit', label: t('consent.button'), onClick: () => nav(`/pets/${id}/consent/new`) }] : []),
+          ]}
+        />
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
         {canIntake && pet.status === 'ACTIVE' && (
           <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>

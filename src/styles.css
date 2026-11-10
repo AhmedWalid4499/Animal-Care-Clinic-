@@ -595,3 +595,26 @@ b.neg { color: var(--bad); }
   .dash .dash-hello h1 { font-size: 22px; }
 }
 .dash .dash-cols > .section { margin-top: 0; }
+
+/* Updates you can't miss (10 Nov 2026): sidebar status line, strong banner when ready, dot on Settings / the tab. */
+.side-update { display: block; width: 100%; text-align: start; border: 0; background: none; padding: 6px 8px; margin: 6px 0 2px; border-radius: var(--radius); font: inherit; font-size: 12.5px; cursor: pointer; color: var(--ink-3); }
+.side-update.quiet:hover { background: var(--bg-2); color: var(--ink-2); }
+.side-update.busy { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.side-update.ready { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; font-size: 13px; padding: 9px 10px; animation: update-pulse 2.4s ease-in-out 3; }
+.side-update.ready:hover { filter: brightness(1.07); }
+@keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px var(--accent-soft); } }
+.update-banner.ready { background: var(--accent); color: var(--accent-ink, #fff); border-bottom: 0; font-size: 14px; padding: 9px 16px; }
+.update-banner.ready .btn.primary { background: var(--bg); color: var(--accent); border-color: var(--bg); }
+.update-banner.ready .btn.ghost { color: inherit; }
+.dot-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-inline-start: 6px; vertical-align: middle; }
+.nav-group { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); padding: 12px 10px 4px; }
+.nav-group:first-child { padding-top: 2px; }
+.nav-sep { border: 0; border-top: 1px solid var(--rule); margin: 10px 4px; }
+
+/* Menu button (pet record → Print & forms) */
+.menu-wrap { position: relative; display: inline-block; }
+.menu-wrap .caret { font-size: 11px; margin-inline-start: 2px; color: var(--ink-3); }
+.menu { position: absolute; top: calc(100% + 4px); inset-inline-start: 0; min-width: 220px; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .14); padding: 4px; z-index: 30; animation: dialog-in .12s ease-out both; }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink); text-align: start; border-radius: var(--radius); cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--bg-2); }
+.menu button svg { width: 16px; height: 16px; color: var(--ink-3); }
