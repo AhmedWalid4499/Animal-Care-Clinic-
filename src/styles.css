@@ -324,6 +324,9 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .bell.has-unread { color: var(--ink-2); }
 .bell .count { position: absolute; top: -3px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .bell-panel { position: absolute; bottom: 42px; inset-inline-start: 0; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); z-index: 40; animation: dialog-in .16s cubic-bezier(.2, .7, .2, 1) both; }
+/* (14 Nov 2026) The sidebar scrolls on short screens, which clips anything sticking out of it: the panel opens
+   beside the sidebar instead, pinned to the bottom of the window. */
+.side .bell-panel { position: fixed; bottom: 16px; inset-inline-start: 240px; }
 .bell-panel header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
 .bell-panel ul { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
 .bell-panel li button { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: start; width: 100%; text-align: start; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 12px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
