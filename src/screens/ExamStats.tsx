@@ -24,7 +24,8 @@ function TrendChart({ title, unit, data, lines }: {
   if (!pts.length) return null;
   return (
     <div className="exam-chart">
-      <h3>{title} <span className="muted small">({unit})</span></h3>
+      {/* Labels such as "Temperature (°C)" already carry their unit. */}
+      <h3>{title}{!title.includes(unit) && <> <span className="muted small">({unit})</span></>}</h3>
       <div className="chart small-chart" dir="ltr">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={pts} margin={{ top: 10, right: 16, bottom: 4, left: 0 }}>
