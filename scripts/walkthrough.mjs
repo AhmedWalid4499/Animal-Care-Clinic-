@@ -61,6 +61,25 @@ await step('quick search', async () => {
 await win.getByRole('button', { name: 'English' }).click();
 await shot('dashboard-en');
 
+// The dashboard (redone 7 Nov 2026): greeting, quick actions, today at a glance.
+await step('dashboard: quick actions and today at a glance', async () => {
+  await win.locator('.dash-hello h1', { hasText: 'Waleed' }).waitFor();
+  const quick = (await win.locator('.quick .quick-btn').allInnerTexts()).map((s) => s.replace(/\d+$/, '').trim());
+  for (const label of ['New visit', 'Pre-diagnosis', 'Book appointment', 'New owner', 'Reminders', 'New invoice']) {
+    if (!quick.some((q) => q.startsWith(label))) throw new Error(`quick action missing: ${label} (${quick.join(' | ')})`);
+  }
+  const apptCard = win.locator('.glance-card', { hasText: "Today's appointments" });
+  if (!(await apptCard.locator('b').innerText()).match(/^\d+$/)) throw new Error('appointments card has no number');
+  await win.locator('.glance-card', { hasText: 'In-patients' }).locator('.g-sub', { hasText: 'overdue' }).waitFor(); // demo: Rocky's fluids
+  await win.locator('.glance-card', { hasText: 'Open invoices' }).waitFor();
+  await win.locator('.low-stock', { hasText: 'Amoxicillin' }).waitFor(); // demo drug count 2 ≤ 3
+  // "Book appointment" opens a new booking straight away.
+  await win.locator('.quick').getByRole('button', { name: 'Book appointment' }).click();
+  await win.locator('.dialog input[type=datetime-local]').waitFor();
+  await win.keyboard.press('Escape');
+  await go('#/');
+});
+
 await step('owners', async () => {
   await go('#/owners');
   await shot('owners-en');
@@ -95,6 +114,7 @@ await step('pet record', async () => {
   await shot('pet-weight-chart');
 });
 
+let invoiceHash = '';
 await step('new visit with vaccination + prescription + follow-up', async () => {
   await win.locator('.pagehead').getByRole('button', { name: 'New visit' }).click();
   await win.waitForSelector('text=Visit type');
@@ -117,6 +137,7 @@ await step('new visit with vaccination + prescription + follow-up', async () => 
   await shot('invoice-form-from-visit');
   await win.getByRole('button', { name: 'Save', exact: true }).click();
   await win.waitForSelector('text=Record payment');
+  invoiceHash = new URL(win.url()).hash; // the stock step voids this invoice at the end
   await win.getByRole('button', { name: 'Record payment' }).click();
   await win.getByLabel('Amount (EGP)').fill('300');
   await win.locator('.dialog').getByRole('button', { name: 'InstaPay' }).click();
@@ -154,12 +175,16 @@ await step('invoices list', async () => {
 await step('settings', async () => {
   await go('#/settings');
   await shot('settings-clinic');
-  await go('#/settings?tab=prices');
+  await go('#/prices');
   await shot('settings-prices');
-  await go('#/settings?tab=vaccines');
+  await go('#/stock/vaccines');
   await shot('settings-vaccines');
   await go('#/settings?tab=data');
   await shot('settings-data');
+  // Updates have their own tab now (10 Nov 2026), not inside Data & backup.
+  if (await win.locator('.tab-enter h2', { hasText: 'Updates' }).count()) throw new Error('Updates still under Data & backup');
+  await go('#/settings?tab=updates');
+  await win.locator('.form-section h2', { hasText: 'Updates' }).waitFor();
 });
 
 // The updater only runs in an installed app; push its "update downloaded" state from the main process to
@@ -167,8 +192,11 @@ await step('settings', async () => {
 await step('update ready banner', async () => {
   const ready = { current: '0.1.0', auto: true, supported: true, reason: null, status: 'ready', version: '0.1.7', progress: 100, error: null, releasesUrl: '' };
   await app.evaluate(({ BrowserWindow }, st) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', st), ready);
-  await win.locator('.update-banner').waitFor();
+  await win.locator('.update-banner.ready').waitFor();
   await win.getByRole('checkbox', { name: 'Update automatically' }).waitFor();
+  // The sidebar says so too, with a restart button, and Settings gets a dot.
+  await win.locator('.side-update.ready', { hasText: 'restart now' }).waitFor();
+  await win.locator('.side .nav a .dot-badge').waitFor();
   await shot('update-ready');
   await win.locator('.update-banner .btn.ghost').click(); // Later
   if (await win.locator('.update-banner').count()) throw new Error('Later did not hide the banner');
@@ -182,6 +210,299 @@ await step('mac not in Applications', async () => {
   await win.getByText('/Volumes/Animal Care Clinic 0.1.1-universal/').waitFor();
   await win.locator('.form-section:has(h2:text("Updates"))').scrollIntoViewIfNeeded();
   await shot('update-mac-move');
+});
+
+// Patient alerts, the vaccination certificate and the reminders screen (6 Nov 2026 change requests).
+await step('patient alerts, certificate, reminders', async () => {
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.waitForSelector('.tabs');
+  const petHash = await win.evaluate(() => location.hash);
+  await win.locator('.pagehead').getByRole('button', { name: 'Edit' }).click();
+  await win.getByLabel('Aggressive / bites').check();
+  await win.getByLabel('Allergy', { exact: true }).check();
+  await win.getByLabel('Alert details').fill('Penicillin – muzzle before handling');
+  await win.locator('.actionbar .btn.primary').click();
+  await win.locator('.pet-alerts.big .alert-chip.danger', { hasText: 'Aggressive' }).waitFor();
+  await win.locator('.pet-alerts.big .alert-chip', { hasText: 'Penicillin' }).waitFor();
+  await shot('pet-alerts');
+  // The alert follows the pet into the pre-diagnosis.
+  await go(`${petHash.split('?')[0]}/intake`);
+  await win.locator('.chosen .alert-chip', { hasText: 'Allergy' }).waitFor();
+  // Bilingual certificate.
+  await go(`${petHash.split('?')[0]}/certificate`);
+  await win.locator('.cert-title', { hasText: 'Vaccination Certificate' }).waitFor();
+  await win.locator('.cert-title', { hasText: 'شهادة تطعيم' }).waitFor();
+  if ((await win.locator('.certificate tbody tr').count()) < 3) throw new Error('certificate is missing rows');
+  await shot('vaccination-certificate');
+  // Reminders: tomorrow's appointments + this week's vaccinations, each with WhatsApp.
+  await go('#/');
+  await win.locator('.quick').getByRole('button', { name: /Reminders/ }).click();
+  await win.locator('.reminders h2', { hasText: 'Vaccinations due this week' }).waitFor();
+  if ((await win.locator('.reminders .btn.wa').count()) < 1) throw new Error('no WhatsApp buttons on the reminders list');
+  await shot('reminders');
+});
+
+// Reports for the Admin: today's cash (the partial payment taken above) and the monthly report.
+await step('reports: end-of-day cash and monthly', async () => {
+  // Pricing in the sidebar holds Invoices, Reports and the Price list.
+  const navText = await win.locator('.side .nav').innerText();
+  if (!navText.includes('Invoices & prices') || navText.includes('Reports')) throw new Error(`sidebar: ${navText.replace(/\n/g, ' | ')}`);
+  await win.locator('.side .nav a', { hasText: 'Invoices & prices' }).click();
+  await win.locator('.section-tabs a', { hasText: 'Reports' }).click();
+  await win.locator('.side .nav a.active', { hasText: 'Invoices & prices' }).waitFor();
+  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Invoices|Reports|Price list') throw new Error('pricing tabs');
+  await win.locator('.tile.main', { hasText: 'Collected' }).waitFor();
+  const rows = await win.locator('.reports table.t').nth(1).locator('tbody tr.link').count();
+  if (rows < 1) throw new Error('no payments in today\'s cash report');
+  await win.locator('.reports table.t', { hasText: 'Dr. Waleed El-Bourgy' }).first().waitFor();
+  await shot('report-day');
+  await win.locator('.reports .tabs button', { hasText: 'Monthly' }).click();
+  await win.locator('.recharts-bar-rectangle >> visible=true').first().waitFor();
+  await win.locator('.reports h2', { hasText: 'Who owes money' }).waitFor();
+  await shot('report-month');
+});
+
+// Dose calculator + treatment templates (demo drugs/template from SEED_DEMO).
+await step('dose calculator and treatment templates', async () => {
+  await go('#/stock/drugs');
+  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Stock|Vaccine catalogue|Drugs') throw new Error('stock tabs');
+  await win.locator('.side .nav a.active', { hasText: 'Stock' }).waitFor();
+  await win.locator('table.t tr', { hasText: 'Meloxicam 1.5 mg/ml (demo)' }).waitFor();
+  await shot('settings-drugs');
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.waitForSelector('.tabs');
+  await win.locator('.pagehead').getByRole('button', { name: 'New visit' }).click();
+  await win.getByRole('button', { name: 'Use template' }).click();
+  await win.locator('.tpl-list li', { hasText: 'Gastroenteritis, standard (demo)' }).click();
+  const diag = await win.getByLabel('Diagnosis').inputValue();
+  if (diag !== 'Acute gastroenteritis') throw new Error(`template diagnosis not filled: "${diag}"`);
+  const firstDose = await win.locator('.repeat.rx').first().getByLabel('Dose').inputValue();
+  if (firstDose !== '0.4 mg (0.27 ml)') throw new Error(`meloxicam dose for 4.35 kg: "${firstDose}"`);
+  await win.locator('.dose-hint', { hasText: '4.35 kg × 0.1 mg/kg = 0.4 mg' }).waitFor();
+  // Add amoxicillin by hand and take the calculated dose.
+  await win.getByRole('button', { name: 'Add drug' }).click();
+  await win.locator('.repeat.rx').nth(1).getByLabel('Drug').fill('Amoxicillin 250 mg tablet (demo)');
+  await win.getByRole('button', { name: 'Use this dose' }).click();
+  const amox = await win.locator('.repeat.rx').nth(1).getByLabel('Dose').inputValue();
+  if (amox !== '87 mg (0.25 tablets)') throw new Error(`amoxicillin dose for 4.35 kg: "${amox}"`);
+  await shot('visit-dose-calculator');
+  // Save the visit's treatment as a new template.
+  await win.getByRole('button', { name: 'Save as template' }).click();
+  await win.locator('.dialog input[type=text]').fill('Gastro + antibiotic');
+  await win.locator('.dialog .btn.primary').click();
+  await win.getByRole('button', { name: 'Cancel' }).last().click();
+  await win.locator('.side .nav a', { hasText: 'Treatment templates' }).click();
+  await win.locator('table.t tr', { hasText: 'Gastro + antibiotic' }).waitFor();
+});
+
+// Stock (demo: vaccines tracked with 24 delivered, deworming tracked with 3 = running low).
+await step('stock: running low, restock, invoice takes out, void gives back', async () => {
+  const onHand = async (name) => Number(await win.locator('.stock table.t tbody tr', { hasText: name }).locator('td').nth(1).innerText());
+  await go('#/');
+  await win.locator('.low-stock', { hasText: 'Deworming' }).waitFor();
+  await win.locator('.low-stock', { hasText: 'VX-2609' }).waitFor(); // demo vaccine batch expiring in 20 days
+  await shot('dashboard-low-stock');
+  await win.locator('.side .nav a', { hasText: 'Stock' }).click();
+  await win.locator('.stock table.t tr', { hasText: 'Deworming' }).locator('.badge.warn').waitFor();
+  // The visit's invoice above billed one vaccine administration: 24 − 1.
+  if ((await onHand('Vaccine administration')) !== 23) throw new Error(`vaccines on hand after the invoice: ${await onHand('Vaccine administration')}`);
+  await win.locator('.stock table.t tr', { hasText: 'Deworming' }).getByRole('button', { name: 'Restock' }).click();
+  await win.getByLabel('How many arrived').fill('10');
+  await win.locator('.dialog').getByLabel('Batch').fill('DW-77');
+  await win.locator('.dialog').getByLabel('Expires').fill('2027-03-01');
+  await win.locator('.dialog').getByRole('button', { name: 'Save' }).click();
+  // Expiring soon: the older vaccine batch, of which 7 are probably left (23 on hand − 16 from the newer batch).
+  const exp = win.locator('.expiring tr', { hasText: 'VX-2609' });
+  await exp.waitFor();
+  if (!(await exp.innerText()).includes('7')) throw new Error(`expiring row: ${await exp.innerText()}`);
+  await win.locator('.stock table.t tr', { hasText: 'Deworming' }).locator('.badge.ok').waitFor();
+  if ((await onHand('Deworming')) !== 13) throw new Error(`deworming after restock: ${await onHand('Deworming')}`);
+  await shot('stock');
+  await win.locator('.stock table.t tr', { hasText: 'Vaccine administration' }).locator('td').first().click();
+  await win.locator('.dialog tr', { hasText: 'Invoice' }).locator('td.neg').waitFor();
+  await shot('stock-history');
+  await win.keyboard.press('Escape');
+  // Voiding the invoice puts the vaccine back.
+  await go(invoiceHash);
+  await win.getByRole('button', { name: 'Void invoice' }).click();
+  await win.locator('.dialog .btn.danger').click();
+  await go('#/stock');
+  if ((await onHand('Vaccine administration')) !== 24) throw new Error(`vaccines after voiding: ${await onHand('Vaccine administration')}`);
+  if (await win.locator('.side .nav a', { hasText: 'Stock' }).count() !== 1) throw new Error('no Stock in the sidebar');
+  await go('#/');
+  // The note stays for the expiring vaccine batch, but nothing is running low any more.
+  if (await win.locator('.low-stock', { hasText: 'Deworming' }).count()) throw new Error('running low still shown after restocking');
+  await win.locator('.low-stock', { hasText: 'Expiring soon' }).waitFor();
+});
+
+// Expenses and profit (Admin).
+await step('expenses and profit', async () => {
+  await go('#/reports?view=expenses');
+  await win.locator('table.expenses tr', { hasText: 'Landlord (demo)' }).waitFor();
+  await win.getByRole('button', { name: 'Add expense' }).click();
+  await win.getByLabel('Amount (EGP)').fill('1500');
+  await win.locator('.dialog').getByLabel('Category').selectOption('UTILITIES');
+  await win.locator('.dialog').getByLabel('Paid to').fill('Electricity company');
+  await win.locator('.dialog').getByRole('button', { name: 'Save' }).click();
+  await win.locator('table.expenses tr', { hasText: 'Electricity company' }).waitFor();
+  const total = await win.locator('.tile.main b').innerText();
+  // Demo: rent 8,000 + supplies 1,250 + 1,500 now.
+  if (!total.replace(/[^\d]/g, '').startsWith('10750')) throw new Error(`month total: ${total}`);
+  await shot('reports-expenses');
+  await win.locator('.reports .tabs button', { hasText: 'Monthly' }).click();
+  await win.locator('.tile', { hasText: 'Profit' }).waitFor();
+  await shot('report-month-profit');
+});
+
+// Drug counts and a treatment template printed for the owner (7 Nov 2026).
+await step('drug counts', async () => {
+  await go('#/stock/drugs');
+  const amox = win.locator('table.t tr', { hasText: 'Amoxicillin' });
+  await amox.locator('.badge.warn').waitFor();
+  const melox = win.locator('table.t tr', { hasText: 'Meloxicam' });
+  await melox.getByRole('button', { name: 'Count' }).click();
+  await win.locator('.dialog input[type=number]').fill('5');
+  await win.locator('.dialog .btn.primary').click();
+  await melox.locator('b.num', { hasText: '5' }).waitFor();
+  await shot('drugs-counts');
+});
+
+await step('treatment template printed for the owner', async () => {
+  await go('#/templates');
+  await win.locator('table.t tr', { hasText: 'Gastroenteritis, standard (demo)' }).getByRole('button', { name: 'Print' }).click();
+  // No separate "How to use" box any more (10 Nov 2026); a drug's own instructions stay under its name, headed Rx.
+  await win.locator('.rx-sheet th', { hasText: 'Rx' }).waitFor();
+  await win.locator('.rx-sheet td', { hasText: 'With food' }).waitFor();
+  if (await win.locator('.rx-sheet', { hasText: 'How to use' }).count()) throw new Error('"How to use" still printed');
+  // Without a patient the dose is a blank to write on; with Luna it is worked out from her weight.
+  if (!(await win.locator('.rx-sheet tbody .blank').count())) throw new Error('no blank dose line');
+  await win.locator('.tpl-patient .searchbox input').fill('Luna');
+  await win.locator('.tpl-patient .picker button', { hasText: 'Luna' }).first().click();
+  await win.locator('.rx-sheet', { hasText: '0.27 ml' }).waitFor();
+  await win.locator('.rx-sheet', { hasText: 'Mona Hassan' }).waitFor();
+  await shot('template-prescription');
+});
+
+// In-patient board (7 Nov 2026). Demo: Rocky in cage A1 with an overdue fluids change.
+await step('in-patient board', async () => {
+  await go('#/');
+  await win.locator('.glance-card', { hasText: 'In-patients' }).locator('.g-sub', { hasText: '1 treatment(s) overdue' }).waitFor();
+  await win.locator('.glance-card', { hasText: 'In-patients' }).click(); // the card opens the board
+  const rocky = win.locator('.ward-card', { hasText: 'Rocky' });
+  await rocky.locator('li.overdue', { hasText: 'IV fluids bag change' }).waitFor();
+  await shot('ward');
+  await rocky.locator('li.overdue').getByRole('button', { name: 'Given' }).click();
+  await rocky.locator('li.overdue').waitFor({ state: 'detached' });
+  // Admit Max for the night with a treatment every 12 hours, three times.
+  await win.getByRole('button', { name: 'Admit a patient' }).click();
+  await win.locator('.dialog .searchbox input').fill('Max');
+  await win.locator('.dialog .picker button', { hasText: 'Max' }).first().click();
+  await win.locator('.dialog').getByLabel('Cage').fill('B2');
+  await win.locator('.dialog .btn.primary').click();
+  const max = win.locator('.ward-card', { hasText: 'Max' });
+  await max.getByRole('button', { name: 'Add treatment' }).click();
+  await win.locator('.dialog').getByLabel('Treatment').fill('Meloxicam 0.6 ml by mouth');
+  await win.locator('.dialog').getByLabel('Repeat').selectOption('12');
+  await win.locator('.dialog .btn.primary').click();
+  if ((await max.locator('.tasks li', { hasText: 'Meloxicam' }).count()) !== 3) throw new Error('three treatment times expected');
+  await shot('ward-two-patients');
+  await max.getByRole('button', { name: 'Discharge' }).click();
+  await win.locator('.dialog .btn.primary').click();
+  await max.waitFor({ state: 'detached' });
+});
+
+// Lab results and the consent form (7 Nov 2026).
+await step('lab results with trend', async () => {
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.locator('.tabs button', { hasText: 'Lab results' }).click();
+  // Demo: creatinine 2.6 at the emergency (above 2.4) is flagged.
+  await win.locator('table.labs tr.flag', { hasText: 'Creatinine' }).first().waitFor();
+  await win.getByRole('button', { name: 'Add results' }).click();
+  const row = win.locator('.dialog .lab-row').first();
+  await row.getByLabel('Test').fill('Creatinine'); // known: fills unit and range
+  if ((await row.getByLabel('Unit').inputValue()) !== 'mg/dL') throw new Error('unit not remembered');
+  await row.getByLabel('Result').fill('3.1');
+  await win.locator('.dialog').getByLabel('Panel').fill('Kidney panel (demo)');
+  await win.locator('.dialog .btn.primary').click();
+  await win.locator('table.labs tr.flag', { hasText: '3.1' }).waitFor();
+  await win.locator('table.labs').first().getByRole('button', { name: 'Creatinine' }).click();
+  await win.locator('.lab-trend .recharts-line-dot').nth(2).waitFor(); // three creatinine results
+  await shot('pet-lab-results');
+});
+
+await step('consent form signed on screen', async () => {
+  await win.locator('.pagehead').getByRole('button', { name: 'Print & forms' }).click();
+  await win.getByRole('menuitem', { name: 'Consent form' }).click();
+  await win.getByLabel('Procedure').fill('Spay (ovariohysterectomy)');
+  await win.getByLabel('Estimated cost (EGP)').fill('2500');
+  const sign = win.getByRole('button', { name: 'Sign and save' });
+  if (!(await sign.isDisabled())) throw new Error('saving allowed without a signature');
+  await win.getByLabel('I have read this form and agree').check();
+  const pad = await win.locator('.sigpad canvas').boundingBox();
+  await win.mouse.move(pad.x + 30, pad.y + 100);
+  await win.mouse.down();
+  for (const [dx, dy] of [[60, -50], [110, 20], [170, -40], [240, 10]]) await win.mouse.move(pad.x + 30 + dx, pad.y + 100 + dy, { steps: 6 });
+  await win.mouse.up();
+  await shot('consent-form');
+  await sign.click();
+  await win.locator('.consent-sheet', { hasText: 'Spay (ovariohysterectomy)' }).waitFor();
+  await win.locator('.consent-sign img[src^="data:image/png"]').waitFor();
+  await shot('consent-signed');
+  await win.getByRole('button', { name: 'Back' }).click();
+  await win.locator('.consents li', { hasText: 'Spay (ovariohysterectomy)' }).waitFor();
+});
+
+// Prescription sheet for the owner, "not seen in a while", activity log (7 Nov 2026).
+await step('prescription sheet for the owner', async () => {
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.waitForSelector('.tabs');
+  // The timeline's gastritis visit has two prescriptions.
+  await win.locator('.tl > li', { hasText: 'Gastritis' }).getByRole('button', { name: 'Prescription' }).click();
+  await win.locator('.rx-sheet', { hasText: 'Metoclopramide' }).waitFor();
+  await win.locator('.rx-sheet', { hasText: 'For how long' }).waitFor({ timeout: 1000 }).catch(() => {}); // app is in English → English sheet
+  await win.locator('.seg button', { hasText: 'العربية' }).click();
+  await win.locator('.rx-sheet[dir=rtl]', { hasText: 'روشتة علاج' }).waitFor();
+  if (!(await win.locator('.rx-sheet', { hasText: '5 يوم' }).count())) throw new Error('Arabic sheet: duration missing');
+  await shot('prescription-sheet-ar');
+  await win.locator('.seg button', { hasText: 'English' }).click();
+  await win.locator('.rx-sheet[dir=ltr]', { hasText: 'Twice daily' }).waitFor();
+  await shot('prescription-sheet-en');
+});
+
+await step('not seen in a while', async () => {
+  await go('#/reminders?tab=recall');
+  const zeus = win.locator('.recall .list li', { hasText: 'Zeus' });
+  await zeus.waitFor();
+  if (!(await zeus.innerText()).includes('14 mo ago')) throw new Error(`Zeus row: ${await zeus.innerText()}`);
+  // Mishmish (seen 12 months ago) has an appointment today: not on the list.
+  if (await win.locator('.recall .list li', { hasText: 'مشمش' }).count()) throw new Error('a pet with an appointment is on the list');
+  await shot('recall');
+  await win.locator('.seg button', { hasText: '18 months' }).click();
+  await win.locator('.recall .list li', { hasText: 'Zeus' }).waitFor({ state: 'detached' });
+  await win.locator('.seg button', { hasText: '12 months' }).click();
+  await zeus.waitFor();
+});
+
+await step('activity log', async () => {
+  await go('#/settings?tab=activity');
+  // The template saved earlier in this walkthrough, by the Admin.
+  await win.locator('table.activity tr', { hasText: 'Added treatment template' }).first().waitFor();
+  await win.locator('table.activity tr', { hasText: 'Signed in' }).first().waitFor();
+  await shot('settings-activity');
+  await win.getByLabel('What').selectOption('stock');
+  await win.locator('table.activity tr', { hasText: 'Added stock movement' }).first().waitFor();
+  if (await win.locator('table.activity tr', { hasText: 'Signed in' }).count()) throw new Error('filter by kind still shows sign-ins');
+  await win.locator('table.activity tbody tr').first().click();
+  await win.locator('.dialog', { hasText: 'qty' }).waitFor();
+  await win.keyboard.press('Escape');
 });
 
 await step('dark mode', async () => {
@@ -200,6 +521,54 @@ await step('assistant cannot reach settings', async () => {
   await go('#/settings');
   await win.waitForSelector('text=Settings are for admins only');
   await shot('assistant-blocked-settings');
+});
+
+// The front desk records the pre-diagnosis for a patient who is not in the system yet, and sends them to the vet.
+await step('assistant pre-diagnosis for a new patient', async () => {
+  await go('#/');
+  await win.getByRole('button', { name: 'Pre-diagnosis' }).click();
+  await win.getByRole('button', { name: 'New patient' }).click();
+  await win.getByLabel('Phone', { exact: true }).fill('01055501234');
+  await win.getByLabel("Owner's name").fill('Hoda Sami');
+  await win.getByLabel("Pet's name").fill('Simba');
+  await win.getByLabel('Species').selectOption('CAT');
+  await shot('assistant-new-patient');
+  await win.getByRole('button', { name: 'Add patient and continue' }).click();
+  await win.waitForSelector('.seg.urgency');
+  await win.locator('.seg.urgency button').nth(1).click(); // soon
+  await win.locator('form input[type=text]').first().fill('Not eating for two days');
+  await shot('assistant-pre-diagnosis');
+  await win.getByRole('button', { name: 'Send to the vet' }).click();
+  await win.locator('.section.queue li', { hasText: 'Simba' }).waitFor();
+  await shot('assistant-queue');
+  // Same phone again: the owner is recognised and their pet offered, so no duplicate owner is created.
+  await win.getByRole('button', { name: 'Pre-diagnosis' }).click();
+  await win.getByRole('button', { name: 'New patient' }).click();
+  await win.getByLabel('Phone', { exact: true }).fill('01055501234');
+  await win.locator('.owner-found', { hasText: 'Hoda Sami' }).waitFor();
+  await win.locator('.owner-found button', { hasText: 'Simba' }).waitFor();
+  await shot('assistant-owner-found');
+  // The assistant can still correct the pre-diagnosis while the patient waits, but cannot start a full visit.
+  await go('#/');
+  await win.locator('.section.queue li', { hasText: 'Simba' }).click();
+  await win.waitForSelector('.seg.urgency');
+  await go('#/visits/new');
+  await win.waitForSelector('text=Only doctors and admins');
+});
+
+// Assistants (and Doctors) have their own Settings: check for updates, restart to update, their account.
+await step('assistant settings: updates and account', async () => {
+  await go('#/');
+  await win.locator('.side .nav a', { hasText: 'Settings' }).click();
+  await win.waitForSelector('text=Your account');
+  const ready = { current: '0.1.12', auto: true, supported: true, reason: null, status: 'ready', version: '0.1.13', progress: 100, error: null, releasesUrl: '' };
+  await app.evaluate(({ BrowserWindow }, st) => BrowserWindow.getAllWindows()[0].webContents.send('update:state', st), ready);
+  await win.getByRole('button', { name: 'Check for updates now' }).waitFor();
+  await win.locator('.form-section').getByRole('button', { name: 'Restart and update' }).waitFor();
+  await win.locator('.auto-state', { hasText: 'Automatic updates: On' }).waitFor();
+  if (await win.getByRole('checkbox', { name: 'Update automatically' }).count()) throw new Error('an assistant can switch automatic updates');
+  await win.locator('.my-account').getByRole('button', { name: 'Change my password' }).waitFor();
+  await shot('assistant-settings');
 });
 
 await step('phone layout', async () => {

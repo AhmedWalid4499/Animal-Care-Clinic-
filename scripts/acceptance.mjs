@@ -29,7 +29,7 @@ fs.mkdirSync(path.join(out, 'rtl'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-data-'));
 const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-export-'));
 const dbFile = path.join(dataDir, 'clinic.sqlite');
-const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log'];
+const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'audit_log'];
 const SQL = await initSqlJs();
 // The schema version a fresh or upgraded database must reach (src/db/schema.ts).
 const CURRENT_SCHEMA = fs.readFileSync('src/db/schema.ts', 'utf8').match(/SCHEMA_VERSION = (\d+)/)[1];
@@ -223,7 +223,7 @@ await flushWait();
     return n !== c[t];
   });
   check('S8-export-xlsx', 'Excel export in one click: one sheet per table, every row', fs.readdirSync(exportDir).length === before + 1 && mismatches.length === 0 && wb.SheetNames.length === TABLES.length,
-    `${path.basename(xlsxFile)} written with no dialog; ${wb.SheetNames.length} sheets; ${mismatches.length ? `count mismatch: ${mismatches.join(', ')}` : 'row counts match the database for all 15 tables'}`);
+    `${path.basename(xlsxFile)} written with no dialog; ${wb.SheetNames.length} sheets; ${mismatches.length ? `count mismatch: ${mismatches.join(', ')}` : `row counts match the database for all ${TABLES.length} tables`}`);
   await win.getByRole('button', { name: /Export as CSV/ }).click();
   const zipFile = await waitForFile(exportDir, /-csv\.zip$/);
   const files = unzipSync(new Uint8Array(fs.readFileSync(zipFile)));
@@ -367,7 +367,7 @@ async function pdfOf(hash, name) {
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
-    ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/settings?tab=prices'], ['settings-vaccines', '#/settings?tab=vaccines'],
+    ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/prices'], ['settings-vaccines', '#/stock/vaccines'],
     ['settings-users', '#/settings?tab=users'], ['settings-data', '#/settings?tab=data'],
   ];
   const problems = [];
@@ -415,7 +415,25 @@ await app.close();
   // Version 0.1 visits had no pre-diagnosis columns (schema v4).
   db.run('DROP INDEX IF EXISTS visits_stage');
   for (const c of ['stage', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', 'intake_by', 'intake_at']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
-  // …and no owner page link (schema v6).
+  // …nor patient alerts (schema v6).
+  for (const c of ['alert_flags', 'alert_note']) db.run(`ALTER TABLE pets DROP COLUMN ${c}`);
+  // …nor the drug list and treatment templates (schema v7).
+  db.run('DROP TABLE drugs');
+  db.run('DROP TABLE treatment_templates');
+  // …nor stock (schema v8).
+  db.run('DROP TABLE stock_moves');
+  for (const c of ['track_stock', 'low_stock']) db.run(`ALTER TABLE price_items DROP COLUMN ${c}`);
+  // …nor the check-up reminder stamp (schema v9).
+  db.run('ALTER TABLE pets DROP COLUMN recall_sent_at');
+  // …nor expenses (schema v10; stock batches went with stock_moves above).
+  db.run('DROP TABLE expenses');
+  // …nor lab results and consent forms (schema v11).
+  db.run('DROP TABLE lab_results');
+  db.run('DROP TABLE consents');
+  // …nor the in-patient board (schema v12).
+  db.run('DROP TABLE care_tasks');
+  db.run('DROP TABLE admissions');
+  // …nor the owner page link (schema v15).
   db.run('ALTER TABLE owners DROP COLUMN portal_token');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');

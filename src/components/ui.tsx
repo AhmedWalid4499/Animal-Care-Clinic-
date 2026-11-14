@@ -11,6 +11,8 @@ const paths: Record<string, string> = {
   receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z',
   plus: 'M12 5v14M5 12h14',
+  chart: 'M3 21h18M6 17V11M11 17V5M16 17v-8M21 17v-4',
+  box: 'M21 8l-9-5-9 5v8l9 5 9-5zM3 8l9 5 9-5M12 13v8',
   search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM21 21l-5-5',
   phone: 'M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z',
   chat: 'M21 11.5a8.4 8.4 0 01-12.3 7.4L3 21l2.1-5.6A8.4 8.4 0 1121 11.5z',
@@ -36,6 +38,23 @@ export function Icon({ name }: { name: keyof typeof paths | string }) {
 }
 
 export const speciesEmoji: Record<string, string> = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', OTHER: '🐾' };
+
+/** Patient alerts as coloured chips (danger flags red, chronic conditions amber). Renders nothing without alerts. */
+const ALERT_ICON: Record<string, string> = { AGGRESSIVE: '⚠️', ALLERGY: '🚫', INFECTIOUS: '🦠', DIABETIC: '💉', HEART: '❤️', EPILEPSY: '⚡', OTHER: '❗' };
+const ALERT_DANGER = new Set(['AGGRESSIVE', 'ALLERGY', 'INFECTIOUS']);
+export function PetAlerts({ flags, note, className }: { flags: string | null | undefined; note?: string | null; className?: string }) {
+  const { t } = useApp();
+  const list = (flags ?? '').split(',').map((f) => f.trim()).filter(Boolean);
+  if (!list.length && !note?.trim()) return null;
+  return (
+    <div className={`pet-alerts ${className ?? ''}`} role="note" aria-label={t('alerts.title')}>
+      {list.map((f) => (
+        <span key={f} className={`alert-chip ${ALERT_DANGER.has(f) ? 'danger' : 'caution'}`}>{ALERT_ICON[f] ?? '❗'} {t(`alerts.flag.${f}`)}</span>
+      ))}
+      {note?.trim() && <span className={`alert-chip note ${list.some((f) => ALERT_DANGER.has(f)) ? 'danger' : 'caution'}`}>{note.trim()}</span>}
+    </div>
+  );
+}
 
 export function PetAvatar({ photo, species, size }: { photo?: string | null; species: string; size?: 'sm' }) {
   return <div className={`avatar ${size ?? ''}`}>{photo ? <img src={photo} alt="" /> : <span aria-hidden>{speciesEmoji[species] ?? '🐾'}</span>}</div>;
@@ -185,4 +204,37 @@ export function imageToDataUrl(file: File | Blob, max = 360): Promise<string> {
     img.onerror = reject;
     img.src = url;
   });
+}
+
+/** A button that opens a short list of actions (e.g. the pet record's "Print & forms"). Closes on choice, click outside or Esc. */
+export function MenuButton({ label, icon, items }: { label: string; icon?: string; items: { label: string; icon?: string; onClick: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  return (
+    <div className="menu-wrap" ref={ref}>
+      <button type="button" className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {icon && <Icon name={icon} />} {label} <span aria-hidden className="caret">▾</span>
+      </button>
+      {open && (
+        <div className="menu" role="menu">
+          {items.map((it) => (
+            <button key={it.label} type="button" role="menuitem" onClick={() => { setOpen(false); it.onClick(); }}>
+              {it.icon && <Icon name={it.icon} />} {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

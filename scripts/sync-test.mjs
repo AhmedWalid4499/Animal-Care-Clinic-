@@ -92,8 +92,8 @@ const pushService = https.createServer({ key: fs.readFileSync(path.join(certDir,
 });
 await new Promise((r) => pushService.listen(PUSH_PORT, '127.0.0.1', r));
 let server = null;
-function startServer(extraEnv = {}) {
-  server = spawn(process.execPath, ['server/index.mjs'], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
+function startServer(extraEnv = {}, entry = 'server/index.mjs') {
+  server = spawn(process.execPath, [entry], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   server.stderr.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   return until(async () => (await fetch(`${SERVER}/health`)).ok, 15_000);
@@ -173,7 +173,7 @@ await step('first device uploads the clinic', async () => {
   const owners = await serverCount('owners');
   const pets = await serverCount('pets');
   const defaultsActive = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'users' AND data->>'email' LIKE '%@clinic.local' AND (data->>'is_active')::int = 1")).rows[0].n);
-  check('bootstrap', 'The first laptop (Admin) uploads its records to an empty clinic', owners === 5 && pets === 7 && defaultsActive === 0,
+  check('bootstrap', 'The first laptop (Admin) uploads its records to an empty clinic', owners === 5 && pets === 8 && defaultsActive === 0,
     `server now holds ${owners} owners, ${pets} pets; default demo logins left active on the server: ${defaultsActive}`);
   await A.win.screenshot({ path: path.join(out, 'A-dashboard-synced.png') });
 });
@@ -213,6 +213,11 @@ await step('live: B → A', async () => {
 
 let doctorId = null;
 let deskTemp = null;
+// Settings → Users: the role checkboxes (Admin, Doctor, Assistant, in that order); ticks exactly these.
+const ROLE_ORDER = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
+async function setRoles(dlg, roles) {
+  for (const [i, r] of ROLE_ORDER.entries()) await dlg.locator('.role-checks input[type=checkbox]').nth(i).setChecked(roles.includes(r));
+}
 const DOCTOR_PW = 'Doctor-own-2026';
 let inviteText = '';
 await step('admin adds users', async () => {
@@ -222,7 +227,7 @@ await step('admin adds users', async () => {
     const dlg = A.win.locator('.dialog');
     await dlg.locator('input[type=text]').first().fill(name);
     await dlg.locator('input[type=email]').fill(email);
-    await dlg.locator('select').first().selectOption(role);
+    await setRoles(dlg, [role]);
     await dlg.locator('input[name=temp-password]').fill('Welcome2026!');
     await dlg.locator('footer .btn.primary').click();
     // Then the sign-in details to send by WhatsApp or email.
@@ -263,6 +268,34 @@ await step('doctor signs in on the other laptop', async () => {
   check('doctor', 'A Doctor can sign in on another laptop, record visits, and has no Settings', newVisit === 1 && settings === 0, `New visit button: ${newVisit ? 'yes' : 'no'}; Settings in menu: ${settings ? 'yes' : 'no'}`);
   check('first-password', 'A new user gets sign-in details to send, and must choose their own password the first time', invited && sameRefused && !!synced.v && oldFails,
     `invite text has email, temporary password and server: ${invited}; keeping the temporary password refused: ${sameRefused}; new password works on the server: ${!!synced.v}, temporary one no longer: ${oldFails}`);
+});
+
+await step('admin makes someone else an admin', async () => {
+  // The Admin promotes the Doctor on laptop A; on laptop B, where the Doctor is signed in, the Admin screens appear
+  // without signing out, and the server lets them do Admin things. Then back to Doctor for the rest of the test.
+  const setRole = async (role) => {
+    await go(A, '#/settings?tab=users');
+    await A.win.locator('tr.link', { hasText: 'doctor@test.local' }).click();
+    await setRoles(A.win.locator('.dialog'), role === 'ADMIN' ? ['ADMIN', 'DOCTOR'] : [role]); // Admin and Doctor: two roles at once
+    await A.win.locator('.dialog .btn.primary').click();
+  };
+  await setRole('ADMIN');
+  let promoted, told = false, asAdmin = {}, bothRoles = false;
+  try {
+  promoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 1, 15_000, 300);
+  bothRoles = /Admin · Doctor|مدير · طبيب/.test(await B.win.locator('.side-foot').innerText());
+  told = promoted.v ? (await B.win.locator('.toasts').innerText()).includes('Admin') || (await B.win.locator('.toasts').innerText()).includes('مدير') : false;
+  const at = new Date().toISOString(); // (nowIso is defined further down)
+  const pid = crypto.randomUUID();
+  const docToken = (await api('/api/login', { email: 'doctor@test.local', password: DOCTOR_PW, deviceId: 'test-promote' })).body.token;
+  asAdmin = (await api('/api/sync/push', { changes: [{ tbl: 'price_items', id: pid, op: 'upsert', at, cols: { id: pid, name_en: 'Promotion test', name_ar: 'اختبار', category: 'OTHER', unit_price: 100, is_active: 0, created_at: at, updated_at: at } }] }, docToken)).body;
+  } finally {
+    await setRole('DOCTOR'); // always put the Doctor back, or later checks run with two Admins
+  }
+  const demoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 0, 15_000, 300);
+  check('admin-promote', 'The Admin can make anyone an Admin: their screens and rights change at once, without signing out',
+    !!promoted?.v && told && bothRoles && asAdmin.rejected?.length === 0 && !!demoted.v,
+    `doctor's laptop shows Admin Settings: ${!!promoted?.v} (told: ${told}; shown as Admin and Doctor: ${bothRoles}); server accepts an Admin-only change from them: ${asAdmin.rejected?.length === 0}; back to Doctor on their laptop: ${!!demoted.v}`);
 });
 
 await step('server enforces roles', async () => {
@@ -433,7 +466,8 @@ await step('notify: visits', async () => {
   const notBookedToday = `SELECT id, data FROM rows p WHERE tbl = 'pets' AND NOT deleted AND NOT EXISTS (SELECT 1 FROM rows a WHERE a.tbl = 'appointments' AND a.data->>'pet_id' = p.id
     AND ((a.data->>'scheduled_at')::timestamptz AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date) ORDER BY id LIMIT 2`;
   const [booked, walkIn] = (await pool.query(notBookedToday)).rows;
-  const today = new Date(Date.now() + 5 * 60_000).toISOString();
+  // Booked for right now (not a few minutes ahead, which near midnight Cairo time would already be tomorrow).
+  const today = new Date().toISOString();
   const ap = crypto.randomUUID();
   await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: ap, op: 'upsert', at: nowIso(), cols: { id: ap, pet_id: booked.id, owner_id: booked.data.owner_id, scheduled_at: today, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED', created_at: nowIso(), updated_at: nowIso() } }] }, tokens.desk);
   for (const p of [booked, walkIn]) {
@@ -510,6 +544,145 @@ await step('phase5: pre-diagnosis', async () => {
     !!told.v && note?.event === 'emergency' && !!inQueue.v && !!withVet.v && shown === 'Vomiting since this morning' && hrShown === '132' && invoiceOffered &&
       v.stage === 'DONE' && v.vet_id === adminId && v.intake_by === doctorId && Number(v.temperature_c) === 39.4 && v.diagnosis === 'Acute gastroenteritis' && visits === 1 && !!emptied.v && earlyVisitNote === 0,
     `vet's notification: ${note?.event ?? 'none'}; in the vet's queue as emergency: ${!!inQueue.v}; doctor's laptop shows "with the vet": ${!!withVet.v}; visit form shows complaint "${shown}", heart rate ${hrShown}; saved as one visit (${visits}), stage ${v.stage}, vet = admin: ${v.vet_id === adminId}, intake by the doctor: ${v.intake_by === doctorId}, temperature corrected to ${v.temperature_c}; invoice offered: ${invoiceOffered}; queue empty after: ${!!emptied.v}; "visit recorded" sent at intake: ${earlyVisitNote}`);
+});
+
+await step('phase5: assistant pre-diagnosis', async () => {
+  // The front desk (an Assistant) registers a new patient and sends the pre-diagnosis, as the app's "New patient" does:
+  // owner + pet + a visit that only waits for the vet, in one push.
+  const deskId = (await pool.query("SELECT id FROM rows WHERE tbl = 'users' AND data->>'email' = 'desk@test.local'")).rows[0].id;
+  const [o, p, v] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  const at = nowIso();
+  const push = (changes, who = 'desk') => api('/api/sync/push', { changes }, tokens[who]).then((r) => r.body);
+  const sent = await push([
+    { tbl: 'owners', id: o, op: 'upsert', at, cols: { id: o, full_name: 'Hoda Sami', phone: '01099887766', status: 'ACTIVE', created_at: at, updated_at: at } },
+    { tbl: 'pets', id: p, op: 'upsert', at, cols: { id: p, owner_id: o, name: 'Simba', species: 'CAT', sex: 'UNKNOWN', is_neutered: 0, dob_is_estimate: 0, status: 'ACTIVE', created_at: at, updated_at: at } },
+    { tbl: 'visits', id: v, op: 'upsert', at, cols: {
+      id: v, pet_id: p, type: 'CHECKUP', stage: 'WAITING', vet_id: null, visited_at: at, intake_by: deskId, intake_at: at, complaint: 'Not eating for two days',
+      urgency: 'SOON', heart_rate: 150, diagnosis: null, treatment_notes: null, follow_up_at: null, invoice_id: null, created_at: at, updated_at: at } },
+  ]);
+  // The vets are told; the assistant is not told about their own patient.
+  const docNote = await until(async () => (await notesFor('doctor')).find((n) => n.kind === 'queue' && n.data.visit_id === v), 10_000);
+  const adminNote = (await notesFor('admin')).find((n) => n.kind === 'queue' && n.data.visit_id === v);
+  const ownNote = (await notesFor('desk')).filter((n) => n.kind === 'queue' && n.data.visit_id === v).length;
+  // The doctor's laptop (B) shows the patient in the queue, sent by Reception.
+  await go(B, '#/');
+  const onB = await until(async () => (await B.win.locator('.section.queue li', { hasText: 'Simba' }).count()) === 1, 10_000, 200);
+  const byShown = onB.v ? await B.win.locator('.section.queue li', { hasText: 'Simba' }).innerText() : '';
+  await B.win.screenshot({ path: path.join(out, 'B-queue-from-assistant.png') });
+  // While waiting the assistant may correct the intake, but not write a diagnosis.
+  const fix = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { heart_rate: 140, intake_notes: 'Owner says vomited once', updated_at: nowIso() } }]);
+  const diag = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { diagnosis: 'Hairball', updated_at: nowIso() } }]);
+  const rx = crypto.randomUUID();
+  const presc = await push([{ tbl: 'prescriptions', id: rx, op: 'upsert', at: nowIso(), cols: { id: rx, visit_id: v, drug: 'Maropitant', created_at: nowIso(), updated_at: nowIso() } }]);
+  // Once the doctor takes the patient, the pre-diagnosis is the doctor's.
+  await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { stage: 'WITH_VET', vet_id: doctorId, updated_at: nowIso() } }], 'doctor');
+  const late = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { complaint: 'Changed later', updated_at: nowIso() } }]);
+  const row = (await pool.query("SELECT data FROM rows WHERE tbl = 'visits' AND id = $1", [v])).rows[0]?.data ?? {};
+  check('assistant-intake', 'An Assistant records the pre-diagnosis for a new patient; the doctor and the admin are notified and see it in the queue; diagnosis and prescriptions stay with the vets',
+    sent.rejected.length === 0 && !!docNote.v && !!adminNote && ownNote === 0 && !!onB.v && /Reception/.test(byShown) &&
+      fix.rejected.length === 0 && diag.rejected.length === 1 && presc.rejected.length === 1 && late.rejected.length === 1 &&
+      row.stage === 'WITH_VET' && row.intake_by === deskId && Number(row.heart_rate) === 140 && row.diagnosis == null && row.complaint === 'Not eating for two days',
+    `new patient + pre-diagnosis accepted: ${sent.rejected.length === 0}; doctor notified: ${docNote.v ? docNote.v.event : 'no'}, admin: ${adminNote ? adminNote.event : 'no'}, assistant about own patient: ${ownNote}; in the doctor's queue: ${!!onB.v} ("${byShown.replace(/\s+/g, ' ').trim()}"); correction while waiting accepted: ${fix.rejected.length === 0}; diagnosis refused: ${diag.rejected[0]?.reason ?? 'NO'}; prescription refused: ${presc.rejected[0]?.reason ?? 'NO'}; edit after the doctor took it refused: ${late.rejected[0]?.reason ?? 'NO'}`);
+});
+
+await step('patient alert reaches the vet', async () => {
+  // The front desk flags Simba as aggressive (schema v6 columns on pets); the doctor's laptop shows it in the queue.
+  const simba = (await pool.query("SELECT id FROM rows WHERE tbl = 'pets' AND data->>'name' = 'Simba' AND NOT deleted")).rows[0].id;
+  const r = (await api('/api/sync/push', { changes: [{ tbl: 'pets', id: simba, op: 'upsert', at: nowIso(), cols: { alert_flags: 'AGGRESSIVE', alert_note: 'Bites when restrained', updated_at: nowIso() } }] }, tokens.desk)).body;
+  await go(B, '#/');
+  const row = B.win.locator('.section.queue li', { hasText: 'Simba' });
+  const shown = await until(async () => (await row.locator('.alert-chip.danger').count()) >= 1 && (await row.innerText()).includes('Bites when restrained'), 10_000, 200);
+  await B.win.screenshot({ path: path.join(out, 'B-queue-alert.png') });
+  check('pet-alert-sync', "A patient alert set at the front desk shows in the vet's queue on another computer",
+    r.rejected.length === 0 && !!shown.v,
+    `alert accepted from the assistant: ${r.rejected.length === 0}; shown in the doctor's queue: ${!!shown.v}`);
+});
+
+await step('drugs and treatment templates: who may change them', async () => {
+  // Schema v7 tables. The drug list decides what the dose calculator says: Admin only. Templates: vets (Admin, Doctor).
+  const at = nowIso();
+  const drug = (id) => ({ tbl: 'drugs', id, op: 'upsert', at, cols: { id, name: 'Test drug', dose_mg_kg: 1, concentration: 10, unit: 'ml', is_active: 1, created_at: at, updated_at: at } });
+  const tpl = (id) => ({ tbl: 'treatment_templates', id, op: 'upsert', at, cols: { id, name: 'Test template', diagnosis: 'x', prescriptions: '[]', is_active: 1, created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskDrug = await push(drug(crypto.randomUUID()), 'desk');
+  const deskTpl = await push(tpl(crypto.randomUUID()), 'desk');
+  const docDrug = await push(drug(crypto.randomUUID()), 'doctor');
+  const docTpl = await push(tpl(crypto.randomUUID()), 'doctor');
+  const adminDrug = await push(drug(crypto.randomUUID()), 'admin');
+  check('calc-tables-rules', 'Only the Admin edits the drug list; Admins and Doctors save treatment templates; Assistants neither',
+    deskDrug.rejected.length === 1 && deskTpl.rejected.length === 1 && docDrug.rejected.length === 1 && docTpl.rejected.length === 0 && adminDrug.rejected.length === 0,
+    `assistant drug: ${deskDrug.rejected[0]?.reason ?? 'ACCEPTED'}; assistant template: ${deskTpl.rejected[0]?.reason ?? 'ACCEPTED'}; doctor drug: ${docDrug.rejected[0]?.reason ?? 'ACCEPTED'}; doctor template: ${docTpl.rejected.length ? 'REFUSED' : 'accepted'}; admin drug: ${adminDrug.rejected.length ? 'REFUSED' : 'accepted'}`);
+});
+
+await step('stock moves: who may add them', async () => {
+  // Schema v8. Stock is a log of moves (never edited), so two devices can't overwrite each other's counts.
+  // Invoices (any role that bills) take items out; restocking and count corrections are for the Admin.
+  const at = nowIso();
+  const item = crypto.randomUUID();
+  const move = (id, reason, extra = {}) => ({ tbl: 'stock_moves', id, op: 'upsert', at, cols: { id, price_item_id: item, qty: reason === 'RESTOCK' ? 10 : -1, reason, at, ts: Date.now(), ...extra } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskInvoice = await push(move(crypto.randomUUID(), 'INVOICE', { invoice_id: crypto.randomUUID() }), 'desk');
+  const deskBare = await push(move(crypto.randomUUID(), 'INVOICE'), 'desk');
+  const deskRestock = await push(move(crypto.randomUUID(), 'RESTOCK'), 'desk');
+  const docAdjust = await push(move(crypto.randomUUID(), 'ADJUST'), 'doctor');
+  const adminId = crypto.randomUUID();
+  const adminRestock = await push(move(adminId, 'RESTOCK'), 'admin');
+  const adminEdit = await push(move(adminId, 'RESTOCK', { qty: 1000 }), 'admin');
+  check('stock-rules', 'Invoices take stock out from any desk; only the Admin restocks or corrects counts; a recorded move is never changed',
+    deskInvoice.rejected.length === 0 && deskBare.rejected.length === 1 && deskRestock.rejected.length === 1 && docAdjust.rejected.length === 1 && adminRestock.rejected.length === 0 && adminEdit.rejected.length === 1,
+    `assistant invoice move: ${deskInvoice.rejected[0]?.reason ?? 'accepted'}; assistant move without invoice: ${deskBare.rejected[0]?.reason ?? 'ACCEPTED'}; assistant restock: ${deskRestock.rejected[0]?.reason ?? 'ACCEPTED'}; doctor correction: ${docAdjust.rejected[0]?.reason ?? 'ACCEPTED'}; admin restock: ${adminRestock.rejected[0]?.reason ?? 'accepted'}; admin edits it later: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('lab results and consent forms: who may change them', async () => {
+  // Schema v11. Lab results are clinical (vets); a signed consent form can be recorded by anyone but never changed.
+  const at = nowIso();
+  const pet = crypto.randomUUID();
+  const lab = (id) => ({ tbl: 'lab_results', id, op: 'upsert', at, cols: { id, pet_id: pet, taken_at: at.slice(0, 10), analyte: 'Creatinine', value: 1.2, created_at: at, updated_at: at } });
+  const consent = (id, procedure = 'Spay') => ({ tbl: 'consents', id, op: 'upsert', at, cols: { id, pet_id: pet, procedure, anaesthesia: 1, signer_name: 'Owner', signature: 'data:image/png;base64,AAAA', signed_at: at, created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskLab = await push(lab(crypto.randomUUID()), 'desk');
+  const docLab = await push(lab(crypto.randomUUID()), 'doctor');
+  const cid = crypto.randomUUID();
+  const deskConsent = await push(consent(cid), 'desk');
+  const adminEdit = await push(consent(cid, 'Something else'), 'admin');
+  check('labs-consent-rules', 'Doctors record lab results, assistants cannot; anyone records a signed consent form, nobody changes it afterwards',
+    deskLab.rejected.length === 1 && docLab.rejected.length === 0 && deskConsent.rejected.length === 0 && adminEdit.rejected.length === 1,
+    `assistant lab result: ${deskLab.rejected[0]?.reason ?? 'ACCEPTED'}; doctor lab result: ${docLab.rejected.length ? 'REFUSED' : 'accepted'}; assistant consent: ${deskConsent.rejected.length ? 'REFUSED' : 'accepted'}; admin edits the signed form: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('in-patient board: who may change what', async () => {
+  // Schema v12. Vets admit and plan treatments; an assistant only ticks a treatment as given (in their own name).
+  const at = nowIso();
+  const adm = crypto.randomUUID();
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const admission = { tbl: 'admissions', id: adm, op: 'upsert', at, cols: { id: adm, pet_id: crypto.randomUUID(), admitted_at: at, status: 'IN', created_at: at, updated_at: at } };
+  const task = (id) => ({ tbl: 'care_tasks', id, op: 'upsert', at, cols: { id, admission_id: adm, task: 'Fluids', due_at: at, status: 'DUE', created_at: at, updated_at: at } });
+  const deskAdmit = await push({ ...admission, id: crypto.randomUUID(), cols: { ...admission.cols, id: undefined } }, 'desk');
+  const docAdmit = await push(admission, 'doctor');
+  const tid = crypto.randomUUID();
+  const deskTask = await push(task(crypto.randomUUID()), 'desk');
+  await push(task(tid), 'doctor');
+  const users = (await api('/api/sync/pull?since=0&limit=5000', null, tokens.admin)).body.rows.filter((r) => r.tbl === 'users');
+  const deskId = users.find((u) => u.data?.email === 'desk@test.local')?.id;
+  const later = new Date(Date.now() + 1000).toISOString();
+  const tick = await push({ tbl: 'care_tasks', id: tid, op: 'upsert', at: later, cols: { status: 'DONE', done_at: later, done_by: deskId, updated_at: later } }, 'desk');
+  const rename = await push({ tbl: 'care_tasks', id: tid, op: 'upsert', at: later, cols: { task: 'Something else', updated_at: later } }, 'desk');
+  check('ward-rules', 'Doctors admit and plan treatments; an assistant can only tick a treatment as given',
+    deskAdmit.rejected.length === 1 && docAdmit.rejected.length === 0 && deskTask.rejected.length === 1 && tick.rejected.length === 0 && rename.rejected.length === 1,
+    `assistant admits: ${deskAdmit.rejected[0]?.reason ?? 'ACCEPTED'}; doctor admits: ${docAdmit.rejected.length ? 'REFUSED' : 'accepted'}; assistant adds a treatment: ${deskTask.rejected[0]?.reason ?? 'ACCEPTED'}; assistant ticks it given: ${tick.rejected[0]?.reason ?? 'accepted'}; assistant renames it: ${rename.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('expenses: admin only', async () => {
+  // Schema v10. The clinic's own spending (rent, salaries…) is the Admin's, like the reports that show it.
+  const at = nowIso();
+  const exp = (id) => ({ tbl: 'expenses', id, op: 'upsert', at, cols: { id, spent_at: at.slice(0, 10), category: 'RENT', amount: 100000, method: 'CASH', status: 'ACTIVE', created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const desk = await push(exp(crypto.randomUUID()), 'desk');
+  const doc = await push(exp(crypto.randomUUID()), 'doctor');
+  const admin = await push(exp(crypto.randomUUID()), 'admin');
+  check('expenses-rules', 'Only the Admin records the clinic\'s expenses',
+    desk.rejected.length === 1 && doc.rejected.length === 1 && admin.rejected.length === 0,
+    `assistant: ${desk.rejected[0]?.reason ?? 'ACCEPTED'}; doctor: ${doc.rejected[0]?.reason ?? 'ACCEPTED'}; admin: ${admin.rejected.length ? 'REFUSED' : 'accepted'}`);
 });
 
 // ---------------------------------------------------------------- Phase 6: owner page (QR) and prescription archive
@@ -607,8 +780,8 @@ await step('phase6: owner page', async () => {
   const searched = (await B.win.locator('.rx-archive-section').innerText()).includes(DRUG);
   await B.win.screenshot({ path: path.join(out, 'B-prescription-archive.png'), fullPage: true });
   await B.win.locator('.rx-archive-section .rx-list .btn.ghost', { hasText: /طباعة|Print/ }).first().click();
-  await B.win.waitForSelector('.rx-sheet');
-  const sheet = await B.win.locator('.rx-sheet').innerText();
+  await B.win.waitForSelector('.sheet.a5');
+  const sheet = await B.win.locator('.sheet.a5').innerText();
   await B.win.screenshot({ path: path.join(out, 'B-prescription-print.png'), fullPage: true });
   await go(B, `#/pets/${pet.id}?tab=prescriptions`);
   const petTab = (await B.win.locator('.rx-archive').innerText()).includes(DRUG);
@@ -1033,6 +1206,44 @@ await step('restart keeps sync', async () => {
   check('restart', 'After restarting, the laptop is still signed in to its clinic server and keeps everyone’s records', host.includes('127.0.0.1') && n >= 8 && !!synced.v && who.length > 0,
     `signed in again automatically as ${who}, ${synced.v ? 'synced' : 'not synced'}; owners: ${n}; after Sign out the sign-in screen shows server ${host}`);
   await A2.close();
+});
+
+await step('server older than the app', async () => {
+  // Railway still running an older version (it deployed from another branch): the server does not know the drugs
+  // table yet. A drug saved on a laptop must stay there (and wait), not vanish when the server refuses it.
+  const oldDir = path.resolve('.sync-test-old-server');
+  fs.rmSync(oldDir, { recursive: true, force: true });
+  fs.cpSync('server', oldDir, { recursive: true });
+  const tf = path.join(oldDir, 'tables.mjs');
+  fs.writeFileSync(tf, fs.readFileSync(tf, 'utf8').replace("'drugs', ", ''));
+  await stopServer();
+  await startServer({}, path.join(oldDir, 'index.mjs'));
+  const C = await launch('C', { demo: false });
+  try {
+    await connect(C);
+    await signIn(C, ADMIN.email, ADMIN.password);
+    await until(async () => (await C.win.locator('.sync-badge.synced').count()) > 0, 20_000);
+    await go(C, '#/stock/drugs');
+    await C.win.locator('.btn.primary', { hasText: /Add|إضافة/ }).first().click();
+    await C.win.locator('.dialog input[type=text]').first().fill('Server-behind drug');
+    await C.win.locator('.dialog input[type=number]').nth(0).fill('2');
+    await C.win.locator('.dialog input[type=number]').nth(1).fill('50');
+    await C.win.locator('.dialog .btn.primary').click();
+    await C.win.locator('.sync-badge').click();
+    const told = await until(async () => (await C.win.locator('.sync-badge').innerText()).match(/update|تحديث/), 15_000, 300);
+    const kept = await C.win.locator('table.t tbody tr', { hasText: 'Server-behind drug' }).count();
+    // Railway updated: the current server comes back, and the waiting drug goes up.
+    await stopServer();
+    await startServer();
+    await C.win.locator('.sync-badge').click();
+    const up = await until(async () => (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'drugs' AND data->>'name' = 'Server-behind drug' AND NOT deleted")).rows[0].n === '1', 20_000, 500);
+    check('server-behind', 'A server older than the app does not make new records vanish: they wait on the laptop and go up once the server is updated',
+      !!told.v && kept === 1 && !!up.v,
+      `badge on the old server: "${told.v ? told.v[0] : 'no notice'}"; drug still on the laptop: ${kept === 1}; reached the updated server: ${!!up.v}`);
+  } finally {
+    await C.app.close().catch(() => {});
+    fs.rmSync(oldDir, { recursive: true, force: true });
+  }
 });
 
 await step('admin password recovery', async () => {

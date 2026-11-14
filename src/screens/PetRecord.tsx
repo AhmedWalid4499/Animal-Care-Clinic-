@@ -4,24 +4,24 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useApp, useQuery } from '../lib/app';
 import {
   addAttachment, getAttachmentBytes, getPet, getSettings, lastWeight, markVaccinationReminded, petAppointments, petAttachments,
-  petVaccinations, petVisits, petWeights, visitInvoice,
-} from '../db/repo';
+  petVaccinations, petVisits, petWeights, visitInvoice, petConsents } from '../db/repo';
 import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Badge, Field, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Badge, Field, Icon, MenuButton, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { LabsTab } from './Labs';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 import { RxArchive } from '../components/RxArchive';
 
-type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'labs' | 'files';
 
 export function PetRecord() {
   const { id = '' } = useParams();
   const [sp, setSp] = useSearchParams();
   const tab = (sp.get('tab') as Tab) || 'timeline';
-  const { t, fmt, canVisit, locale } = useApp();
+  const { t, fmt, canVisit, canIntake, locale } = useApp();
   const nav = useNavigate();
   const pet = useQuery(() => getPet(id), [id]);
   const settings = useQuery(getSettings);
@@ -37,16 +37,26 @@ export function PetRecord() {
           phone={pet.owner_whatsapp || pet.owner_phone}
           text={t('wa.pet', { owner: pet.owner_name, clinic: locale === 'ar' ? settings.name_ar : settings.name_en, pet: pet.name })}
         />
-        <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
+        {/* Printouts and forms under one button (10 Nov 2026): the header had seven buttons in a row. */}
+        <MenuButton
+          icon="print"
+          label={t('petRecord.printForms')}
+          items={[
+            { icon: 'print', label: t('petRecord.printSummary'), onClick: () => nav(`/pets/${id}/print`) },
+            { icon: 'print', label: t('certificate.button'), onClick: () => nav(`/pets/${id}/certificate`) },
+            ...(pet.status === 'ACTIVE' ? [{ icon: 'edit', label: t('consent.button'), onClick: () => nav(`/pets/${id}/consent/new`) }] : []),
+          ]}
+        />
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
+        {canIntake && pet.status === 'ACTIVE' && (
+          <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
+        )}
         {canVisit && pet.status === 'ACTIVE' && (
-          <>
-            <button className="btn" onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
-            <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
-          </>
+          <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
         )}
       </PageHead>
 
+      <PetAlerts flags={pet.alert_flags} note={pet.alert_note} className="big" />
       <div className={`record ${pet.status !== 'ACTIVE' ? 'greyed' : ''}`} style={{ gridTemplateColumns: 'auto 1fr' }}>
         <PetAvatar photo={pet.photo_url} species={pet.species} />
         <div>
@@ -77,7 +87,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'files'] as Tab[]).map((k) => (
+        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'labs', 'files'] as Tab[]).map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -88,6 +98,7 @@ export function PetRecord() {
         {tab === 'vaccinations' && <Vaccinations petId={id} />}
         {tab === 'prescriptions' && <RxArchive petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
+        {tab === 'labs' && <LabsTab petId={id} />}
         {tab === 'files' && <Files petId={id} />}
       </div>
     </div>
@@ -95,7 +106,7 @@ export function PetRecord() {
 }
 
 function Timeline({ petId }: { petId: string }) {
-  const { t, fmt, canVisit } = useApp();
+  const { t, fmt, canVisit, canIntake } = useApp();
   const nav = useNavigate();
   const visits = useQuery(() => petVisits(petId), [petId]);
   if (!visits.length) return <p className="empty">{t('petRecord.noVisits')}</p>;
@@ -115,15 +126,13 @@ function Timeline({ petId }: { petId: string }) {
                 {v.stage !== 'DONE' && <Badge kind="warn">{t(`intake.stage.${v.stage}`)}</Badge>}
                 {v.diagnosis && <b>{v.diagnosis}</b>}
                 <span className="spacer" />
-                {v.prescriptions.length > 0 && (
-                  <button className="btn ghost sm" onClick={() => nav(`/visits/${v.id}/prescription`)}><Icon name="print" /> {t('petRecord.printRx')}</button>
-                )}
                 {invId ? (
                   <button className="btn ghost sm" onClick={() => nav(`/invoices/${invId}`)}><Icon name="receipt" /> {t('petRecord.invoiced')}</button>
                 ) : (
                   <button className="btn ghost sm" onClick={() => nav(`/invoices/new?visit=${v.id}`)}><Icon name="receipt" /> {t('petRecord.createInvoice')}</button>
                 )}
-                {canVisit && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
+                {v.prescriptions.length > 0 && <button className="btn ghost sm" onClick={() => nav(`/visits/${v.id}/prescription`)}><Icon name="print" /> {t('rxSheet.button')}</button>}
+                {(canVisit || (canIntake && v.stage === 'WAITING')) && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
               </div>
               {v.complaint && <p><span className="muted">{t('visits.complaint')}:</span> {v.complaint}</p>}
               {v.intake_at && (v.history || v.intake_notes) && (
@@ -250,6 +259,8 @@ function WeightChart({ petId }: { petId: string }) {
 function Files({ petId }: { petId: string }) {
   const { t, fmt, user, toast } = useApp();
   const files = useQuery(() => petAttachments(petId), [petId]);
+  const consents = useQuery(() => petConsents(petId), [petId]);
+  const nav = useNavigate();
   const [kind, setKind] = useState<AttachmentKind>('LAB');
   const [fetching, setFetching] = useState<string | null>(null);
   const upload = async () => {
@@ -264,6 +275,19 @@ function Files({ petId }: { petId: string }) {
   };
   return (
     <div>
+      {consents.length > 0 && (
+        <section className="section consents">
+          <header><h2>✍ {t('consent.signedForms')}</h2><span className="count">{consents.length}</span></header>
+          <ul className="list">
+            {consents.map((c) => (
+              <li key={c.id} className="link" onClick={() => nav(`/consents/${c.id}`)}>
+                <div className="main-col"><b>{c.procedure}</b><div className="sub">{fmt.dateTime(c.signed_at)} · {c.signer_name}</div></div>
+                <Icon name="print" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="row" style={{ margin: '14px 0' }}>
         <Field label={t('petRecord.kind')}>
           <select value={kind} onChange={(e) => setKind(e.target.value as AttachmentKind)}>

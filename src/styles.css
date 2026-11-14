@@ -150,6 +150,15 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .greyed { opacity: .5; }
 .tablewrap { overflow-x: auto; }
 
+.pill { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; text-align: center; line-height: 18px; }
+.reminders .list li.done { opacity: .6; }
+.pet-alerts { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 3px 0; }
+.pet-alerts.big { margin: 0 0 12px; }
+.alert-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--radius); font-size: 12px; font-weight: 600; border: 1px solid; white-space: nowrap; }
+.alert-chip.note { white-space: normal; font-weight: 400; }
+.alert-chip.danger { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.alert-chip.caution { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.pet-alerts.big .alert-chip { font-size: 14px; padding: 4px 10px; }
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--bg-2); color: var(--ink-2); white-space: nowrap; }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
@@ -184,7 +193,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .form-section { padding: 18px 0; border-bottom: 1px solid var(--rule); }
 .form-section > h2 { margin-bottom: 12px; }
 .repeat { display: grid; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px dashed var(--rule); }
-.repeat.rx { grid-template-columns: 2fr 1fr 1.3fr 70px 2fr auto; }
+.repeat.rx { grid-template-columns: 2fr 1.5fr 1.2fr 64px 1.6fr auto; }
 .repeat.vx { grid-template-columns: 2fr 1.2fr 1.2fr 1fr auto; }
 .actionbar { position: sticky; bottom: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--rule); padding: 12px 0; display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; z-index: 5; }
 .note { padding: 10px 12px; border-inline-start: 3px solid var(--accent); background: var(--accent-soft); font-size: 13px; margin: 0 0 14px; border-radius: 0 var(--radius) var(--radius) 0; }
@@ -269,7 +278,9 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .float > span { position: absolute; inset-inline-start: 13px; top: 17px; color: var(--ink-3); font-size: 15px; pointer-events: none; transition: top .15s ease, font-size .15s ease, color .15s ease; }
 .float input:focus + span, .float input:not(:placeholder-shown) + span { top: 7px; font-size: 11.5px; font-weight: 600; color: var(--accent); }
 .float input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); outline: none; }
-.has-eye input { padding-left: 46px; padding-right: 46px; }
+/* Room for the eye button on its side only, so the password starts where its label does (the input itself is ltr). */
+.has-eye input { padding-left: 12px; padding-right: 46px; }
+[dir='rtl'] .has-eye input { padding-left: 46px; padding-right: 12px; }
 .eye { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none; width: 36px; height: 36px; border-radius: var(--radius); color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
 .eye:hover { background: var(--bg-2); color: var(--ink); }
 .eye svg { width: 18px; height: 18px; }
@@ -300,11 +311,12 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 
 /* ---------- notifications bell ---------- */
 .bell-wrap { position: relative; }
-.bell { position: relative; width: 34px; height: 34px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); color: var(--ink-2); display: grid; place-items: center; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
-.bell:hover { background: var(--bg-2); color: var(--ink); }
+/* A plain icon (no box), like the links under it; the red count says when there's something new. */
+.bell { position: relative; width: 30px; height: 30px; border: 0; border-radius: var(--radius); background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.bell:hover, .bell[aria-expanded='true'] { background: var(--bg-2); color: var(--ink); }
 .bell svg { width: 18px; height: 18px; }
-.bell.has-unread { color: var(--accent); border-color: var(--accent); }
-.bell .count { position: absolute; top: -6px; inset-inline-end: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+.bell.has-unread { color: var(--ink-2); }
+.bell .count { position: absolute; top: -3px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .bell-panel { position: absolute; bottom: 42px; inset-inline-start: 0; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); z-index: 40; animation: dialog-in .16s cubic-bezier(.2, .7, .2, 1) both; }
 .bell-panel header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
 .bell-panel ul { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
@@ -354,6 +366,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
   .shell { grid-template-columns: 1fr; }
   .side { display: none; }
   .mobile-bell { display: block; position: fixed; top: max(10px, env(safe-area-inset-top, 0px)); inset-inline-end: 12px; z-index: 30; }
+  .mobile-bell .bell { width: 34px; height: 34px; background: var(--bg); box-shadow: 0 1px 4px rgba(0, 0, 0, .12); } /* floats over the page, so it needs its own background */
   .mobile-bell .bell-panel { bottom: auto; top: 42px; inset-inline-start: auto; inset-inline-end: 0; }
   .shell:has(.mobile-bell .bell-wrap) .page { padding-top: 54px; }
   .page { padding: 16px 16px 110px; }
@@ -387,7 +400,9 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .print-only { display: none; }
 .sheet { background: #fff; color: #111; }
 @media print {
-  @page { size: A5; margin: 10mm; }
+  /* (10 Nov 2026, customer request) The printer's own paper (usually A4), not A5: an A5 page printed on A4 came out
+     small in the middle of the sheet. Sheets stretch to the full page width (see the .sheet rules below). */
+  @page { size: auto; margin: 10mm; }
   body { background: #fff; color: #111; font-size: 11pt; }
   .side, .bottom-nav, .no-print, .toasts, .demo-banner, .update-banner, .actionbar { display: none !important; }
   .shell { display: block; }
@@ -397,6 +412,13 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
   a { color: inherit; }
   :root { --ink: #111; --ink-2: #444; --ink-3: #666; --rule: #ccc; --bg: #fff; --bg-2: #f3f3f3; }
 }
+.certificate .cert-title { text-align: center; font-size: 15pt; margin: 4px 0 10px; }
+.certificate .ar { font-family: inherit; }
+.certificate th .ar, .certificate td .ar, .certificate h3 .ar, .certificate .foot .ar { color: #555; }
+.certificate .facts-table td:first-child { width: 42%; color: #333; }
+.certificate .cert-sign { display: flex; justify-content: space-between; gap: 16px; margin-top: 22px; font-size: 9pt; }
+.certificate .cert-sign .line { border-bottom: 1px solid #111; width: 55mm; height: 14mm; margin-bottom: 3px; }
+.certificate .cert-sign .stamp { border: 1px dashed #777; width: 32mm; height: 24mm; margin-bottom: 3px; border-radius: 50%; }
 .sheet-wrap { background: var(--bg-2); padding: 24px; display: grid; place-items: center; border-radius: var(--radius); overflow-x: auto; }
 .sheet.a5 { width: 148mm; min-height: 210mm; padding: 10mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
 .sheet .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 10px; }
@@ -407,8 +429,15 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .sheet .r { text-align: end; }
 .sheet .foot { margin-top: 14px; font-size: 9pt; color: #555; text-align: center; border-top: 1px solid #ccc; padding-top: 6px; }
 @media print {
-  .sheet-wrap { background: none; padding: 0; display: block; }
-  .sheet.a5 { width: auto; min-height: 0; padding: 0; box-shadow: none; }
+  /* The on-screen preview centres the sheet (place-items: center); Chromium now applies that to block layout too, so
+     without resetting it a printed sheet shrank to its content in the middle of the paper (10 Nov 2026). */
+  .sheet-wrap { background: none; padding: 0; display: block; place-items: normal; justify-items: normal; }
+  .sheet.a5 { width: 100%; justify-self: stretch; min-height: 0; padding: 0; box-shadow: none; }
+}
+/* The sheets are laid out for A5. On A4 (or any paper wider than A5) they are scaled up, so the print fills the page
+   instead of looking like a small A5 in the top half. */
+@media print and (min-width: 160mm) {
+  .sheet.a5 { zoom: 1.35; }
 }
 
 /* ---- pre-diagnosis & the vet's queue (Phase 5) ---- */
@@ -435,6 +464,161 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .install-banner { display: flex; align-items: center; gap: 10px; margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); }
 .install-banner img { border-radius: 8px; flex: none; }
 
+/* Reports (6 Nov 2026) */
+.reports .stepper { gap: 8px; margin-bottom: 14px; }
+.reports .stepper input { min-height: 32px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.tile { border: 1px solid var(--rule); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.tile span { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.tile b { font-size: 18px; color: var(--ink); }
+.tile.main { border-color: var(--accent); background: var(--accent-soft); }
+.tile.main b { font-size: 22px; }
+.tile small { font-size: 12px; color: var(--ink-3); }
+table.t tfoot td { border-top: 2px solid var(--ink); border-bottom: 0; }
+table.t.compact td, table.t.compact th { padding: 5px 8px; }
+table.t tr.on td { background: var(--accent-soft); font-weight: 600; }
+.chart-box { margin: 10px 0 6px; }
+@media print {
+  .reports .tiles { grid-template-columns: repeat(5, 1fr); }
+  .reports .chart-box { height: 200px !important; }
+}
+
+/* Dose calculator + treatment templates (6 Nov 2026) */
+.dose-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: -4px 0 10px; padding: 6px 10px; font-size: 13px; background: var(--accent-soft); border-inline-start: 3px solid var(--accent); border-radius: 0 var(--radius) var(--radius) 0; }
+.dose-hint.warn { background: var(--warn-soft); border-color: var(--warn); }
+.dose-hint.bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); font-weight: 600; }
+.dose-hint .btn { margin-inline-start: auto; }
+.tpl-bar { gap: 8px; }
+.tpl-list { max-height: 50vh; overflow-y: auto; }
+
+/* Stock (6 Nov 2026) */
+.low-stock { margin: 14px 0 0; }
+table.t td.neg { color: var(--bad); }
+table.t td.pos { color: var(--ok); }
+
+/* Prescription sheet for the owner (7 Nov 2026) */
+.rx-sheet .rx-title { text-align: center; font-size: 15pt; margin: 4px 0 8px; }
+.rx-sheet .rx-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 10pt; margin-bottom: 8px; }
+.rx-sheet .rx-next { margin-top: 12px; font-weight: 600; }
+.rx-sheet .rx-sign { margin-top: 26px; font-size: 9pt; width: 60mm; margin-inline-start: auto; text-align: center; }
+.rx-sheet .rx-sign .line { border-bottom: 1px solid #111; height: 14mm; margin-bottom: 3px; }
+/* Reminders tabs, activity log */
+.reminder-tabs { padding: 18px 28px 0; margin-bottom: -10px; }
+.activity-filters { margin-bottom: 12px; }
+table.t td.nowrap { white-space: nowrap; }
+table.t td.wrap { word-break: break-word; }
+@media (max-width: 760px) { .reminder-tabs { padding: 12px 16px 0; } }
+
+/* Expenses / profit (7 Nov 2026) */
+.tile.neg b { color: var(--bad); }
+
+/* Sections with several screens: Pricing (Invoices · Reports · Price list), Stock (Stock · Vaccines · Drugs). */
+.section-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: -6px 0 16px; padding: 3px; background: var(--bg-2); border-radius: calc(var(--radius) + 2px); width: fit-content; max-width: 100%; }
+.section-tabs a { padding: 6px 14px; border-radius: var(--radius); font-weight: 600; font-size: 13.5px; color: var(--ink-2); text-decoration: none; }
+.section-tabs a:hover { color: var(--ink); text-decoration: none; }
+.section-tabs a.active { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+
+/* Lab results, consent forms (7 Nov 2026) */
+.lab-group { margin-top: 16px; }
+table.labs tr.flag td b { color: var(--bad); }
+.repeat.lab-row { grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto; }
+@media (max-width: 760px) { .repeat.lab-row { grid-template-columns: 1fr 1fr; } }
+.lab-trend { margin: 6px 0 14px; }
+.consent-text { margin: 14px 0; padding: 12px 14px; border-inline-start: 3px solid var(--rule-2); background: var(--bg-2); border-radius: var(--radius); font-size: 14px; }
+.consent-text p { margin: 0 0 6px; }
+.consent-text p.ar { margin-bottom: 12px; }
+.sigpad { position: relative; margin: 6px 0 80px; }
+.sigpad canvas { width: 100%; height: 160px; border: 1px dashed var(--rule-2); border-radius: var(--radius); background: #fff; touch-action: none; cursor: crosshair; display: block; }
+.sigpad .btn { position: absolute; top: 6px; inset-inline-end: 6px; }
+.consent-sheet .consent-title { text-align: center; font-size: 14pt; margin: 4px 0 10px; }
+.consent-sheet .facts-table td:first-child { width: 40%; color: #333; }
+.consent-sheet .consent-text { background: none; border: 0; padding: 0; font-size: 9.5pt; }
+.consent-sheet .consent-sign { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 10px; font-size: 9pt; }
+.consent-sheet .consent-sign img { max-height: 22mm; max-width: 65mm; display: block; }
+.consent-sheet .consent-sign .line { border-bottom: 1px solid #111; width: 65mm; margin-bottom: 3px; }
+
+/* In-patient board (7 Nov 2026) */
+.ward-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.ward-card { border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; }
+.ward-card.late { border-color: var(--bad); box-shadow: inset 3px 0 0 var(--bad); }
+.ward-card header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.ward-card header .badge { margin-inline-start: 8px; }
+.ward-card .tasks { list-style: none; margin: 8px 0 0; padding: 0; }
+.ward-card .tasks li { display: grid; grid-template-columns: 76px 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--rule); font-size: 14px; }
+.ward-card .tasks.done li { grid-template-columns: 52px 1fr auto auto; color: var(--ink-2); font-size: 13px; }
+.ward-card .tasks li.overdue .time, .ward-card .tasks li.overdue .what { color: var(--bad); font-weight: 600; }
+.ward-note { margin: 14px 0 0; }
+b.neg { color: var(--bad); }
+@media (max-width: 760px) { .ward-grid { grid-template-columns: 1fr; } }
+
+/* Treatment template printed for the owner (7 Nov 2026) */
+.rx-sheet .blank { display: inline-block; min-width: 34mm; border-bottom: 1px dotted #777; height: 1em; vertical-align: bottom; }
+.tpl-patient { max-width: 520px; margin-bottom: 12px; }
+
+/* Dashboard, redone 7 Nov 2026: greeting, big search, quick actions, today at a glance */
+.dash .dash-hello { margin-bottom: 14px; }
+.dash .dash-hello h1 { margin: 2px 0 2px; font-size: 26px; }
+.dash .dash-hello p { margin: 0; }
+.dash .dash-date { color: var(--accent); font-weight: 600; font-size: 13px; }
+.searchbox.big input { min-height: 52px; font-size: 16px; border-radius: 10px; }
+.dash .search-results { margin-top: 4px; }
+.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0 8px; }
+.quick-btn { position: relative; display: flex; align-items: center; gap: 10px; padding: 14px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; font-weight: 600; font-size: 14.5px; cursor: pointer; text-align: start; transition: background-color .15s ease, border-color .15s ease, transform .1s ease; }
+.quick-btn:hover { background: var(--bg-2); border-color: var(--rule-2); }
+.quick-btn:active { transform: scale(.98); }
+.quick-btn .ic { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.quick-btn .ic svg { width: 18px; height: 18px; }
+.quick-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #fff); }
+.quick-btn.primary .ic { background: rgba(255, 255, 255, .18); color: inherit; }
+.quick-btn.primary:hover { filter: brightness(1.06); }
+.quick-btn .pill { margin-inline-start: auto; }
+.dash-h { font-size: 15px; margin: 18px 0 8px; color: var(--ink-2); }
+.glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.glance-card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; text-align: start; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.glance-card:hover { background: var(--bg-2); border-color: var(--rule-2); }
+.glance-card .g-top { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.glance-card b { font-size: 26px; line-height: 1.2; }
+.glance-card .g-sub { font-size: 12.5px; color: var(--ink-3); }
+.glance-card.warn { border-color: var(--warn); box-shadow: inset 3px 0 0 var(--warn); }
+.glance-card.bad { border-color: var(--bad); box-shadow: inset 3px 0 0 var(--bad); }
+.glance-card.bad .g-sub { color: var(--bad); font-weight: 600; }
+.dash .attention:empty { display: none; }
+.dash .attention > * { margin-top: 12px; }
+.dash .dash-cols { margin-top: 22px; }
+.dash .section.queue { margin-top: 0; }
+.dash .section.schedule { margin-top: 22px; }
+.dash .section.queue + .section.schedule { margin-top: 22px; }
+.dash .schedule li.next { background: var(--accent-soft); border-radius: var(--radius); }
+@media (max-width: 760px) {
+  .quick { grid-template-columns: 1fr 1fr; }
+  .glance { grid-template-columns: 1fr 1fr; }
+  .dash .dash-hello h1 { font-size: 22px; }
+}
+.dash .dash-cols > .section { margin-top: 0; }
+
+/* Updates you can't miss (10 Nov 2026): sidebar status line, strong banner when ready, dot on Settings / the tab. */
+.side-update { display: block; width: 100%; text-align: start; border: 0; background: none; padding: 6px 8px; margin: 6px 0 2px; border-radius: var(--radius); font: inherit; font-size: 12.5px; cursor: pointer; color: var(--ink-3); }
+.side-update.quiet:hover { background: var(--bg-2); color: var(--ink-2); }
+.side-update.busy { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.side-update.ready { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; font-size: 13px; padding: 9px 10px; animation: update-pulse 2.4s ease-in-out 3; }
+.side-update.ready:hover { filter: brightness(1.07); }
+@keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px var(--accent-soft); } }
+.update-banner.ready { background: var(--accent); color: var(--accent-ink, #fff); border-bottom: 0; font-size: 14px; padding: 9px 16px; }
+.update-banner.ready .btn.primary { background: var(--bg); color: var(--accent); border-color: var(--bg); }
+.update-banner.ready .btn.ghost { color: inherit; }
+.dot-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-inline-start: 6px; vertical-align: middle; }
+.nav-group { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); padding: 12px 10px 4px; }
+.nav-group:first-child { padding-top: 2px; }
+.nav-sep { border: 0; border-top: 1px solid var(--rule); margin: 10px 4px; }
+
+/* Menu button (pet record → Print & forms) */
+.menu-wrap { position: relative; display: inline-block; }
+.menu-wrap .caret { font-size: 11px; margin-inline-start: 2px; color: var(--ink-3); }
+.menu { position: absolute; top: calc(100% + 4px); inset-inline-start: 0; min-width: 220px; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .14); padding: 4px; z-index: 30; animation: dialog-in .12s ease-out both; }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink); text-align: start; border-radius: var(--radius); cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--bg-2); }
+.menu button svg { width: 16px; height: 16px; color: var(--ink-3); }
+
 /* Owner page (Phase 6): QR code section on Owner detail, and the printable QR card */
 .owner-page-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 14px; }
 .owner-page-empty { margin-top: 10px; }
@@ -450,9 +634,6 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .owner-card-body p { margin: 0 0 6px; font-size: 10.5pt; }
 .owner-card .qr { border: 0; width: 46mm; height: 46mm; }
 
-/* Prescription archive and the A5 prescription */
+/* Prescription archive */
 .rx-archive .seg { flex-wrap: wrap; }
 .rx-archive .tl > li { padding: 12px 0; }
-.rx-sheet h2 { font-size: 14pt; }
-.rx-sign { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-top: 18mm; font-size: 10.5pt; }
-.rx-sign .line { min-width: 45mm; border-top: 1px solid #111; padding-top: 3px; text-align: center; font-size: 9pt; }

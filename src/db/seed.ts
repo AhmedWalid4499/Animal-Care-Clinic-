@@ -127,6 +127,8 @@ export function seedDemo() {
     const mishmish = pet(o3, 'مشمش', 'CAT', { breed: 'بلدي', sex: 'MALE', date_of_birth: addDays(t, -400), dob_is_estimate: 1, color: 'برتقالي' });
     const kiwi = pet(o4, 'Kiwi', 'BIRD', { breed: 'Budgerigar', sex: 'UNKNOWN', color: 'Green' });
     const bondo = pet(o5, 'بندق', 'RABBIT', { sex: 'FEMALE', date_of_birth: addDays(t, -300) });
+    // Zeus: last seen 14 months ago, nothing booked → on the "not seen in a while" list.
+    const zeus = pet(o4, 'Zeus', 'DOG', { breed: 'Husky', sex: 'MALE', date_of_birth: addDays(t, -6 * 365), color: 'Grey' });
     pet(o2, 'Bella', 'DOG', { breed: 'Labrador', sex: 'FEMALE', status: 'DECEASED', deceased_at: addDays(t, -200) });
 
     const visit = (pet_id: string, daysAgo: number, type: string, extra: Record<string, unknown>) =>
@@ -143,6 +145,13 @@ export function seedDemo() {
     insert('prescriptions', { visit_id: lv3, drug: 'Metoclopramide', dose: '0.5 ml', frequency: 'Twice daily', duration_days: 5, instructions: 'Before food' });
     insert('prescriptions', { visit_id: lv3, drug: 'Probiotic paste', dose: '1 g', frequency: 'Once daily', duration_days: 7 });
     visit(luna, 30, 'CHECKUP', { weight_kg: 4.2, temperature_c: 38.5, complaint: 'Weight check', diagnosis: 'Good recovery' });
+    // Lab results (demo values and ranges, not clinical guidance): kidney panel at the emergency and a month ago.
+    const lab = (daysAgo: number, analyte: string, value: number, unit: string, lo: number, hi: number) =>
+      insert('lab_results', { pet_id: luna, visit_id: daysAgo === 150 ? lv3 : null, taken_at: addDays(t, -daysAgo), panel: 'Kidney panel (demo)', analyte, value, unit, ref_low: lo, ref_high: hi, user_id: vetId });
+    lab(150, 'Creatinine', 2.6, 'mg/dL', 0.8, 2.4);
+    lab(150, 'BUN', 38, 'mg/dL', 16, 36);
+    lab(30, 'Creatinine', 1.9, 'mg/dL', 0.8, 2.4);
+    lab(30, 'BUN', 30, 'mg/dL', 16, 36);
 
     const mv = visit(max, 90, 'VACCINATION', { weight_kg: 31.5, temperature_c: 38.7 });
     vacc(max, mv, 'Deworming', 88, 90); // due in 2 days
@@ -154,7 +163,15 @@ export function seedDemo() {
     vacc(rocky, rv, 'Flea/tick', 33, 30); // overdue by 3 days
     const mm = visit(mishmish, 360, 'VACCINATION', { weight_kg: 4.5 });
     vacc(mishmish, mm, 'Rabies', 360, 365); // due in 5 days
+    visit(zeus, 430, 'CHECKUP', { weight_kg: 24.5, complaint: 'Annual check', diagnosis: 'Healthy' });
     visit(bondo, 20, 'CHECKUP', { weight_kg: 1.8, complaint: 'فحص دوري' });
+
+    // In-patient (demo): Rocky, on fluids after a lump check; one treatment overdue, one given, one later today.
+    const adm = insert('admissions', { pet_id: rocky, admitted_at: at(0, 8, 0), reason: 'IV fluids, observation (demo)', cage: 'A1', vet_id: vetId, status: 'IN', user_id: vetId });
+    const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
+    insert('care_tasks', { admission_id: adm, task: 'Check temperature', due_at: hoursFromNow(-4), status: 'DONE', done_at: hoursFromNow(-3.9), done_by: vetId });
+    insert('care_tasks', { admission_id: adm, task: 'IV fluids bag change', due_at: hoursFromNow(-1), status: 'DUE' });
+    insert('care_tasks', { admission_id: adm, task: 'Check temperature', due_at: hoursFromNow(3), status: 'DUE' });
 
     // Today's and this week's appointments.
     const appt = (pet_id: string, owner_id: string, scheduled_at: string, type: string, extra: Record<string, unknown> = {}) =>
@@ -182,5 +199,32 @@ export function seedDemo() {
     inv(1, o1, luna, lv3, [['Consultation', 1, 30000], ['IV fluids', 1, 25000], ['Medication', 2, 8500]], 72000, 150);
     inv(2, o2, rocky, rv, [['Consultation', 1, 30000], ['Flea/tick treatment', 1, 35000]], 30000, 33);
     inv(3, o3, mishmish, mm, [['Vaccine administration', 1, 45000]], 0, 10);
+
+    // Dose calculator and templates (demo only). These are EXAMPLES for trying the screens, marked "(demo)":
+    // the clinic enters its own drug list and doses in Settings → Drugs.
+    insert('drugs', { name: 'Meloxicam 1.5 mg/ml (demo)', dose_mg_kg: 0.1, concentration: 1.5, unit: 'ml', frequency: 'Once daily', duration_days: 3, species: 'DOG,CAT', stock_qty: 6, stock_unit: 'bottles', low_stock: 2 });
+    insert('drugs', { name: 'Amoxicillin 250 mg tablet (demo)', dose_mg_kg: 20, concentration: 250, unit: 'tablet', max_mg: 500, frequency: 'Every 12 h', duration_days: 7, species: 'DOG,CAT', stock_qty: 2, stock_unit: 'strips', low_stock: 3 });
+    insert('treatment_templates', {
+      name: 'Gastroenteritis, standard (demo)', diagnosis: 'Acute gastroenteritis', treatment_notes: 'Bland diet 3 days, fresh water, recheck if vomiting continues',
+      prescriptions: JSON.stringify([{ drug: 'Meloxicam 1.5 mg/ml (demo)', dose: '', frequency: 'Once daily', duration_days: '3', instructions: 'With food' }]), created_by: vetId,
+      owner_note: 'Small, bland meals for 3 days and plenty of fresh water. Call us if vomiting continues.',
+    });
+
+    // Stock (demo): vaccines tracked and comfortably stocked; deworming tracked and running low.
+    const item = (en: string) => get<{ id: string }>('SELECT id FROM price_items WHERE name_en = ?', [en])!.id;
+    run('UPDATE price_items SET track_stock = 1, low_stock = 5 WHERE name_en = ?', ['Vaccine administration']);
+    run('UPDATE price_items SET track_stock = 1, low_stock = 4 WHERE name_en = ?', ['Deworming']);
+    // Two vaccine deliveries: the older batch (8 doses) expires in 20 days, so it shows under "Expiring soon".
+    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 8, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-60, 10), batch_no: 'VX-2609', expires_at: addDays(t, 20) });
+    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 16, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10), batch_no: 'VX-2611', expires_at: addDays(t, 300) });
+    // Expenses (demo): this month's rent and supplies, last month's too, so the monthly report shows profit.
+    const month0 = t.slice(0, 7);
+    const lastMonth = new Date(`${month0}-15T12:00:00`); lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const month1 = lastMonth.toISOString().slice(0, 7);
+    for (const [m, extra] of [[month0, 0], [month1, 1]] as const) {
+      insert('expenses', { spent_at: `${m}-01`, category: 'RENT', amount: 800000, method: 'INSTAPAY', payee: 'Landlord (demo)', user_id: vetId, status: 'ACTIVE' });
+      insert('expenses', { spent_at: `${m}-0${3 + extra}`, category: 'SUPPLIES', amount: 125000 + extra * 30000, method: 'CASH', payee: 'Supplier (demo)', user_id: vetId, status: 'ACTIVE' });
+    }
+    insert('stock_moves', { price_item_id: item('Deworming'), qty: 3, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10) });
   });
 }

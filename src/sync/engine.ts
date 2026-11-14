@@ -11,13 +11,22 @@ import { ackOutbox, applyRemote, clearSyncedTables, getState, outboxCount, outbo
 
 export type SyncState = 'off' | 'syncing' | 'synced' | 'offline' | 'signedOut' | 'error';
 /** waitingFor = people whose offline changes wait on this device until they sign in here again. */
-export interface SyncStatus { state: SyncState; pending: number; lastSync: string | null; error: string | null; rejected: number; waitingFor: string[] }
+// serverBehind: tables this device has but the clinic server does not know yet (the server runs an older version).
+export interface SyncStatus { state: SyncState; pending: number; lastSync: string | null; error: string | null; rejected: number; waitingFor: string[]; serverBehind: string[] }
 
-let status: SyncStatus = { state: 'off', pending: 0, lastSync: null, error: null, rejected: 0, waitingFor: [] };
+let status: SyncStatus = { state: 'off', pending: 0, lastSync: null, error: null, rejected: 0, waitingFor: [], serverBehind: [] };
 const listeners = new Set<() => void>();
 function setStatus(p: Partial<SyncStatus>) {
   status = { ...status, ...p, pending: outboxCount() };
   listeners.forEach((l) => l());
+}
+// The server refused a change (the person may not make it there) and the device undid it: the screens say so, instead
+// of the record silently disappearing.
+type Refused = { tbl: string; id: string; reason: string }[];
+const refusedListeners = new Set<(r: Refused) => void>();
+export function onRefused(l: (r: Refused) => void) {
+  refusedListeners.add(l);
+  return () => { refusedListeners.delete(l); };
 }
 export function useSyncStatus(): SyncStatus {
   return useSyncExternalStore(
@@ -336,6 +345,7 @@ export async function syncNow(): Promise<void> {
   try {
     // push: each person's changes under their own sign-in, so the server checks their role, not whoever is here now
     let failedRows = 0;
+    const behind = new Set<string>();
     for (const u of outboxUsers()) {
       const token = tokenFor(u);
       if (!token) continue; // waits until that person signs in on this device again
@@ -352,11 +362,22 @@ export async function syncNow(): Promise<void> {
           }
           const r = await call<{ rejected: { tbl: string; id: string; reason: string }[]; reverts: RemoteRow[]; failed?: { tbl: string; id: string }[] }>(
             '/api/sync/push', { method: 'POST', body: JSON.stringify({ changes, cursor: Number(getState('cursor') ?? 0) }) }, token);
+          // A server older than this app refuses tables it does not know yet ("unknown table") and would have the
+          // device undo the change — a new drug or expense would vanish right after saving. Keep those changes queued
+          // instead and keep the local record; they go up once the server is updated.
+          const tooNew = r.rejected.filter((x) => x.reason === 'unknown table');
+          tooNew.forEach((x) => behind.add(x.tbl));
+          const keep = new Set(tooNew.map((x) => `${x.tbl}:${x.id}`));
           // A change the server could not store stays queued (and is tried again later); it no longer holds up the rest.
-          ackOutbox(seqs, r.failed ?? []);
+          ackOutbox(seqs, [...(r.failed ?? []), ...tooNew]);
           failedRows += r.failed?.length ?? 0;
-          if (r.reverts.length) applyRemote(r.reverts);
-          if (r.rejected.length) setStatus({ rejected: status.rejected + r.rejected.length, error: r.rejected[0].reason });
+          const reverts = r.reverts.filter((x) => !keep.has(`${x.tbl}:${x.id}`));
+          if (reverts.length) applyRemote(reverts);
+          const refused = r.rejected.filter((x) => x.reason !== 'unknown table');
+          if (refused.length) {
+            setStatus({ rejected: status.rejected + refused.length, error: refused[0].reason });
+            refusedListeners.forEach((l) => l(refused));
+          }
         }
       } catch (e) {
         if ((e as ApiError).status === 401 && u !== userId && u !== null) {
@@ -399,7 +420,7 @@ export async function syncNow(): Promise<void> {
       setState('cursor', String(since));
       if (!r.more) break;
     }
-    setStatus({ state: 'synced', lastSync: new Date().toISOString(), waitingFor: waitingNames(), ...(failedRows ? { error: `${failedRows} change(s) could not be stored by the server; trying again later` } : {}) });
+    setStatus({ state: 'synced', lastSync: new Date().toISOString(), waitingFor: waitingNames(), serverBehind: [...behind], ...(failedRows ? { error: `${failedRows} change(s) could not be stored by the server; trying again later` } : {}) });
     void syncFiles();
   } catch (e) {
     const err = e as ApiError;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { strToU8, zipSync } from 'fflate';
 import { useApp, useQuery } from '../lib/app';
@@ -15,32 +15,39 @@ import { Confirm, Dialog, Field, Icon, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { SyncPanel } from '../components/SyncBadge';
 import { ServerBackupPanel } from '../components/ServerBackup';
-import { UpdatesSection } from '../components/Updates';
+import { UpdatesSection, useUpdateState } from '../components/Updates';
 import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
 import { serverUrl } from '../sync/engine';
-import { PRICE_CATEGORIES, ROLES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
+import { ActivityTab } from './Activity';
+import { PRICE_CATEGORIES, ROLES, SPECIES, highestRole, userRoles, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
-type Tab = 'clinic' | 'prices' | 'vaccines' | 'users' | 'devices' | 'data';
+type Tab = 'clinic' | 'updates' | 'users' | 'devices' | 'activity' | 'data';
+// Moved out of Settings (7 Nov 2026): old links still land in the right place.
+const MOVED: Record<string, string> = { prices: '/prices', vaccines: '/stock/vaccines', drugs: '/stock/drugs', templates: '/templates' };
 
 export function Settings() {
   const { t } = useApp();
+  const updateReady = useUpdateState()?.status === 'ready';
   const [sp, setSp] = useSearchParams();
   const tab = (sp.get('tab') as Tab) || 'clinic';
+  if (MOVED[tab]) return <Navigate to={MOVED[tab]} replace />;
   return (
     <div className="page">
       <PageHead title={t('settings.title')} />
       <div className="tabs" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['clinic', 'prices', 'vaccines', 'users', ...(serverUrl() ? ['devices'] : []), 'data'] as Tab[]).map((k) => (
-          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>{t(`settings.${k}`)}</button>
+        {(['clinic', ...(isDesktop ? ['updates'] : []), 'users', ...(serverUrl() ? ['devices'] : []), 'activity', 'data'] as Tab[]).map((k) => (
+          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
+            {t(`settings.${k}`)}{k === 'updates' && updateReady ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
+          </button>
         ))}
       </div>
       <div key={tab} className="tab-enter">
         {tab === 'clinic' && <ClinicTab />}
-        {tab === 'prices' && <PricesTab />}
-        {tab === 'vaccines' && <VaccinesTab />}
+        {tab === 'updates' && <UpdatesSection />}
         {tab === 'users' && <UsersTab />}
         {tab === 'devices' && <DevicesTab />}
+        {tab === 'activity' && <ActivityTab />}
         {tab === 'data' && <DataTab />}
       </div>
     </div>
@@ -88,14 +95,16 @@ function ClinicTab() {
   );
 }
 
-function PricesTab() {
+export function PricesTab() {
   const { t, fmt } = useApp();
+  const nav = useNavigate();
   const rows = useQuery(() => listPriceItems());
   const [edit, setEdit] = useState<Partial<PriceItem> | null>(null);
   return (
     <>
       <div className="row end" style={{ marginBottom: 10 }}>
-        <button className="btn primary" onClick={() => setEdit({ name_en: '', name_ar: '', category: 'OTHER', unit_price: 0, is_active: 1 })}><Icon name="plus" /> {t('settings.addPrice')}</button>
+        <button className="btn" onClick={() => nav('/stock')}><Icon name="box" /> {t('stock.title')}</button>
+        <button className="btn primary" onClick={() => setEdit({ name_en: '', name_ar: '', category: 'OTHER', unit_price: 0, is_active: 1, track_stock: 0, low_stock: null })}><Icon name="plus" /> {t('settings.addPrice')}</button>
       </div>
       <div className="tablewrap">
       <table className="t">
@@ -117,14 +126,17 @@ function PricesTab() {
 
 function PriceDialog({ item, onClose }: { item: Partial<PriceItem>; onClose: () => void }) {
   const { t, toast } = useApp();
-  const [f, setF] = useState({ ...item, price: String((item.unit_price ?? 0) / 100) });
+  const [f, setF] = useState({ ...item, price: String((item.unit_price ?? 0) / 100), low: item.low_stock?.toString() ?? '' });
   return (
     <Dialog
       title={t('settings.prices')}
       onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button>
         <button className="btn primary" disabled={!f.name_en || !f.name_ar} onClick={() => {
-          savePriceItem({ name_en: f.name_en!, name_ar: f.name_ar!, category: f.category!, unit_price: Math.round(Number(f.price) * 100) || 0, is_active: f.is_active ? 1 : 0 }, item.id);
+          savePriceItem({
+            name_en: f.name_en!, name_ar: f.name_ar!, category: f.category!, unit_price: Math.round(Number(f.price) * 100) || 0, is_active: f.is_active ? 1 : 0,
+            track_stock: f.track_stock ? 1 : 0, low_stock: f.low.trim() === '' ? null : Number(f.low.replace(',', '.')),
+          }, item.id);
           toast(t('app.saved')); onClose();
         }}>{t('common.save')}</button></>}
     >
@@ -138,12 +150,18 @@ function PriceDialog({ item, onClose }: { item: Partial<PriceItem>; onClose: () 
         </Field>
         <Field label={t('settings.price')}><input type="number" min="0" step="0.01" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
         <label className="check"><input type="checkbox" checked={!!f.is_active} onChange={(e) => setF({ ...f, is_active: e.target.checked ? 1 : 0 })} /> {t('common.active')}</label>
+        <label className="check"><input type="checkbox" checked={!!f.track_stock} onChange={(e) => setF({ ...f, track_stock: e.target.checked ? 1 : 0 })} /> {t('stock.track')}</label>
+        {!!f.track_stock && (
+          <Field label={t('stock.lowAt')} hint={t('stock.lowHint')}>
+            <input type="number" min="0" step="any" value={f.low} onChange={(e) => setF({ ...f, low: e.target.value })} />
+          </Field>
+        )}
       </div>
     </Dialog>
   );
 }
 
-function VaccinesTab() {
+export function VaccinesTab() {
   const { t } = useApp();
   const rows = useQuery(() => listVaccineTypes());
   const [edit, setEdit] = useState<Partial<VaccineType> | null>(null);
@@ -207,10 +225,11 @@ function UsersTab() {
   const { t } = useApp();
   const rows = useQuery(listUsers);
   const [edit, setEdit] = useState<Partial<User> | null>(null);
-  const [invite, setInvite] = useState<{ person: Pick<User, 'name' | 'email' | 'role'>; password: string } | null>(null);
+  const [invite, setInvite] = useState<{ person: Pick<User, 'name' | 'email' | 'role' | 'roles'>; password: string } | null>(null);
   return (
     <>
       <p className="muted small" style={{ marginTop: 0 }}>{t('settings.roleHint')}</p>
+      <p className="note" style={{ marginTop: 0 }}>👑 {t('settings.adminHint')}</p>
       <div className="row end" style={{ marginBottom: 10 }}>
         <button className="btn primary" onClick={() => setEdit({ name: '', email: '', role: 'ASSISTANT', locale: 'ar', is_active: 1 })}><Icon name="plus" /> {t('settings.addUser')}</button>
       </div>
@@ -220,7 +239,7 @@ function UsersTab() {
         <tbody>
           {rows.map((u) => (
             <tr key={u.id} className={`link ${u.is_active ? '' : 'greyed'}`} onClick={() => setEdit(u)}>
-              <td><b>{u.name}</b></td><td className="ltr">{u.email}</td><td>{t(`roles.${u.role}`)}</td><td>{u.locale === 'ar' ? 'العربية' : 'English'}</td>
+              <td><b>{u.name}</b></td><td className="ltr">{u.email}</td><td>{userRoles(u).map((r) => t(`roles.${r}`)).join(' · ')}</td><td>{u.locale === 'ar' ? 'العربية' : 'English'}</td>
               <td>{u.is_active ? t('common.active') : t('common.inactive')}{u.is_active && u.must_change_password ? <span className="muted small"> · {t('settings.mustChange')}</span> : null}</td>
             </tr>
           ))}
@@ -233,10 +252,11 @@ function UsersTab() {
   );
 }
 
-function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose: () => void; onInvite: (person: Pick<User, 'name' | 'email' | 'role'>, password: string) => void }) {
+function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose: () => void; onInvite: (person: Pick<User, 'name' | 'email' | 'role' | 'roles'>, password: string) => void }) {
   const { t, toast } = useApp();
   // A new person gets a temporary password (shown, so it can be sent); they choose their own at first sign-in.
   const [f, setF] = useState({ ...item, password: item.id ? '' : tempPassword() });
+  const [roles, setRoles] = useState<Role[]>(() => (item.id ? userRoles(item as User) : [item.role ?? 'ASSISTANT']));
   const [err, setErr] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   return (
@@ -244,11 +264,11 @@ function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose:
       title={t('settings.users')}
       onClose={onClose}
       footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button>
-        <button className="btn primary" disabled={!f.name || !f.email} onClick={() => {
+        <button className="btn primary" disabled={!f.name || !f.email || !roles.length} onClick={() => {
           try {
-            saveUser({ name: f.name!, email: f.email!, role: f.role as Role, locale: f.locale as 'ar' | 'en', is_active: !!f.is_active, password: f.password || undefined }, item.id);
+            saveUser({ name: f.name!, email: f.email!, roles, locale: f.locale as 'ar' | 'en', is_active: !!f.is_active, password: f.password || undefined }, item.id);
             toast(t('app.saved'));
-            if (f.password) onInvite({ name: f.name!, email: f.email!, role: f.role as Role }, f.password);
+            if (f.password) onInvite({ name: f.name!, email: f.email!, role: highestRole(roles), roles: roles.join(',') }, f.password);
             else onClose();
           } catch (e) {
             const m = String((e as Error).message);
@@ -260,10 +280,14 @@ function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose:
       <div className="grid g2">
         <Field label={t('settings.userName')}><input type="text" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoFocus /></Field>
         <Field label={t('settings.email')}><input type="email" className="ltr" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
-        <Field label={t('settings.role')}>
-          <select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value as Role })}>
-            {ROLES.map((r) => <option key={r} value={r}>{t(`roles.${r}`)}</option>)}
-          </select>
+        <Field label={t('settings.roles')} hint={t('settings.rolesHint')} group>
+          <div className="row role-checks">
+            {ROLES.map((r) => (
+              <label key={r} className="check">
+                <input type="checkbox" checked={roles.includes(r)} onChange={(e) => setRoles(e.target.checked ? ROLES.filter((x) => x === r || roles.includes(x)) : roles.filter((x) => x !== r))} /> {t(`roles.${r}`)}
+              </label>
+            ))}
+          </div>
         </Field>
         <Field label={t('settings.locale')}>
           <select value={f.locale} onChange={(e) => setF({ ...f, locale: e.target.value as 'ar' | 'en' })}>
@@ -291,7 +315,7 @@ function UserDialog({ item, onClose, onInvite }: { item: Partial<User>; onClose:
           onClose={() => setConfirmReset(false)}
           onConfirm={() => {
             const pw = resetPassword(item.id!);
-            onInvite({ name: item.name!, email: item.email!, role: item.role as Role }, pw);
+            onInvite({ name: item.name!, email: item.email!, role: item.role as Role, roles: item.roles ?? null }, pw);
           }}
         />
       )}
@@ -412,7 +436,6 @@ function DataTab() {
         </div>
         {result && <pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{result}</pre>}
       </div>
-      {isDesktop && <UpdatesSection />}
       {restore && (
         <Confirm
           title={t('settings.restore')}
