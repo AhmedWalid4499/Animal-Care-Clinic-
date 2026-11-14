@@ -1144,7 +1144,7 @@ await step('phase4: files', async () => {
     };
   });
   await go(B, `#/pets/${pet.id}?tab=files`);
-  await B.win.locator('.list li.link', { hasText: 'xray-left-leg.png' }).click();
+  await B.win.locator('.file-tile', { hasText: 'xray-left-leg.png' }).click();
   const opened = await until(async () => B.app.evaluate(() => globalThis.__opened), 10_000, 200);
   const openedSha = opened.v ? sha(fs.readFileSync(opened.v)) : null;
   await B.win.screenshot({ path: path.join(out, 'B-files.png') });
