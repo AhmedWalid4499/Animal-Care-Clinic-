@@ -58,6 +58,29 @@ declare global {
 const desktop = typeof window !== 'undefined' ? window.clinicDesktop : undefined;
 export const isDesktop = !!desktop;
 
+// ---- which device the web app runs on (cloud build: phone, Chromebook, any browser) ----
+export type DeviceKind = 'desktop' | 'chromebook' | 'android' | 'iphone' | 'ipad' | 'browser';
+export function detectDevice(ua: string, uaPlatform?: string): Exclude<DeviceKind, 'desktop'> {
+  // Chromebooks say "CrOS" in the user agent (kept by Chrome's reduced user agent) and "Chrome OS" in userAgentData.
+  if (/\bCrOS\b/.test(ua) || /chrome ?os/i.test(uaPlatform ?? '')) return 'chromebook';
+  if (/Android/.test(ua)) return 'android';
+  if (/iPhone|iPod/.test(ua)) return 'iphone';
+  if (/iPad/.test(ua)) return 'ipad';
+  return 'browser';
+}
+export const deviceKind: DeviceKind =
+  desktop ? 'desktop'
+  : typeof navigator === 'undefined' ? 'browser'
+  : detectDevice(navigator.userAgent, (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform);
+export const isChromebook = deviceKind === 'chromebook';
+/** A full-size screen with a keyboard: the desktop app, a Chromebook or a computer's browser (not a phone). */
+export const isLaptopLike = deviceKind === 'desktop' || deviceKind === 'chromebook' || deviceKind === 'browser';
+const DEVICE_NAMES: Record<DeviceKind, string> = { desktop: 'Desktop app', chromebook: 'Chromebook', android: 'Android phone', iphone: 'iPhone', ipad: 'iPad', browser: 'Browser' };
+/** Opened from its own icon (installed web app) rather than in a browser tab. */
+export const isInstalledApp = () =>
+  typeof window !== 'undefined' &&
+  (window.matchMedia?.('(display-mode: standalone)').matches || window.matchMedia?.('(display-mode: window-controls-overlay)').matches || (navigator as { standalone?: boolean }).standalone === true);
+
 // ---- browser fallback (prototype): IndexedDB holds the database bytes ----
 const IDB_NAME = 'animal-care-clinic';
 // Bump when the demo seed changes so prototype viewers get the new demo data instead of their old copy.
@@ -124,7 +147,7 @@ function pickInBrowser(accept: string): Promise<{ name: string; bytes: Uint8Arra
 export const platform = {
   async config() {
     if (desktop) return desktop.config();
-    return { seedDemo: __WEB_DEMO__, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: '0.1.0', platform: 'web', deviceName: navigator.userAgent.includes('Android') ? 'Android phone' : navigator.userAgent.includes('iPhone') ? 'iPhone' : 'Browser' };
+    return { seedDemo: __WEB_DEMO__, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: __APP_VERSION__, platform: deviceKind === 'chromebook' ? 'chromeos' : 'web', deviceName: DEVICE_NAMES[deviceKind] };
   },
   async loadDb() {
     if (desktop) {
@@ -217,7 +240,7 @@ export const platform = {
 };
 
 const WEB_UPDATE_STATE: UpdateState = {
-  current: '0.1.0', auto: false, supported: false, reason: 'web', status: 'idle', version: null, progress: 0, error: null, releasesUrl: '',
+  current: __APP_VERSION__, auto: false, supported: false, reason: 'web', status: 'idle', version: null, progress: 0, error: null, releasesUrl: '',
 };
 
 // Automatic updates — desktop only; the browser prototype reports "not supported".

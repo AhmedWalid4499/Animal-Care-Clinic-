@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
@@ -26,11 +27,27 @@ const cloudHead: Plugin = {
     );
   },
 };
+// Every build gets its own id. The cloud build also writes it to /version.json (never cached, see
+// server/index.mjs), so an app left open all day on a Chromebook or phone notices a new deploy and offers to reload.
+const APP_VERSION: string = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+const BUILD_ID = `${APP_VERSION}+${new Date().toISOString().replace(/[-:]/g, '').slice(0, 13)}.${Math.random().toString(36).slice(2, 8)}`;
+const cloudVersion: Plugin = {
+  name: 'cloud-version',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: APP_VERSION, build: BUILD_ID, builtAt: new Date().toISOString() }) });
+  },
+};
+
 export default defineConfig(({ mode }) => ({
   publicDir: mode === 'cloud' ? 'public-cloud' : false,
   base: mode === 'cloud' ? '/' : './',
-  plugins: mode === 'web' ? [react(), viteSingleFile()] : mode === 'cloud' ? [react(), cloudHead] : [react(), csp],
-  define: { __WEB_DEMO__: JSON.stringify(mode === 'web'), __CLOUD__: JSON.stringify(mode === 'cloud') },
+  plugins: mode === 'web' ? [react(), viteSingleFile()] : mode === 'cloud' ? [react(), cloudHead, cloudVersion] : [react(), csp],
+  define: {
+    __WEB_DEMO__: JSON.stringify(mode === 'web'),
+    __CLOUD__: JSON.stringify(mode === 'cloud'),
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __BUILD_ID__: JSON.stringify(BUILD_ID),
+  },
   build: {
     outDir: mode === 'web' ? 'dist-web' : mode === 'cloud' ? 'dist-cloud' : 'dist',
     emptyOutDir: true,

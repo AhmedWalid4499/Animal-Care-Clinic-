@@ -163,6 +163,7 @@ How Phase 2 is built:
 | Windows / Mac desktop | Stays and is the main clinic PC client. Same screens, local SQLite, and now it syncs. Auto-update keeps working. |
 | Phone | New: the installable web app (PWA) from the Railway address. "Add to Home screen" on Android; works offline after the first login. |
 | Browser | The same web app, for the laptop or any PC without the desktop app. |
+| Chromebook | The same web app installed from Chrome (added 14 Nov 2026): own window, shelf shortcuts, laptop layout, one window at a time, offers to reload when a new version is deployed. See `docs/CHROMEBOOK.md`. |
 | Data already in a desktop app | On first sign-in to the cloud, the desktop app uploads its existing database once. Today that's only test data. |
 
 ## Work plan

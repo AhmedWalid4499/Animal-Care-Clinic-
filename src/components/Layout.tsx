@@ -10,7 +10,7 @@ import { signOutSync } from '../sync/engine';
 import { dropPushSubscription } from '../sync/notify';
 import { NotificationAnnouncer, NotificationBell, RefusedAnnouncer } from './Notifications';
 import { ChangePasswordDialog } from './Account';
-import { InstallPrompt } from './InstallPrompt';
+import { InstallPrompt, LaunchHandler, useInstall } from './InstallPrompt';
 import { WardWatcher } from '../screens/Ward';
 
 export function Layout() {
@@ -19,6 +19,8 @@ export function Layout() {
   const nav = useNavigate();
   const { pathname } = useLocation();
   const [pwDialog, setPwDialog] = useState(false);
+  const inst = useInstall();
+  useSearchShortcut();
   // Each screen starts at the top and slides in (see .route-enter in styles.css).
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -95,6 +97,7 @@ export function Layout() {
             <button className="linkbtn" onClick={() => setTheme(nextTheme[theme])}>
               {t('app.theme')}: {t(`app.theme${theme[0].toUpperCase()}${theme.slice(1)}`)}
             </button>
+            {inst.canPrompt && !inst.running && <button className="linkbtn" onClick={() => void inst.install()}>{t('install.button')}</button>}
             <button className="linkbtn" onClick={() => setPwDialog(true)}>{t('password.change')}</button>
             <button className="linkbtn" onClick={async () => { await dropPushSubscription(); signOutSync(); setUser(null); nav('/'); }}>{t('app.logout')}</button>
           </div>
@@ -102,6 +105,7 @@ export function Layout() {
         <NotificationAnnouncer />
         <RefusedAnnouncer />
         <WardWatcher />
+        <LaunchHandler />
         {pwDialog && <ChangePasswordDialog onClose={() => setPwDialog(false)} />}
         <div className="mobile-bell"><NotificationBell floating /></div>
         <main className="main">
@@ -121,6 +125,39 @@ export function Layout() {
       </nav>
     </>
   );
+}
+
+/**
+ * Ctrl+K (⌘K on a Mac), or "/" when not typing: jump to the search box (Chromebook and laptop keyboards).
+ * Screens without a search box go to the dashboard's.
+ */
+function useSearchShortcut() {
+  const nav = useNavigate();
+  useEffect(() => {
+    const focusSearch = () => {
+      const box = document.querySelector<HTMLInputElement>('.main .searchbox input');
+      if (box) {
+        box.focus();
+        box.select();
+        return true;
+      }
+      return false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      const combo = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k';
+      if (!combo && !(e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey)) return;
+      if (document.querySelector('.overlay')) return; // a dialog is open
+      e.preventDefault();
+      if (!focusSearch()) {
+        nav('/');
+        setTimeout(focusSearch, 80);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [nav]);
 }
 
 export function PageHead({ title, sub, crumb, children }: { title: string; sub?: string; crumb?: { to: string; label: string }; children?: React.ReactNode }) {

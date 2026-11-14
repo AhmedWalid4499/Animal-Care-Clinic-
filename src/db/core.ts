@@ -161,11 +161,23 @@ export function markChanged() {
   changed();
 }
 
+let persisting = true;
+/**
+ * Stop writing this window's copy of the database (web app: another window took over, see lib/oneWindow.ts).
+ * Resolves once every save already started has finished, so the other window loads the latest copy.
+ */
+export async function stopPersisting(): Promise<void> {
+  await flush();
+  persisting = false;
+  await saving;
+}
+
 export function flush(): Promise<void> {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
+  if (!persisting || !db) return saving;
   const bytes = conn().export();
   // export() resets pragmas on the connection in sql.js; restore FK enforcement.
   conn().run('PRAGMA foreign_keys = ON');

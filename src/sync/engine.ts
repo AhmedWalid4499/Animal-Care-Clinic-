@@ -6,7 +6,7 @@ import { all, flush, get, markChanged, rawDb, subscribe, uuid } from '../db/core
 import { getAttachmentBytes, recomputeInvoices } from '../db/repo';
 import { DEFAULT_LOGINS, seedBase } from '../db/seed';
 import type { User } from '../db/types';
-import { isDesktop, platform } from '../lib/platform';
+import { isLaptopLike, platform } from '../lib/platform';
 import { ackOutbox, applyRemote, clearSyncedTables, getState, outboxCount, outboxUsers, pendingChanges, setState, snapshotRows, type RemoteRow } from './local';
 
 export type SyncState = 'off' | 'syncing' | 'synced' | 'offline' | 'signedOut' | 'error';
@@ -455,7 +455,8 @@ async function recoverAfterRestore() {
 // ---------------------------------------------------------------- files (X-rays, lab PDFs, photos)
 // The attachment rows sync like any table; the bytes go up to the server once, and other devices download them:
 // in the background up to a size (so they open offline), or when someone opens a bigger one.
-const PREFETCH_MAX = isDesktop ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
+// Laptops (desktop app, Chromebook, a computer's browser) have room for more than phones.
+const PREFETCH_MAX = isLaptopLike ? 10 * 1024 * 1024 : 2 * 1024 * 1024;
 const notOnServer = new Map<string, number>(); // id → when the server last said "not yet"
 async function raw(path: string, init: RequestInit, token: string, ms = 120_000) {
   const url = serverUrl();

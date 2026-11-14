@@ -16,6 +16,8 @@ import { PageHead } from '../components/Layout';
 import { SyncPanel } from '../components/SyncBadge';
 import { ServerBackupPanel } from '../components/ServerBackup';
 import { UpdatesSection, useUpdateState } from '../components/Updates';
+import { useWebUpdate } from '../lib/webUpdate';
+import { ThisDeviceSection } from '../components/ThisDevice';
 import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
 import { serverUrl } from '../sync/engine';
@@ -28,7 +30,9 @@ const MOVED: Record<string, string> = { prices: '/prices', vaccines: '/stock/vac
 
 export function Settings() {
   const { t } = useApp();
-  const updateReady = useUpdateState()?.status === 'ready';
+  const desktopReady = useUpdateState()?.status === 'ready';
+  const webReady = useWebUpdate().status === 'ready';
+  const updateReady = desktopReady || webReady;
   const [sp, setSp] = useSearchParams();
   const tab = (sp.get('tab') as Tab) || 'clinic';
   if (MOVED[tab]) return <Navigate to={MOVED[tab]} replace />;
@@ -36,7 +40,7 @@ export function Settings() {
     <div className="page">
       <PageHead title={t('settings.title')} />
       <div className="tabs" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['clinic', ...(isDesktop ? ['updates'] : []), 'users', ...(serverUrl() ? ['devices'] : []), 'activity', 'data'] as Tab[]).map((k) => (
+        {(['clinic', ...(isDesktop || __CLOUD__ ? ['updates'] : []), 'users', ...(serverUrl() ? ['devices'] : []), 'activity', 'data'] as Tab[]).map((k) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`settings.${k}`)}{k === 'updates' && updateReady ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
           </button>
@@ -44,7 +48,7 @@ export function Settings() {
       </div>
       <div key={tab} className="tab-enter">
         {tab === 'clinic' && <ClinicTab />}
-        {tab === 'updates' && <UpdatesSection />}
+        {tab === 'updates' && (__CLOUD__ ? <ThisDeviceSection /> : <UpdatesSection />)}
         {tab === 'users' && <UsersTab />}
         {tab === 'devices' && <DevicesTab />}
         {tab === 'activity' && <ActivityTab />}
@@ -404,7 +408,7 @@ function DataTab() {
       <ServerBackupPanel />
       <div className="form-section">
         <h2>{t('settings.export')}</h2>
-        <p className="muted small">{t('settings.exportHint')}</p>
+        <p className="muted small">{t(isDesktop ? 'settings.exportHint' : 'settings.exportHintWeb')}</p>
         <div className="row">
           <button className="btn primary" onClick={exportXlsx}>⬇ {t('settings.export')}</button>
           <button className="btn" onClick={exportCsv}>{t('settings.exportCsv')}</button>
@@ -419,7 +423,7 @@ function DataTab() {
       <div className="form-section">
         <h2>{t('settings.backup')}</h2>
         <p className="muted small">
-          {t('settings.backupHint')} {isDesktop && cfg && <code className="ltr">{cfg.backupDir}</code>}
+          {isDesktop ? <>{t('settings.backupHint')} {cfg && <code className="ltr">{cfg.backupDir}</code>}</> : t('settings.backupHintWeb')}
         </p>
         <div className="row">
           <button className="btn" onClick={backup}>💾 {t('settings.backup')}</button>

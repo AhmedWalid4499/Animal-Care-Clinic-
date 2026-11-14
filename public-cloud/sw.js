@@ -2,17 +2,42 @@
 // closed or in the background, and opens the right screen when one is clicked (docs/CLOUD-PLAN.md, Phase 3).
 // It also keeps the app itself on the device, so the phone/browser app opens without a connection (Phase 2):
 // the records are already in the browser's own database.
-const SHELL = 'clinic-shell-v1';
+// v2: the manifest is fetched fresh (Chromebook shortcuts, no portrait lock), and old copies are dropped.
+const SHELL = 'clinic-shell-v2';
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icon-192.png'])).catch(() => {}).then(() => self.skipWaiting()));
 });
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (e) =>
+  e.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('clinic-shell-') && k !== SHELL).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  ),
+);
 
 // /o/… is an owner's page (server/portal.mjs): always from the server, never kept here or mixed with the app.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/o/') || url.pathname.startsWith('/t/') || url.pathname === '/health') return;
+  // Which version the server runs: always ask (lib/webUpdate.ts). The manifest: fresh when online, so an
+  // installed app picks up new shortcuts; the kept copy offline.
+  if (url.pathname === '/version.json') return;
+  if (url.pathname === '/manifest.webmanifest') {
+    e.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req).then((r) => r || Response.error())),
+    );
+    return;
+  }
   if (req.mode === 'navigate') {
     // The page: fresh from the server when it answers (so updates arrive), the kept copy when it doesn't.
     e.respondWith(
