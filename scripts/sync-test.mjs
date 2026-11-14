@@ -538,6 +538,9 @@ await step('phase6: owner page', async () => {
   await phonePage.goto(url);
   await phonePage.waitForSelector('.hello');
   const firstView = await phonePage.locator('main').innerText();
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-1-home-ar.png'), fullPage: true });
+  const tab = (v) => phonePage.evaluate((x) => (location.hash = x), v).then(() => sleep(150));
+  await tab('appointments');
 
   // The admin books the pet for the day after tomorrow on laptop A: the phone shows it without reloading.
   const day = new Date(Date.now() + 2 * 86400_000);
@@ -553,6 +556,8 @@ await step('phase6: owner page', async () => {
   await A.win.locator('.dialog footer .btn.primary').click();
   const apptLive = await until(async () => (await gcal.count()) === apptsBefore + 1, 10_000, 100);
   const apptMs = Date.now() - t0;
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-3-appointments-ar.png'), fullPage: true });
+  await tab('prescriptions');
 
   // The doctor records a visit with a prescription on laptop B: it appears on the owner's phone by itself.
   const DRUG = `Amoxiclav 250 mg ${Date.now() % 10000}`;
@@ -571,10 +576,19 @@ await step('phase6: owner page', async () => {
   const rxLive = await until(async () => (await phonePage.locator('main').innerText()).includes(DRUG), 15_000, 100);
   const rxMs = Date.now() - t0;
   const liveDot = await phonePage.locator('.status.on').count();
-  await phonePage.screenshot({ path: path.join(out, 'owner-page-phone-ar.png'), fullPage: true });
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-4-prescriptions-ar.png'), fullPage: true });
+  await tab('pets');
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-2-pets-ar.png'), fullPage: true });
+  await tab('details');
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-5-details-ar.png'), fullPage: true });
+  await tab('home');
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-1-home-ar.png'), fullPage: true });
   await phonePage.locator('button.lang').click();
   const english = await phonePage.locator('h1.hello').innerText();
-  await phonePage.screenshot({ path: path.join(out, 'owner-page-phone-en.png'), fullPage: true });
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-6-home-en.png'), fullPage: true });
+  await phonePage.setViewportSize({ width: 1280, height: 860 });
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-7-home-en-laptop.png'), fullPage: true });
+  const manifest = await (await fetch(`${url}/manifest.webmanifest`)).json().catch(() => ({}));
 
   // Calendar: the whole feed (to subscribe once) and one appointment (to add).
   const after = await (await fetch(`${url}/data`)).json();
@@ -620,8 +634,8 @@ await step('phase6: owner page', async () => {
       htmlText.includes('<html') && data.owner?.full_name === owner.full_name && data.pets?.some((p) => p.name === pet.data.name) && leaks.length === 0 && firstView.includes(pet.data.name) && doctorCanReplace === 0,
     `QR made on the doctor's laptop, on the server: ${!!onServer.v}; page ${html.status} (no-store, no-referrer, CSP with nonce); shows ${data.pets?.length} pet(s) of ${data.owner?.full_name}; staff-only fields in the data: ${leaks.join(', ') || 'none'}; replace button for a Doctor: ${doctorCanReplace ? 'shown' : 'hidden'}`);
   check('owner-page-live', 'The owner page updates by itself: a booking and a prescription appear on the open phone page within seconds',
-    !!apptLive.v && !!rxLive.v && liveDot === 1 && apptMs < 5000 && rxMs < 8000 && /^(Hello|أهلاً)/.test(english) && english.startsWith('Hello'),
-    `booking on laptop A visible on the phone after ${apptMs} ms (${apptsBefore} → ${apptsBefore + 1} appointments); prescription saved on laptop B visible after ${rxMs} ms (no reload); live indicator: ${liveDot ? 'on' : 'off'}; English switch: "${english}"`);
+    !!apptLive.v && !!rxLive.v && liveDot === 1 && apptMs < 5000 && rxMs < 8000 && /^Good (morning|afternoon|evening)/.test(english) && manifest.start_url === `/o/${token}`,
+    `booking on laptop A visible on the phone after ${apptMs} ms (${apptsBefore} → ${apptsBefore + 1} appointments); prescription saved on laptop B visible after ${rxMs} ms (no reload); live indicator: ${liveDot ? 'on' : 'off'}; English switch: "${english}"; add to home screen opens /o/…: ${manifest.start_url === `/o/${token}`}`);
   check('owner-page-calendar', 'Appointments can be added to the phone’s calendar: one at a time, or a feed that keeps itself up to date',
     icsOk, `feed ${feed.split('BEGIN:VEVENT').length - 1} event(s), lines ≤ 75 bytes; one appointment .ics → ${one?.status}; Google Calendar link on the page: ${!!apptLive.v}`);
   check('rx-archive', 'Every prescription of an owner is in one archive: searchable, per pet, and reprintable',

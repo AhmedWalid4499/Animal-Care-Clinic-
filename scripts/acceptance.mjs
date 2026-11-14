@@ -413,6 +413,8 @@ await app.close();
   // Version 0.1 visits had no pre-diagnosis columns (schema v4).
   db.run('DROP INDEX IF EXISTS visits_stage');
   for (const c of ['stage', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', 'intake_by', 'intake_at']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
+  // …and no owner page link (schema v6).
+  db.run('ALTER TABLE owners DROP COLUMN portal_token');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
