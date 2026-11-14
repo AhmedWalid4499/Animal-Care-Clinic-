@@ -860,8 +860,22 @@ a.owner-code:hover { text-decoration: underline; }
 /* The X-ray request on one A5 page in Arabic too (longer labels), with the address footer (14 Nov 2026). */
 @media print {
   .xray-sheet .head { padding-bottom: 5px; margin-bottom: 6px; }
-  .xray-sheet .xray-write .lines { min-height: 6.5mm; }
-  .xray-sheet .xray-write .lines.tall { min-height: 11mm; }
-  .xray-sheet .doc-sign .line { height: 6mm; }
+  .xray-sheet .xray-write .lines { min-height: 6mm; }
+  .xray-sheet .xray-write .lines.tall { min-height: 9mm; }
+  .xray-sheet .doc-sign .line { height: 5mm; }
+  .xray-sheet .foot + .addr-foot { min-height: 6mm; }
   .xray-sheet .xray-grid fieldset { margin-bottom: 4px; }
 }
+
+/* Clinic QR at the bottom left of every printed document (14 Nov 2026): anchored to the address line, reaching up
+   beside the footer text (kept clear of it by the side padding), so it adds almost no height to the sheet. */
+.sheet .foot, .sheet .addr-foot { padding-left: 16mm; padding-right: 16mm; }
+.sheet .addr-foot { position: relative; min-height: 4mm; }
+.sheet .foot + .addr-foot { min-height: 7mm; }
+.sheet :not(.foot) + .addr-foot { min-height: 12mm; }
+.sheet .addr-foot .sheet-qr { position: absolute; left: 0; bottom: 0; width: 12mm; height: 12mm; background: #fff; line-height: 0; }
+.sheet .addr-foot .sheet-qr svg { width: 100%; height: 100%; display: block; }
+.sheet .addr-foot.no-qr { padding-left: 0; padding-right: 0; min-height: 0; }
+.hr-clinic { display: flex; align-items: center; gap: 3mm; text-align: start; }
+.hr-clinic .hr-qr { width: 14mm; height: 14mm; flex: none; line-height: 0; }
+.hr-clinic .hr-qr svg { width: 100%; height: 100%; }

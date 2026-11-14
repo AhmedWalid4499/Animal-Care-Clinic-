@@ -339,9 +339,11 @@ export async function handleOwnerPage(pool, req, res, url) {
       ...baseHeaders, 'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     });
+    const site = `${req.headers['x-forwarded-proto'] === 'http' || !req.headers['x-forwarded-proto'] && !req.socket.encrypted ? 'http' : 'https'}://${req.headers.host}`;
+    const dd = { ...d, site };
     res.end(req.method === 'HEAD' ? undefined : docPageHtml({
       nonce, lang, title,
-      sheet: rx ? prescriptionSheet(d, rx, lang) : requestSheet(d, rq, lang),
+      sheet: rx ? prescriptionSheet(dd, rx, lang) : requestSheet(dd, rq, lang),
       back: `/o/${token}#${rx ? 'prescriptions' : 'requests'}`,
       other: { lang: other, label: other === 'en' ? 'English' : 'عربي', href: `/o/${token}/doc/${m[5]}/${encodeURIComponent(id)}?lang=${other}` },
     }));

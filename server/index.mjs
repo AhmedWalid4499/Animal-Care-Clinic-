@@ -16,6 +16,7 @@ import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backu
 import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
 import { handleOwnerPage, ownerPagesChanged } from './portal.mjs';
 import { handleTag } from './tags.mjs';
+import { handleClinicPage } from './clinic-page.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -382,6 +383,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     // An owner's page from their QR code (server/portal.mjs): public, the link itself is the key.
     if ((url.pathname.startsWith('/o/') || url.pathname.startsWith('/o-font/')) && (await handleOwnerPage(pool, req, res, url))) return;
+    // The clinic's own page (server/clinic-page.mjs): the QR on every printed document opens it. Public.
+    if (url.pathname.startsWith('/clinic') && (await handleClinicPage(pool, req, res, url))) return;
     // A pet's collar tag (server/tags.mjs): public; a finder's Alert becomes a found report everyone at the clinic sees.
     if (url.pathname.startsWith('/t/') && (await handleTag(pool, req, res, url, {
       afterReport: (clinicId, notifications) => {

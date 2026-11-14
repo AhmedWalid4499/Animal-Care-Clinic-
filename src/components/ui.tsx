@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useApp, useQuery } from '../lib/app';
 import { searchPets, type PetOption } from '../db/repo';
 import { openWhatsApp } from '../lib/whatsapp';
+import { QrCode, clinicPageUrl } from './Qr';
 
 // ---------- icons (inline, stroke) ----------
 const paths: Record<string, string> = {
@@ -259,7 +260,17 @@ export function MenuButton({ label, icon, items }: { label: string; icon?: strin
   );
 }
 
-/** The clinic's address along the bottom of every printed document (14 Nov 2026, Ahmed: in the footer, not the header). */
-export function SheetAddress({ address }: { address: string | null | undefined }) {
-  return address ? <div className="foot addr-foot" dir="auto">{address}</div> : null;
+/**
+ * The bottom of every printed document: the clinic's address (14 Nov 2026, Ahmed: in the footer, not the header) and, at
+ * the bottom left, a QR to the clinic's own page (name, who heads it, address, phone, Pay with InstaPay).
+ */
+export function SheetAddress({ address, qr = true }: { address: string | null | undefined; qr?: boolean }) {
+  const { t } = useApp();
+  if (!qr) return address ? <div className="foot addr-foot no-qr" dir="auto">{address}</div> : null;
+  return (
+    <div className="foot addr-foot" dir="auto">
+      {address}
+      <span className="sheet-qr" dir="ltr"><QrCode text={clinicPageUrl()} size={48} label={t('clinicPage.qrLabel')} /></span>
+    </div>
+  );
 }

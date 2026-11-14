@@ -347,7 +347,8 @@ async function pdfOf(hash, name, size = 'A5', sel) {
   const rxVisit = db.exec('SELECT visit_id FROM prescriptions LIMIT 1')[0]?.values[0][0];
   if (rxVisit) {
     const p = await pdfOf(`#/visits/${rxVisit}/prescription`, 'prescription-A5.pdf');
-    check('rx-print', 'A past prescription reprints on one A5 page', p.pages === 1 && p.a5, `prescription-A5.pdf: ${p.pages} page, ${p.size}`);
+    const rxQr = await win.locator('.sheet .sheet-qr svg').count();
+    check('rx-print', 'A past prescription reprints on one A5 page, with the clinic QR at the bottom left', p.pages === 1 && p.a5 && rxQr === 1, `prescription-A5.pdf: ${p.pages} page, ${p.size}; clinic QR: ${rxQr}`);
   }
   // 14 Nov 2026: lab report and X-ray request (A5, one page each), case report (A4).
   const labDay = db.exec(`SELECT taken_at FROM lab_results WHERE pet_id = '${pet}' ORDER BY taken_at DESC LIMIT 1`)[0]?.values[0][0];

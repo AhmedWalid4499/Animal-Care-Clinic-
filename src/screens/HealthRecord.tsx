@@ -12,6 +12,7 @@ import { useApp, useQuery } from '../lib/app';
 import { getOwner, getPet, getSettings, listVaccineTypes, petVaccinations, petWeights, shownCode, type VaccinationRow } from '../db/repo';
 import { platform } from '../lib/platform';
 import { Icon } from '../components/ui';
+import { QrCode, clinicPageUrl } from '../components/Qr';
 import { Bi, intlDate } from './Certificate';
 
 // Parasite prevention has its own tables (like the paper sample); everything else in the catalogue is a vaccine box.
@@ -118,7 +119,10 @@ export function HealthRecordPrint() {
               <Field k="healthRecord.phone" value={<span className="ltr">{show(pet.owner_phone)}</span>} />
               <Field k="healthRecord.address" value={<span dir="auto">{show(owner?.address)}</span>} />
             </Box>
-            <div className="hr-clinic"><b>{s.name_en}</b> · <span className="ltr">{s.phone}</span><div dir="auto">{s.address}</div></div>
+            <div className="hr-clinic">
+              <span className="hr-qr" dir="ltr"><QrCode text={clinicPageUrl()} size={52} label={t('clinicPage.qrLabel')} /></span>
+              <div><b>{s.name_en}</b> · <span className="ltr">{s.phone}</span><div dir="auto">{s.address}</div></div>
+            </div>
           </div>
         </div>
 

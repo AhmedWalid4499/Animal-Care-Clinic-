@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PET_ICON } from './favicons.mjs';
+import { qrSvg } from './qr.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (...p) => path.join(here, '..', 'src', ...p);
@@ -49,7 +50,8 @@ function head(d, lang) {
   const name = (lang === 'ar' ? d.clinic.name_ar : d.clinic.name_en) || d.clinic.name_en || d.clinic.name_ar || '';
   return `<div class="head"><div><b style="font-size:15px">${esc(name)}</b><div style="font-size:10px">${d.clinic.phone ? `<span class="ltr">${esc(d.clinic.phone)}</span>` : ''}</div></div>${d.clinic.logo ? `<img src="${esc(d.clinic.logo)}" alt="">` : ''}</div>`;
 }
-const addressFoot = (d) => (d.clinic.address ? `<div class="foot addr-foot" dir="auto">${esc(d.clinic.address)}</div>` : '');
+// The address and, at the bottom left, the QR to the clinic's own page (as on the documents printed in the app).
+const addressFoot = (d) => `<div class="foot addr-foot" dir="auto">${esc(d.clinic.address ?? '')}<span class="sheet-qr" dir="ltr">${qrSvg(`${d.site}/clinic`, { size: 48, label: 'Animal Care Clinic' })}</span></div>`;
 
 /** Owner (with customer ID) and patient facts, as on the app's documents (Who in src/screens/Documents.tsx). */
 function who(d, pet, lang, at, weight) {

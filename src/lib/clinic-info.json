@@ -1,0 +1,6 @@
+{
+  "_note": "The clinic's public details (Ahmed, 14 Nov 2026), read by the app (QR on every printed document) and the clinic server (the /clinic page and the owner page's Pay now). site = the clinic server; a device not linked to a server uses it for the QR.",
+  "site": "https://animal-care-clinic-production.up.railway.app",
+  "headedBy": { "en": "Dr. Waleed El-Bourgi", "ar": "د. وليد البرجي" },
+  "instapay": "https://ipn.eg/S/waleedelbourgi/instapay/8yJQ5M"
+}
