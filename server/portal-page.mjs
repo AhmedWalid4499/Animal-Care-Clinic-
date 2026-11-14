@@ -4,6 +4,8 @@
 // Everything from the records is added as text nodes, never parsed as HTML. Text comes from src/i18n.
 const TZ = 'Africa/Cairo';
 
+import { OWNER_ICON, PET_ICON } from './favicons.mjs';
+
 export function pageHtml({ nonce, text, found }) {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
@@ -18,6 +20,7 @@ export function pageHtml({ nonce, text, found }) {
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <title>Animal Care Clinic</title>
+<link rel="icon" type="image/svg+xml" href="${OWNER_ICON}">
 <style nonce="${nonce}">
 @font-face { font-family: 'Plex Arabic'; font-weight: 400; font-display: swap; src: url(/o-font/arabic-400.woff2) format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
 @font-face { font-family: 'Plex Arabic'; font-weight: 600; font-display: swap; src: url(/o-font/arabic-600.woff2) format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0898-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
@@ -798,6 +801,10 @@ footer.site b { color: var(--ink-2); }
     }
     if (!d) return;
     document.title = clinicName() + ' — ' + d.owner.full_name;
+    // A pet's profile wears the paw; the rest of the owner's page the person.
+    const fav = document.querySelector('link[rel=icon]');
+    const favWant = profileId() ? ${JSON.stringify(PET_ICON)} : ${JSON.stringify(OWNER_ICON)};
+    if (fav && fav.getAttribute('href') !== favWant) fav.setAttribute('href', favWant);
     const v = view();
     const pid = profileId();
     const profilePet = pid ? d.pets.find((p) => p.id === pid) : null;
