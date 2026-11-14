@@ -135,6 +135,7 @@ export function OwnerCardPrint() {
               <div className="head">
                 <div>
                   <b style={{ fontSize: 15 }}>{clinic}</b>
+                  {s.address && <div style={{ fontSize: 10 }}>{s.address}</div>}
                   {s.phone && <div style={{ fontSize: 10 }} className="ltr">{s.phone}</div>}
                 </div>
                 {s.logo_url && <img src={s.logo_url} alt="" />}

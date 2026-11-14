@@ -770,3 +770,4 @@ a.owner-code:hover { text-decoration: underline; }
 .collar-tag.round { width: 32mm; height: 32mm; border-radius: 50%; justify-content: center; padding: 3mm; }
 .collar-tag.round .qr { width: 19mm; height: 19mm; }
 .collar-tag.round b { font-size: 7pt; }
+.collar-tag .tag-address { font-size: 6pt; line-height: 1.15; color: #333; }

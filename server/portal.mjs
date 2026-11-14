@@ -229,7 +229,9 @@ function appointmentEvent(d, a, T) {
     end: new Date(start.getTime() + a.duration_min * 60_000).toISOString(),
     summary: fill(T.eventTitle, { pet: a.pet_name, type: T.visitType[a.type] ?? a.type, clinic }),
     location: [clinic, d.clinic.address].filter(Boolean).join(', '),
-    description: [d.clinic.phone, d.clinic.whatsapp].filter(Boolean).filter((v, i, xs) => xs.indexOf(v) === i).join(' · '),
+    // Phone, and directions to the clinic (the address is the event's location too).
+    description: [[d.clinic.phone, d.clinic.whatsapp].filter(Boolean).filter((v, i, xs) => xs.indexOf(v) === i).join(' · '),
+      d.clinic.address ? fill(T.directionsIcs, { url: `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(d.clinic.address)}` }) : ''].filter(Boolean).join('\n'),
   };
 }
 function feedEvents(d, T) {
