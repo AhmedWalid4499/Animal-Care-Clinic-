@@ -1,12 +1,13 @@
 // Electron main process — Animal Care Clinic desktop app (Windows and macOS, same code).
 // Owns the disk: the SQLite database file, daily backups, file save/open dialogs.
 // The renderer (React) never touches Node; it talks to this file through electron/preload.cjs.
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, Notification, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const updater = require('./updater.cjs');
+const certs = require('./certs.cjs');
 
 const isSmoke = process.argv.includes('--smoke');
 const isMac = process.platform === 'darwin';
@@ -292,6 +293,8 @@ ipcMain.handle('app:print', (e) => {
 });
 // The page on screen as a PDF, exactly as Print lays it out (14 Nov 2026: a saved X-ray / lab request becomes a PDF the
 // owner downloads from their page). printToPDF exists the same way on Electron 22 (32-bit Windows 7) and current.
+// Why a clinic server address doesn't answer (wrong clock, no internet, not found…), for the sign-in screen.
+ipcMain.handle('app:probe', (_e, url) => certs.probe(url));
 ipcMain.handle('app:pdf', async (e, pageSize) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (!win) return null;
@@ -325,6 +328,7 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    certs.installCertificateFallback(session.defaultSession); // old Windows without current root certificates
     ensureDirs();
     dailyBackup();
     updater.init({ dataDir, dbPath, backupDir, noAutoCheck: isSmoke });
