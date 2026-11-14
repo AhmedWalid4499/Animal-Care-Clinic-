@@ -878,7 +878,7 @@ await step('phase6: owner page', async () => {
   const docLooks = (html) => html.includes('<img src="data:image/') && (!dataNow.owner.code || html.includes(dataNow.owner.code)) && html.includes('Montasser St');
   const ticked = (labHtml.match(/class="xbox on"/g) || []).length;
   const notTheirs = (await fetch(`${url}/doc/rx/not-this-owners-visit`)).status;
-  const docPage = await phonePage.context().newPage();
+  const docPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await docPage.goto(new URL(reqHref, url).href);
   await docPage.waitForSelector('.sheet');
   await docPage.screenshot({ path: path.join(out, 'owner-page-9-request-document.png'), fullPage: true });
