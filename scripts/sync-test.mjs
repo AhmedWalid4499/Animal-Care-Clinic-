@@ -744,8 +744,9 @@ await step('phase6: owner page', async () => {
   const PRIVATE = `Vet-only note ${Date.now() % 10000}`;
   await go(B, `#/pets/${pet.id}/visits/new`);
   // The diagnosis goes to the owner (Dr. Waleed, 14 Nov); the treatment notes stay with the clinic.
-  await B.win.getByLabel(/^\s*(التشخيص|Diagnosis)\s*$/).fill(DX);
-  await B.win.getByLabel(/^\s*(ملاحظات العلاج|Treatment notes)\s*$/).fill(PRIVATE);
+  // Labels carry "(optional)" after the name.
+  await B.win.getByLabel(/^\s*(التشخيص|Diagnosis)(\s|$)/).fill(DX);
+  await B.win.getByLabel(/^\s*(ملاحظات العلاج|Treatment notes)(\s|$)/).fill(PRIVATE);
   await B.win.locator('.form-section', { hasText: '💊' }).locator('.row .btn.sm').click();
   const rxInputs = B.win.locator('.repeat.rx input');
   await rxInputs.nth(0).fill(DRUG);
