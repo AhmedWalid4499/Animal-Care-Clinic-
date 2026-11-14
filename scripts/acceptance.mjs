@@ -481,7 +481,7 @@ const afterRelaunch = counts(openDbFile());
     check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === CURRENT_SCHEMA && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
       `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
   }
-  check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',
+  check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === '23 Montasser St, Al Huwaiteyah, Agouza, Giza Governorate 3753701' && row[3] === 'Where pets are people · شكراً لثقتكم',
     `0.1-style database (no logo, phone, address) reopened: logo on login ${loginLogo ? 'shown' : 'MISSING'}, in the sidebar ${sideLogo ? 'shown' : 'MISSING'}; stored logo ${String(row[0]).slice(0, 22)}…; phone ${row[1]}; address ${row[2]}; receipt footer "${row[3]}"`);
 }
 // Version 0.1.x stored the logo as a link into the install folder. Opening such a database must swap in the image.

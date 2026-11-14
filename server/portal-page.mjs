@@ -378,16 +378,23 @@ footer.site b { color: var(--ink-2); }
       action: 'TEMPLATE',
       text: t('eventTitle', { pet: a.pet_name, type: t('visitType.' + a.type), clinic: clinicName() }),
       dates: z(start) + '/' + z(end),
-      details: [d.clinic.phone, d.clinic.whatsapp].filter(Boolean).filter((v, i, xs) => xs.indexOf(v) === i).join(' · '),
+      details: [[d.clinic.phone, d.clinic.whatsapp].filter(Boolean).filter((v, i, xs) => xs.indexOf(v) === i).join(' · '),
+        d.clinic.address ? t('directionsIcs', { url: 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(d.clinic.address) }) : ''].filter(Boolean).join('\\n'),
       location: [clinicName(), d.clinic.address].filter(Boolean).join(', '),
       ctz: TZ,
     });
     return 'https://calendar.google.com/calendar/render?' + q.toString();
   }
+  // Directions to the clinic: Apple Maps on iPhone / iPad / Mac, Google Maps everywhere else.
+  const directionsUrl = (addr) => {
+    const q = encodeURIComponent(addr);
+    return /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) ? 'https://maps.apple.com/?daddr=' + q : 'https://www.google.com/maps/dir/?api=1&destination=' + q;
+  };
   const feed = () => location.host + base + '/calendar.ics?lang=' + L();
   const calButtons = (a) => h('div', { class: 'actions' },
     h('a', { class: 'btn sm', href: googleLink(a), target: '_blank', rel: 'noopener noreferrer' }, icon('calendar'), t('addGoogle')),
-    h('a', { class: 'btn sm', href: base + '/a/' + encodeURIComponent(a.id) + '.ics?lang=' + L(), download: '' }, icon('download'), t('addIcs')));
+    h('a', { class: 'btn sm', href: base + '/a/' + encodeURIComponent(a.id) + '.ics?lang=' + L(), download: '' }, icon('download'), t('addIcs')),
+    d.clinic.address ? h('a', { class: 'btn sm directions', href: directionsUrl(d.clinic.address), target: '_blank', rel: 'noopener noreferrer' }, icon('pin'), t('directions')) : null);
   const waClinic = () => e164(d.clinic.whatsapp || d.clinic.phone);
   const petName = (id) => (d.pets.find((p) => p.id === id) || {}).name || '';
   const avatar = (p, cls) => h('div', { class: 'avatar' + (cls ? ' ' + cls : '') }, p.photo ? h('img', { src: p.photo, alt: '' }) : EMOJI[p.species] || '🐾');
@@ -416,7 +423,8 @@ footer.site b { color: var(--ink-2); }
       d.owner.code ? h('div', { class: 'idchip' }, t('customerId'), ' ', h('b', { class: 'ltr' }, d.owner.code)) : null,
       h('div', { class: 'quick' },
         phone ? h('a', { href: 'tel:' + String(phone).replace(/[^\\d+]/g, '') }, icon('phone'), t('callClinic')) : null,
-        wa ? h('a', { href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), t('whatsappClinic')) : null)));
+        wa ? h('a', { href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), t('whatsappClinic')) : null,
+        d.clinic.address ? h('a', { class: 'directions', href: directionsUrl(d.clinic.address), target: '_blank', rel: 'noopener noreferrer' }, icon('pin'), t('directions')) : null)));
   }
   function tabs() {
     const counts = { appointments: d.appointments.length, prescriptions: d.prescriptions.length, pets: d.pets.length, requests: (d.requests || []).length };
@@ -674,7 +682,8 @@ footer.site b { color: var(--ink-2); }
           row('home', t('name'), clinicName()),
           row('phone', t('phone'), d.clinic.phone, true),
           d.clinic.whatsapp && d.clinic.whatsapp !== d.clinic.phone ? row('chat', t('whatsapp'), d.clinic.whatsapp, true) : null,
-          row('pin', t('address'), d.clinic.address))),
+          row('pin', t('address'), d.clinic.address)),
+        d.clinic.address ? h('div', { class: 'actions' }, h('a', { class: 'btn sm primary directions', href: directionsUrl(d.clinic.address), target: '_blank', rel: 'noopener noreferrer' }, icon('pin'), t('directions'))) : null),
       h('div', { class: 'card tip' }, icon('download'), h('div', null, t('installHint'))),
       h('div', { class: 'card tip' }, icon('shield'), h('div', null, t('privacy'))),
     ];

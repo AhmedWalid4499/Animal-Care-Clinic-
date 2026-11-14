@@ -87,6 +87,7 @@ export function PetTag() {
       <b>{pet.name}</b>
       {size !== 'round' && <span>{t('tag.scanMe')}</span>}
       {size === 'lg' && s.phone && <span className="ltr">{clinic} · {s.phone}</span>}
+      {size === 'lg' && s.address && <span className="tag-address">{s.address}</span>}
     </div>
   );
   return (

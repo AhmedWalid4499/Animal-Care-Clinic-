@@ -60,6 +60,16 @@ async function bootstrapServer() {
     }
   }
   await adminRecovery(clinic.id, email);
+  // The clinic's street address (14 Nov 2026) replaces the old seeded placeholder; devices receive it with their next pull.
+  const OLD_ADDRESS = 'Giza · الجيزة';
+  const ADDRESS = '23 Montasser St, Al Huwaiteyah, Agouza, Giza Governorate 3753701';
+  const now = new Date().toISOString();
+  const placeholder = await pool.query("SELECT clinic_id, versions FROM rows WHERE tbl = 'clinic_settings' AND NOT deleted AND (COALESCE(data->>'address', '') IN ('', $1))", [OLD_ADDRESS]);
+  for (const r of placeholder.rows) {
+    await pool.query("UPDATE rows SET data = data || jsonb_build_object('address', $2::text, 'updated_at', $3::text), versions = $4, seq = nextval('change_seq') WHERE clinic_id = $1 AND tbl = 'clinic_settings'",
+      [r.clinic_id, ADDRESS, now, { ...r.versions, address: `${now}|server`, updated_at: `${now}|server` }]);
+    console.log('clinic address set');
+  }
   for (const { id } of (await pool.query('SELECT id FROM clinics')).rows) {
     const n = await assignOwnerCodes(pool, id);
     if (n) console.log(`gave ${n} owner(s) a customer ID`);

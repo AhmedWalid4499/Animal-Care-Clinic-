@@ -10,7 +10,8 @@ export const CLINIC = {
   name_ar: 'عيادة رعاية الحيوان',
   phone: '01227007428',
   whatsapp: '01227007428', // assumed same as phone until Dr. Waleed confirms
-  address: 'Giza · الجيزة',
+  // The clinic's street address (Ahmed, 14 Nov 2026): on every document, the owner page, the collar tag and calendars.
+  address: '23 Montasser St, Al Huwaiteyah, Agouza, Giza Governorate 3753701',
   receipt_footer: 'Where pets are people · شكراً لثقتكم',
   logo_url: CLINIC_LOGO_DATA_URL,
 };
@@ -26,10 +27,34 @@ export const DEFAULT_LOGINS = [
  * overwritten, and records that it ran so a logo the vet later removes stays removed.
  * Returns true if it changed anything.
  */
+/** The placeholder address seeded before the clinic's street address was known. */
+export const OLD_ADDRESS = 'Giza · الجيزة';
+
+/**
+ * The clinic's street address (14 Nov 2026) replaces the old placeholder once. A laptop linked to the clinic server
+ * gets it from the server (server/index.mjs) instead, as clinic settings are the Admin's to change.
+ */
+function applyClinicAddress(): boolean {
+  const KEY = 'clinic_address_v2';
+  if (get('SELECT 1 FROM meta WHERE key = ?', [KEY])) return false;
+  const linked = get<{ value: string }>("SELECT value FROM sync_state WHERE key = 'enabled'")?.value === '1';
+  const s = get<{ address: string | null }>('SELECT address FROM clinic_settings WHERE id = 1');
+  const change = !linked && !!s && (s.address == null || s.address.trim() === '' || s.address === OLD_ADDRESS);
+  tx(() => {
+    if (change) {
+      run('UPDATE clinic_settings SET address = ?, updated_at = ? WHERE id = 1', [CLINIC.address, new Date().toISOString()]);
+      audit('clinic_settings', '1', 'UPDATE', { address: [s!.address, CLINIC.address], reason: 'upgrade: clinic address' });
+    }
+    run('INSERT INTO meta (key, value) VALUES (?, ?)', [KEY, new Date().toISOString()]);
+  });
+  return change;
+}
+
 export function applyClinicDetails(): boolean {
   const KEY = 'clinic_details_v1';
   const fixedLogo = repairBundledLogoLink();
-  if (get('SELECT 1 FROM meta WHERE key = ?', [KEY])) return fixedLogo;
+  const address = applyClinicAddress();
+  if (get('SELECT 1 FROM meta WHERE key = ?', [KEY])) return fixedLogo || address;
   const s = get<Record<string, string | null>>('SELECT * FROM clinic_settings WHERE id = 1');
   const changed: Record<string, string> = {};
   if (s) {
@@ -48,7 +73,7 @@ export function applyClinicDetails(): boolean {
     }
     run('INSERT INTO meta (key, value) VALUES (?, ?)', [KEY, new Date().toISOString()]);
   });
-  return fixedLogo || Object.keys(changed).length > 0;
+  return fixedLogo || address || Object.keys(changed).length > 0;
 }
 
 /**

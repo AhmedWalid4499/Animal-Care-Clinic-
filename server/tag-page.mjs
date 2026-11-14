@@ -93,6 +93,11 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
     return n.length >= 10 ? n : null;
   };
   const tel = (p) => 'tel:' + String(p).replace(/[^\\d+]/g, '');
+  // Directions to the clinic: Apple Maps on iPhone / iPad / Mac, Google Maps everywhere else.
+  const directionsUrl = (addr) => {
+    const q = encodeURIComponent(addr);
+    return /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) ? 'https://maps.apple.com/?daddr=' + q : 'https://www.google.com/maps/dir/?api=1&destination=' + q;
+  };
   const clinicName = () => (L() === 'en' ? d.clinic.name_en : d.clinic.name_ar) || d.clinic.name_en || d.clinic.name_ar || '';
   const form = { name: '', phone: '', message: '', share: true };
 
@@ -153,7 +158,8 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
       h('section', { class: 'card' },
         h('h2', null, t('clinicTitle')),
         h('p', { class: 'muted' }, clinicName() + (d.clinic.address ? ' · ' + d.clinic.address : '')),
-        d.clinic.phone ? h('a', { class: 'btn', href: tel(d.clinic.phone) }, '📞 ', t('callClinic')) : null),
+        d.clinic.phone ? h('a', { class: 'btn', href: tel(d.clinic.phone) }, '📞 ', t('callClinic')) : null,
+        d.clinic.address ? h('a', { class: 'btn directions', href: directionsUrl(d.clinic.address), target: '_blank', rel: 'noopener noreferrer' }, '📍 ', t('directions')) : null),
       h('p', { class: 'muted' }, t('privacy')),
     ].filter(Boolean));
   }
