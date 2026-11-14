@@ -141,7 +141,8 @@ async function signIn(d, email, password, { newPassword } = {}) {
   await d.win.locator('input[type=email]').fill(email);
   await d.win.locator('input[type=password]').fill(password);
   await d.win.locator('form button.signin').click();
-  await d.win.waitForSelector('.searchbox, .password-form', { timeout: 30_000 });
+  // Signed in = the sidebar's foot (name, Sign out) is there, whichever screen the app returns to.
+  await d.win.waitForSelector('.side-foot, .password-form', { timeout: 30_000 });
   // A temporary password from the Admin: the person must choose their own first.
   if (await d.win.locator('.password-form').count()) {
     if (!newPassword) throw new Error(`${email} was asked to choose a password`);
@@ -149,7 +150,7 @@ async function signIn(d, email, password, { newPassword } = {}) {
     await a.fill(newPassword);
     await b.fill(newPassword);
     await d.win.locator('.password-form .btn.primary').click();
-    await d.win.waitForSelector('.searchbox', { timeout: 10_000 });
+    await d.win.waitForSelector('.side-foot', { timeout: 10_000 });
     return 'changed';
   }
   return 'in';
