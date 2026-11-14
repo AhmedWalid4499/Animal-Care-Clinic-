@@ -281,13 +281,33 @@ async function check() {
   return state;
 }
 
+// GET a small text file. net.fetch arrived in Electron 25; the 32-bit / Windows 7 build runs Electron 22
+// (electron-builder.ia32.cjs), so fall back to net.request there. Redirects (GitHub → its CDN) are followed by both.
+function getText(url) {
+  if (typeof net.fetch === 'function') {
+    return net.fetch(url, { cache: 'no-store' }).then(async (r) => ({ status: r.status, text: await r.text() }));
+  }
+  return new Promise((resolve, reject) => {
+    const req = net.request(url);
+    req.setHeader('Cache-Control', 'no-cache');
+    req.on('response', (r) => {
+      const chunks = [];
+      r.on('data', (c) => chunks.push(c));
+      r.on('end', () => resolve({ status: r.statusCode, text: Buffer.concat(chunks).toString('utf8') }));
+      r.on('error', reject);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 // The portable exe can't replace itself: just tell the user a newer version exists, with a download link.
 async function portableCheck() {
   publish({ status: 'checking', error: null });
-  const res = await net.fetch(`https://github.com/${REPO}/releases/latest/download/latest.yml`, { cache: 'no-store' });
+  const res = await getText(`https://github.com/${REPO}/releases/latest/download/latest.yml`);
   if (res.status === 404) return publish({ status: 'none' });
-  if (!res.ok) throw new Error(`latest.yml: HTTP ${res.status}`);
-  const v = ((await res.text()).match(/^version:\s*['"]?([^'"\s]+)/m) || [])[1];
+  if (res.status < 200 || res.status >= 300) throw new Error(`latest.yml: HTTP ${res.status}`);
+  const v = (res.text.match(/^version:\s*['"]?([^'"\s]+)/m) || [])[1];
   publish(v && newer(v, state.current) ? { status: 'available', version: v } : { status: 'none', version: null });
 }
 

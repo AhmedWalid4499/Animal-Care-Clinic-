@@ -1,4 +1,6 @@
 /* Clean, clinical: Plex Sans Arabic 400/600, 4px corners, rules not boxes, one accent colour. */
+/* Every color-mix() has a plain colour just before it: the Windows 7 / 32-bit build runs Chromium 108, which predates
+   color-mix() and would otherwise drop the rule (e.g. the sticky save bar turned see-through). */
 :root {
   --accent: #2e6f73; /* clinic teal, taken from the Animal Care Clinic logo */
   --accent-ink: #ffffff;
@@ -92,11 +94,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn:hover { background: var(--bg-2); text-decoration: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { filter: brightness(1.06); }
-.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--rule-2)); }
+.btn.danger { color: var(--bad); border-color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--rule-2)); }
 .btn.ghost { border-color: transparent; background: none; color: var(--accent); padding: 0 8px; }
 .btn.ghost:hover { background: var(--accent-soft); }
 .btn.sm { min-height: 28px; padding: 0 10px; font-size: 13px; }
-.btn.wa { color: #128c4a; border-color: color-mix(in srgb, #128c4a 35%, var(--rule-2)); }
+.btn.wa { color: #128c4a; border-color: #128c4a; border-color: color-mix(in srgb, #128c4a 35%, var(--rule-2)); }
 [data-theme='dark'] .btn.wa, :root:not([data-theme='light']) .btn.wa { color: inherit; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn svg { width: 16px; height: 16px; }
@@ -112,7 +114,7 @@ input[type='text'], input[type='email'], input[type='tel'], input[type='password
   width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg);
 }
 textarea { min-height: 72px; resize: vertical; }
-input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
+input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px solid var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; min-height: 38px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .grid { display: grid; gap: 14px 16px; }
@@ -159,8 +161,8 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .pet-alerts.big { margin: 0 0 12px; }
 .alert-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--radius); font-size: 12px; font-weight: 600; border: 1px solid; white-space: nowrap; }
 .alert-chip.note { white-space: normal; font-weight: 400; }
-.alert-chip.danger { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
-.alert-chip.caution { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.alert-chip.danger { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.alert-chip.caution { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
 .pet-alerts.big .alert-chip { font-size: 14px; padding: 4px 10px; }
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--bg-2); color: var(--ink-2); white-space: nowrap; }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
@@ -201,7 +203,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .repeat { display: grid; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px dashed var(--rule); }
 .repeat.rx { grid-template-columns: 2fr 1.5fr 1.2fr 64px 1.6fr auto; }
 .repeat.vx { grid-template-columns: 2fr 1.2fr 1.2fr 1fr auto; }
-.actionbar { position: sticky; bottom: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--rule); padding: 12px 0; display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; z-index: 5; }
+.actionbar { position: sticky; bottom: 0; background: var(--bg); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--rule); padding: 12px 0; display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; z-index: 5; }
 .note { padding: 10px 12px; border-inline-start: 3px solid var(--accent); background: var(--accent-soft); font-size: 13px; margin: 0 0 14px; border-radius: 0 var(--radius) var(--radius) 0; }
 .note.warn { border-color: var(--warn); background: var(--warn-soft); }
 .note.bad { border-color: var(--bad); background: var(--bad-soft); }
@@ -254,7 +256,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 /* login */
 .login { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
 .login .art { position: relative; overflow: hidden; background: var(--brand); color: var(--brand-ink); padding: 44px 48px 28px; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; }
-.login .art::after { content: ""; position: absolute; inset: auto -20% -45% auto; width: 70%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--brand-ink) 10%, transparent), transparent); pointer-events: none; }
+.login .art::after { content: ""; position: absolute; inset: auto -20% -45% auto; width: 70%; aspect-ratio: 1; border-radius: 50%; background: none; background: radial-gradient(closest-side, color-mix(in srgb, var(--brand-ink) 10%, transparent), transparent); pointer-events: none; }
 .login .art .logo-plate { max-width: 320px; padding: 14px 18px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 .login .art .logo-plate img { max-height: 130px; }
 .login .art h1 { font-size: 34px; max-width: 440px; margin-bottom: 18px; text-wrap: balance; }
@@ -266,7 +268,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .slide p { margin: 0; opacity: .88; line-height: 1.55; }
 .slide { animation: slide-in .5s ease both; }
 .dots { display: flex; gap: 8px; margin-top: 14px; }
-.dots button { width: 22px; height: 4px; border-radius: 2px; border: 0; padding: 0; cursor: pointer; background: color-mix(in srgb, var(--brand-ink) 35%, transparent); transition: width .25s ease, background-color .25s ease; }
+.dots button { width: 22px; height: 4px; border-radius: 2px; border: 0; padding: 0; cursor: pointer; background: rgba(255, 255, 255, .35); background: color-mix(in srgb, var(--brand-ink) 35%, transparent); transition: width .25s ease, background-color .25s ease; }
 .dots button.on { width: 40px; background: var(--brand-ink); }
 .dots button:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 3px; }
 .paw-trail { width: 100%; max-width: 560px; height: auto; fill: var(--brand-ink); }
@@ -283,7 +285,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .float input { min-height: 54px; padding: 22px 12px 6px; font-size: 15px; transition: border-color .15s ease, box-shadow .15s ease; }
 .float > span { position: absolute; inset-inline-start: 13px; top: 17px; color: var(--ink-3); font-size: 15px; pointer-events: none; transition: top .15s ease, font-size .15s ease, color .15s ease; }
 .float input:focus + span, .float input:not(:placeholder-shown) + span { top: 7px; font-size: 11.5px; font-weight: 600; color: var(--accent); }
-.float input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); outline: none; }
+.float input:focus { box-shadow: 0 0 0 3px var(--accent-soft); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); outline: none; }
 /* Room for the eye button on its side only, so the password starts where its label does (the input itself is ltr). */
 .has-eye input { padding-left: 12px; padding-right: 46px; }
 [dir='rtl'] .has-eye input { padding-left: 46px; padding-right: 12px; }
@@ -296,7 +298,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .fields.shake { animation: shake .42s cubic-bezier(.36, .07, .19, .97) both; }
 .btn.signin { min-height: 48px; font-size: 15px; position: relative; transition: filter .15s ease, transform .1s ease; }
 .btn.signin.busy { cursor: progress; opacity: .92; }
-.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent-ink) 35%, transparent); border-top-color: var(--accent-ink); animation: spin .7s linear infinite; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent; border: 2px solid color-mix(in srgb, var(--accent-ink) 35%, transparent); border-top-color: var(--accent-ink); animation: spin .7s linear infinite; }
 .creds { font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 14px; }
 .role-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .chip-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: start; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); padding: 8px 10px; cursor: pointer; transition: border-color .15s ease, background-color .15s ease; min-width: 0; }
@@ -331,7 +333,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .bell-panel ul { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
 .bell-panel li button { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: start; width: 100%; text-align: start; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 12px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
 .bell-panel li button:hover { background: var(--bg-2); }
-.bell-panel li button.unread { color: var(--ink); background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.bell-panel li button.unread { color: var(--ink); background: var(--accent-soft); background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
 .bell-panel li button.unread .text { font-weight: 600; }
 .bell-panel .kind { color: var(--accent); }
 .bell-panel .kind svg { width: 16px; height: 16px; }
@@ -455,8 +457,8 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 [dir="rtl"] .section.queue li.urgency-EMERGENCY { box-shadow: inset -3px 0 0 var(--bad); }
 .section.queue li.urgency-SOON { box-shadow: inset 3px 0 0 var(--warn); }
 [dir="rtl"] .section.queue li.urgency-SOON { box-shadow: inset -3px 0 0 var(--warn); }
-.seg.urgency button.on.u-EMERGENCY { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
-.seg.urgency button.on.u-SOON { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--ink); }
+.seg.urgency button.on.u-EMERGENCY { background: var(--bad-soft); background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.seg.urgency button.on.u-SOON { background: var(--warn-soft); background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--ink); }
 .seg.urgency button { padding: 9px 16px; }
 .intake-box { border-inline-start: 3px solid var(--accent); padding-inline-start: 14px; }
 
@@ -742,7 +744,7 @@ a.owner-code:hover { text-decoration: underline; }
 .file-thumb img { max-width: 100%; max-height: 100%; object-fit: cover; border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
 .file-thumb .doc-icon { width: 64px; height: 80px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.12)); }
 .file-cloud { position: absolute; inset-inline-end: 0; bottom: 0; font-size: 14px; background: var(--bg); border-radius: 50%; padding: 1px 3px; }
-.file-busy { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
+.file-busy { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; background: var(--bg); background: color-mix(in srgb, var(--bg) 60%, transparent); }
 .file-name { font-size: 13px; font-weight: 600; line-height: 1.3; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .file-sub { font-size: 11px; color: var(--ink-3); line-height: 1.3; }
 

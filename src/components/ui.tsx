@@ -162,6 +162,11 @@ export function OwnerCode({ code, ownerId, plain }: { code: string | null | unde
   );
 }
 
+/**
+ * Pet search-and-pick. Put it in a <Field group> (a div), never a plain <Field> (a <label>): picking swaps the list
+ * for the "Edit" button, and Chromium 108 (the Windows 7 / 32-bit build) then forwards the label's click to that
+ * button, which clears the pick again.
+ */
 export function PetPicker({ value, onChange, autoFocus }: { value: PetOption | null; onChange: (p: PetOption | null) => void; autoFocus?: boolean }) {
   const { t } = useApp();
   const [q, setQ] = useState('');

@@ -43,11 +43,15 @@ jobs:
           cat release/latest.yml
           grep -q "url: AnimalCareClinic-Setup-.*\.exe" release/latest.yml
           grep -q "provider: github" "release/win-unpacked/resources/app-update.yml"
-      # 32-bit build (electron-builder.ia32.cjs): same app from the same dist/, for 32-bit Windows 10/11 PCs.
+      # 32-bit build (electron-builder.ia32.cjs): same app from the same dist/, on Electron 22 so it also runs on
+      # Windows 7 / 8 (32- or 64-bit) as well as 32-bit Windows 10/11.
       - run: npm run dist:win32
       - name: Smoke test, 32-bit (app starts and renders the login screen)
         run: .\release-ia32\win-ia32-unpacked\"Animal Care Clinic.exe" --smoke
         shell: pwsh
+      - name: 32-bit app still starts on Windows 7 (exe header) and its CSS has Chromium 108 fallbacks
+        shell: bash
+        run: node scripts/check-legacy.mjs "release-ia32/win-ia32-unpacked/Animal Care Clinic.exe"
       - name: 32-bit update feed is published as ia32.yml (64-bit keeps latest.yml)
         shell: bash
         run: |
