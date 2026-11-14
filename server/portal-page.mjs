@@ -175,6 +175,14 @@ main { padding: 20px 0 40px; }
 .tags span { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 2px 8px; color: var(--ink-2); }
 .drug .how { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
 
+/* diagnoses */
+.dx { margin-top: 10px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--bg); }
+.dx span { display: block; font-size: 12px; color: var(--ink-3); }
+.dx b { font-weight: 600; overflow-wrap: anywhere; }
+details.more-visits { margin-top: 10px; }
+details.more-visits summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; min-height: 36px; display: flex; align-items: center; }
+details.more-visits .rows { margin-top: 8px; }
+
 /* details */
 .kv { list-style: none; margin: 0; padding: 0; }
 .kv li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--rule); }
@@ -226,6 +234,7 @@ footer.site b { color: var(--ink-2); }
     mail: 'M4 4h16v16H4zM4 6l8 7 8-7',
     pin: 'M12 22s-7-6.1-7-12a7 7 0 0114 0c0 5.9-7 12-7 12zM12 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
     shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+    steth: 'M5 3v6a5 5 0 0010 0V3M10 14v2a5 5 0 0010 0v-2M20 11a2 2 0 100 4 2 2 0 000-4z',
     star: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
   };
   const VIEWS = ['home', 'pets', 'appointments', 'prescriptions', 'details'];
@@ -420,7 +429,8 @@ footer.site b { color: var(--ink-2); }
     const v = d.prescriptions[0];
     return h('div', { class: 'card' },
       h('h2', null, icon('pill'), t('latestRx'), d.prescriptions.length ? h('a', Object.assign({ class: 'more' }, go('prescriptions')), t('seeAll'), icon('chevron', 'flip')) : null),
-      v ? [h('div', { class: 'muted small' }, fmtDate(v.visited_at) + ' · ' + v.pet_name + (v.vet_name ? ' · ' + t('byVet', { name: v.vet_name }) : '')), v.items.map(drug)]
+      v ? [h('div', { class: 'muted small' }, fmtDate(v.visited_at) + ' · ' + v.pet_name + (v.vet_name ? ' · ' + t('byVet', { name: v.vet_name }) : '')),
+        v.diagnosis ? h('div', { class: 'dx' }, h('span', null, t('diagnosis')), h('b', null, v.diagnosis)) : null, v.items.map(drug)]
         : h('div', { class: 'empty' }, t('noPrescriptions')));
   }
   function petStrip() {
@@ -460,8 +470,25 @@ footer.site b { color: var(--ink-2); }
             h('div', { class: 'grow' }, h('b', null, v.name),
               h('span', { class: 'muted small' }, t('given', { date: fmtDate(v.administered_at) }), v.next_due_at ? ' · ' + t('nextDue', { date: fmtDate(v.next_due_at) }) : '')),
             s.text && p.status === 'ACTIVE' ? h('span', { class: 'badge ' + s.cls }, s.text) : null);
-        })) : h('div', { class: 'muted small' }, t('noVaccinations')));
+        })) : h('div', { class: 'muted small' }, t('noVaccinations')),
+        visitHistory(p));
     });
+  }
+
+  function visitHistory(p) {
+    const list = p.visits || [];
+    const row = (v) => h('li', null,
+      h('div', { class: 'icobox' }, icon('steth')),
+      h('div', { class: 'grow' },
+        h('b', null, v.diagnosis || t('noDiagnosis')),
+        h('span', { class: 'muted small' }, fmtDate(v.visited_at) + ' · ' + t('visitType.' + v.type) + (v.vet_name ? ' · ' + t('byVet', { name: v.vet_name }) : ''))));
+    return [
+      h('div', { class: 'subhead' }, icon('steth'), t('visitHistory')),
+      !list.length ? h('div', { class: 'muted small' }, t('noVisits'))
+        : list.length <= 3 ? h('ul', { class: 'rows' }, list.map(row))
+        : [h('ul', { class: 'rows' }, list.slice(0, 3).map(row)),
+          h('details', { class: 'more-visits' }, h('summary', null, t('allVisits', { n: list.length })), h('ul', { class: 'rows' }, list.slice(3).map(row)))],
+    ];
   }
 
   function appointmentsView() {
@@ -506,6 +533,7 @@ footer.site b { color: var(--ink-2); }
         petIds.map((id) => h('button', { type: 'button', class: petFilter === id ? 'on' : null, onclick: () => { petFilter = id; render(); } }, petName(id) || '—'))) : null,
       list.map((v) => h('article', { class: 'card' },
         h('div', { class: 'rxhead' }, h('b', null, fmtDate(v.visited_at)), h('span', { class: 'badge' }, v.pet_name), h('span', { class: 'muted small' }, t('visitType.' + v.type) + (v.vet_name ? ' · ' + t('byVet', { name: v.vet_name }) : ''))),
+        v.diagnosis ? h('div', { class: 'dx' }, h('span', null, t('diagnosis')), h('b', null, v.diagnosis)) : null,
         v.items.map(drug))),
       h('div', { class: 'actions no-print' }, h('button', { type: 'button', class: 'btn', onclick: () => window.print() }, icon('print'), t('print'))),
     ];

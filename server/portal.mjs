@@ -7,7 +7,7 @@
 //   GET /o/<token>/a/<id>.ics      one appointment, for "add to calendar"
 // The token (owners.portal_token, 128 random bits, made on a clinic device) is the only key: no owner login.
 // Staff can replace it (old QR stops working) or switch it off. Only what an owner should see leaves the server:
-// never staff notes, national ID, diagnoses, money, or other owners' data.
+// diagnoses (Dr. Waleed, 14 Nov), never staff notes, treatment notes, national ID, money, or other owners' data.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -89,6 +89,9 @@ export async function ownerPageData(pool, owner) {
         date_of_birth: p.date_of_birth ?? null, dob_is_estimate: Number(p.dob_is_estimate) === 1, color: p.color ?? null, microchip_no: p.microchip_no ?? null,
         photo: imageOnly(p.photo_url), status: p.status,
         weight: w ? { kg: Number(w.weight_kg), at: w.visited_at } : null,
+        // Finished visits with what the vet found (diagnosis only: complaint and treatment notes stay with the clinic).
+        visits: visits.filter((v) => String(v.pet_id) === String(p.id)).sort((a, b) => byText('visited_at')(b, a))
+          .map((v) => ({ visited_at: v.visited_at, type: v.type, diagnosis: v.diagnosis ?? null, vet_name: v.vet_id ? vets.get(String(v.vet_id)) ?? null : null })),
         vaccinations: [...latest.values()].filter((x) => String(x.pet_id) === String(p.id))
           .map((x) => ({ name: vaccineTypes.get(String(x.vaccine_type_id)) ?? '—', administered_at: x.administered_at, next_due_at: x.next_due_at ?? null }))
           .sort((a, b) => byText('next_due_at')(a, b)),
@@ -100,7 +103,7 @@ export async function ownerPageData(pool, owner) {
       .map((a) => ({ id: String(a.id), pet_id: String(a.pet_id), pet_name: petName.get(String(a.pet_id)) ?? '', scheduled_at: a.scheduled_at, duration_min: Number(a.duration_min) || 20, type: a.type })),
     prescriptions: visits
       .map((v) => ({
-        visit_id: String(v.id), pet_id: String(v.pet_id), pet_name: petName.get(String(v.pet_id)) ?? '', visited_at: v.visited_at, type: v.type,
+        visit_id: String(v.id), pet_id: String(v.pet_id), pet_name: petName.get(String(v.pet_id)) ?? '', visited_at: v.visited_at, type: v.type, diagnosis: v.diagnosis ?? null,
         vet_name: v.vet_id ? vets.get(String(v.vet_id)) ?? null : null,
         items: rx.filter((r) => String(r.visit_id) === String(v.id)).sort(byText('created_at'))
           .map((r) => ({ drug: r.drug, dose: r.dose ?? null, frequency: r.frequency ?? null, duration_days: r.duration_days ?? null, instructions: r.instructions ?? null })),
