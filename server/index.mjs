@@ -1,6 +1,7 @@
 // Animal Care Clinic sync server (docs/CLOUD-PLAN.md). Runs on Railway (railway.json) or locally:
 //   DATABASE_URL=postgres://… ADMIN_EMAIL=… ADMIN_PASSWORD=… node server/index.mjs
 // Serves the web app from dist-cloud/, the sync API under /api, and live change pings on /api/live.
+import { CLINIC_ADDRESS, OLD_ADDRESS as OLD_PLACEHOLDER } from './clinic.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -61,8 +62,8 @@ async function bootstrapServer() {
   }
   await adminRecovery(clinic.id, email);
   // The clinic's street address (14 Nov 2026) replaces the old seeded placeholder; devices receive it with their next pull.
-  const OLD_ADDRESS = 'Giza · الجيزة';
-  const ADDRESS = '23 Montasser St, Al Huwaiteyah, Agouza, Giza Governorate 3753701';
+  const OLD_ADDRESS = OLD_PLACEHOLDER;
+  const ADDRESS = CLINIC_ADDRESS;
   const now = new Date().toISOString();
   const placeholder = await pool.query("SELECT clinic_id, versions FROM rows WHERE tbl = 'clinic_settings' AND NOT deleted AND (COALESCE(data->>'address', '') IN ('', $1))", [OLD_ADDRESS]);
   for (const r of placeholder.rows) {
