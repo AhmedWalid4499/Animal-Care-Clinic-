@@ -890,7 +890,8 @@ await step('phase6: owner page', async () => {
   const pdfBuf = pdfRes ? Buffer.from(await pdfRes.arrayBuffer()) : Buffer.alloc(0);
   const pdfOk = pdfRes?.status === 200 && pdfRes.headers.get('content-type') === 'application/pdf' && /attachment/.test(pdfRes.headers.get('content-disposition') ?? '') && pdfBuf.subarray(0, 4).toString() === '%PDF';
   const pdfPages = (pdfBuf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
-  const pdfA5 = /\/MediaBox\s*\[\s*0\s+0\s+41\d/.test(pdfBuf.toString('latin1'));
+  const pdfBox = pdfBuf.toString('latin1').match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)/);
+  const pdfA5 = !!pdfBox && Math.abs(Number(pdfBox[1]) - 419.5) < 3 && Math.abs(Number(pdfBox[2]) - 595.3) < 3;
   if (pdfBuf.length) fs.writeFileSync(path.join(out, 'owner-xray-request.pdf'), pdfBuf);
   const pdfButton = await until(async () => (await phonePage.locator('.req-card .pdf-link').count()) > 0, 10_000, 300);
   const docPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });

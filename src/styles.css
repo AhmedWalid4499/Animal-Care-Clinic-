@@ -856,3 +856,12 @@ a.owner-code:hover { text-decoration: underline; }
   .sheet.hr-page { page: hrbook; box-shadow: none; width: 297mm; height: 210mm; break-after: page; }
   .sheet.hr-page:last-child { break-after: auto; }
 }
+
+/* The X-ray request on one A5 page in Arabic too (longer labels), with the address footer (14 Nov 2026). */
+@media print {
+  .xray-sheet .head { padding-bottom: 5px; margin-bottom: 6px; }
+  .xray-sheet .xray-write .lines { min-height: 6.5mm; }
+  .xray-sheet .xray-write .lines.tall { min-height: 11mm; }
+  .xray-sheet .doc-sign .line { height: 6mm; }
+  .xray-sheet .xray-grid fieldset { margin-bottom: 4px; }
+}

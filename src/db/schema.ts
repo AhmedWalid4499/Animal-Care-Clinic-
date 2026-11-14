@@ -122,11 +122,13 @@ const requestTables = `CREATE TABLE IF NOT EXISTS test_requests (
   status TEXT NOT NULL DEFAULT 'REQUESTED' CHECK (status IN ('REQUESTED','DONE','CANCELLED')),
   requested_by TEXT REFERENCES users(id),
   requested_at TEXT NOT NULL,
-  pdf_id TEXT,
-  pdf_key TEXT,
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS test_requests_pet ON test_requests(pet_id, requested_at);`;
+// Schema v20 (14 Nov 2026): a saved request's PDF (attachments.id) and what it was made from. Added after the table (not
+// in it), so an install older than v17 creates test_requests at v17 and gains these at v20 like everyone else.
+const requestPdfCols = `ALTER TABLE test_requests ADD COLUMN pdf_id TEXT;
+ALTER TABLE test_requests ADD COLUMN pdf_key TEXT;`;
 // Schema v18 (14 Nov 2026): lost & found. Someone scans a pet's collar tag (pets.tag_token) and presses Alert: the
 // clinic server writes a report (with the finder's location if they allowed it); devices only mark it handled.
 const foundTables = `CREATE TABLE IF NOT EXISTS found_reports (
@@ -426,6 +428,7 @@ ${expensesTable}
 ${clinicalDocs}
 ${wardTables}
 ${requestTables}
+${requestPdfCols}
 ${foundTables}
 ${v13Cols}
 ${v14Cols}
@@ -533,8 +536,7 @@ export const MIGRATIONS: Record<number, string> = {
   19: visitExam.split(',\n').map((c) => `ALTER TABLE visits ADD COLUMN ${c.trim()};`).join('\n'),
   // v20 (14 Nov 2026): a saved X-ray / lab request keeps its PDF (an attachment, so it reaches the clinic server and the
   // owner's page) and what it was made from (items, other tests, notes), to make a new one when the vet changes them.
-  20: `ALTER TABLE test_requests ADD COLUMN pdf_id TEXT;
-    ALTER TABLE test_requests ADD COLUMN pdf_key TEXT;`,
+  20: requestPdfCols,
 };
 
 /** Tables included in the one-click export, in dependency order. */
