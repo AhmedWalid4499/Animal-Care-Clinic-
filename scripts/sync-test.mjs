@@ -36,6 +36,10 @@ async function step(label, fn) {
     await fn();
   } catch (e) {
     check(label, label, false, e.message.split('\n')[0]);
+    // What each laptop showed when the step failed, and the whole error (which locator, what it waited for).
+    console.log(e.message.split('\n').slice(0, 6).join('\n'));
+    const slug = label.replace(/[^a-z0-9]+/gi, '-');
+    for (const d of [globalThis.syncTestA, globalThis.syncTestB]) await d?.win.screenshot({ path: path.join(out, `FAILED-${slug}-${d.name}.png`) }).catch(() => {});
   }
 }
 async function until(fn, ms = 10_000, every = 150) {
@@ -165,6 +169,8 @@ const serverCount = async (tbl) => Number((await pool.query('SELECT COUNT(*) n F
 
 const A = await launch('A', { demo: true });
 const B = await launch('B', { demo: false });
+globalThis.syncTestA = A;
+globalThis.syncTestB = B;
 
 await step('first device uploads the clinic', async () => {
   await connect(A);
