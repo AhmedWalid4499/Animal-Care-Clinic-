@@ -896,6 +896,68 @@ await step('phase6: owner page', async () => {
     `Doctor's replace refused by the server: ${refused.body.rejected?.[0]?.reason ?? 'no'}; old link → 404: ${!!oldGone.v}; the open phone page shows "not active": ${!!pageGone.v}; new link → ${newWorks}; made-up link → ${wrong}`);
 });
 
+// ---------------------------------------------------------------- collar tags and lost & found (schema v18)
+await step('collar tag: lost & found', async () => {
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY data->>'name' = 'Luna' DESC, id LIMIT 1")).rows[0];
+  const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [pet.data.owner_id])).rows[0].data;
+  // The doctor gives the pet a collar tag on laptop B.
+  await go(B, `#/pets/${pet.id}/tag`);
+  await B.win.locator('.create-tag').click();
+  await B.win.waitForSelector('.tag-sheet .qr');
+  const tagUrl = (await B.win.locator('.tag-link').innerText()).trim();
+  await B.win.screenshot({ path: path.join(out, 'B-collar-tag.png'), fullPage: true });
+  const onServer = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'pets' AND id = $1 AND data->>'tag_token' = $2", [pet.id, tagUrl.split('/t/')[1]])).rowCount === 1, 10_000);
+  // Someone finds the pet and scans the collar with their phone (location allowed).
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const finder = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, geolocation: { latitude: 30.0444, longitude: 31.2357, accuracy: 25 }, permissions: ['geolocation'] });
+  const fp = await finder.newPage();
+  await fp.goto(tagUrl);
+  await fp.waitForSelector('.hero h1');
+  const seen = await fp.locator('main').innerText();
+  const shows = seen.includes(pet.data.name) && (!owner.phone || seen.includes(owner.phone));
+  const hides = !(owner.address && seen.includes(owner.address)) && !(owner.email && seen.includes(owner.email));
+  await fp.screenshot({ path: path.join(out, 'tag-page-finder.png'), fullPage: true });
+  const bellBefore = await bell(A);
+  await fp.locator('.btn.alert').first().click();
+  await fp.locator('.send-alert').click();
+  const sent = await until(async () => (await fp.locator('.card.done').count()) === 1, 15_000, 200);
+  await fp.screenshot({ path: path.join(out, 'tag-page-sent.png'), fullPage: true });
+  const report = await until(async () => (await pool.query("SELECT id, data FROM rows WHERE tbl = 'found_reports' AND data->>'pet_id' = $1 ORDER BY seq DESC LIMIT 1", [String(pet.id)])).rows[0], 10_000);
+  // Everyone at the clinic: the bell, and Lost & found on the laptops.
+  const told = await until(async () => (await bell(A)) > bellBefore, 10_000, 200);
+  await go(A, '#/lost-found');
+  const listed = await until(async () => (await A.win.locator('.found-item.new', { hasText: pet.data.name }).count()) === 1, 10_000, 200);
+  const mapBtn = await A.win.locator('.found-item.new .open-map').count();
+  await A.win.screenshot({ path: path.join(out, 'A-lost-found.png'), fullPage: true });
+  // The owner's own page shows it, and the pet's profile opens there.
+  const ownerToken = (await pool.query("SELECT data->>'portal_token' t FROM rows WHERE tbl = 'owners' AND id = $1", [pet.data.owner_id])).rows[0].t;
+  let ownerSees = false;
+  let profile = false;
+  if (ownerToken) {
+    const op = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+    await op.goto(`${SERVER}/o/${ownerToken}`);
+    ownerSees = !!(await until(async () => (await op.locator('.found-alert').count()) > 0, 10_000, 200)).v;
+    await op.screenshot({ path: path.join(out, 'owner-page-found-alert.png'), fullPage: true });
+    await op.evaluate((id) => (location.hash = 'pet:' + id), String(pet.id));
+    profile = !!(await until(async () => (await op.locator('.profile-head').innerText().catch(() => '')).includes(pet.data.name), 5000, 200)).v;
+    await op.screenshot({ path: path.join(out, 'owner-page-pet-profile.png'), fullPage: true });
+    await op.close();
+  }
+  // Rules: reports come only from the tag page; staff may only mark them handled.
+  const deskNew = await api('/api/sync/push', { changes: [{ tbl: 'found_reports', id: crypto.randomUUID(), op: 'upsert', at: nowIso(), cols: { pet_id: String(pet.id), reported_at: nowIso(), status: 'NEW' } }] }, tokens.desk);
+  const moved = await api('/api/sync/push', { changes: [{ tbl: 'found_reports', id: report.v?.id, op: 'upsert', at: nowIso(), cols: { lat: 1 } }] }, tokens.admin);
+  await A.win.locator('.found-item.new .mark-handled').first().click();
+  const handled = await until(async () => (await pool.query("SELECT data->>'status' s FROM rows WHERE tbl = 'found_reports' AND id = $1", [report.v?.id])).rows[0]?.s === 'HANDLED', 10_000);
+  const cleared = ownerToken ? await until(async () => ((await (await fetch(`${SERVER}/o/${ownerToken}/data`)).json()).found ?? []).length === 0, 10_000) : { v: true };
+  await browser.close();
+  const r = report.v?.data ?? {};
+  check('lost-found', 'A collar tag shows the pet and how to reach the owner; Alert tells everyone at the clinic and the owner, with the location, and lands in Lost & found',
+    !!onServer.v && shows && hides && !!sent.v && Math.abs(Number(r.lat) - 30.0444) < 0.001 && !!told.v && !!listed.v && mapBtn === 1 && (!ownerToken || ownerSees) && (!ownerToken || profile) &&
+      deskNew.body.rejected?.length === 1 && moved.body.rejected?.length === 1 && !!handled.v && !!cleared.v,
+    `tag made on laptop B: ${!!onServer.v}; finder sees the pet and the owner's phone: ${shows}, not the address or email: ${hides}; alert sent: ${!!sent.v} with location ${r.lat}, ${r.lng}; laptop A's bell: ${!!told.v}; in Lost & found with a map button: ${!!listed.v && mapBtn === 1}; owner's page shows the alert: ${ownerToken ? ownerSees : 'no owner page'}; pet profile on the owner page: ${profile}; a device inventing a report: ${deskNew.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; changing a report's location: ${moved.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; marked handled: ${!!handled.v}, gone from the owner's page: ${!!cleared.v}`);
+});
+
 await step('phase5: password reset', async () => {
   await go(A, '#/settings?tab=users');
   await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();

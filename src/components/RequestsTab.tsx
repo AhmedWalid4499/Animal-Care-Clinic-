@@ -17,13 +17,15 @@ export function RequestsTab({ petId, active }: { petId: string; active: boolean 
   const nav = useNavigate();
   const requests = useQuery(() => petTestRequests(petId), [petId]);
   const xrays = useQuery(() => petAttachments(petId).filter((a) => a.kind === 'XRAY'), [petId]);
-  const images = useImages(xrays, true);
+  // Lab results that come back as a file (the lab's PDF or a photo of it); the owner sees them too.
+  const labFiles = useQuery(() => petAttachments(petId).filter((a) => a.kind === 'LAB'), [petId]);
+  const images = useImages([...xrays, ...labFiles], true);
   const [confirm, setConfirm] = useState<{ id: string; status: RequestStatus } | null>(null);
-  const upload = async () => {
-    const f = await platform.pickFile([{ name: 'X-ray', extensions: ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'dcm'] }, { name: 'All', extensions: ['*'] }]);
+  const upload = async (kind: 'XRAY' | 'LAB') => {
+    const f = await platform.pickFile([{ name: kind === 'XRAY' ? 'X-ray' : 'Lab', extensions: ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'dcm'] }, { name: 'All', extensions: ['*'] }]);
     if (!f) return;
     try {
-      addAttachment(petId, { name: f.name, bytes: f.bytes, mime: mimeOf(f.name) }, 'XRAY', null, user?.id ?? null);
+      addAttachment(petId, { name: f.name, bytes: f.bytes, mime: mimeOf(f.name) }, kind, null, user?.id ?? null);
       toast(t('app.saved'));
     } catch {
       toast(t('petRecord.fileTooLarge'));
@@ -69,11 +71,27 @@ export function RequestsTab({ petId, active }: { petId: string; active: boolean 
       <section className="section xray-images">
         <header>
           <h2>🩻 {t('requests.xrayImages')} <span className="count">{xrays.length}</span></h2>
-          <button className="btn sm upload-xray" onClick={() => void upload()}><Icon name="file" /> {t('requests.uploadXray')}</button>
+          <button className="btn sm upload-xray" onClick={() => void upload('XRAY')}><Icon name="file" /> {t('requests.uploadXray')}</button>
         </header>
         {xrays.length === 0 && <p className="empty">{t('requests.noXrays')}</p>}
         <div className="xray-thumbs">
           {xrays.map((a) => (
+            <figure key={a.id}>
+              {isImage(a) && images[a.id] ? <img src={images[a.id]!} alt={a.file_name} /> : <div className="thumb-file"><Icon name="file" /></div>}
+              <figcaption>{fmt.date(a.created_at)} · <span dir="auto">{a.file_name}</span></figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
+      <section className="section lab-files">
+        <header>
+          <h2>🧪 {t('requests.labFiles')} <span className="count">{labFiles.length}</span></h2>
+          <button className="btn sm upload-lab" onClick={() => void upload('LAB')}><Icon name="file" /> {t('requests.uploadLab')}</button>
+        </header>
+        {labFiles.length === 0 && <p className="empty">{t('requests.noLabFiles')}</p>}
+        <div className="xray-thumbs">
+          {labFiles.map((a) => (
             <figure key={a.id}>
               {isImage(a) && images[a.id] ? <img src={images[a.id]!} alt={a.file_name} /> : <div className="thumb-file"><Icon name="file" /></div>}
               <figcaption>{fmt.date(a.created_at)} · <span dir="auto">{a.file_name}</span></figcaption>

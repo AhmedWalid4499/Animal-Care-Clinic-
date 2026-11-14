@@ -181,8 +181,27 @@ main { padding: 20px 0 40px; }
 .xray-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 .xg-item { display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: var(--ink-2); font-size: 13px; }
 .xg-item img, .xg-file { width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; border-radius: var(--radius-sm); }
-.xg-file { display: grid; place-items: center; background: var(--bg); color: var(--ink-3); }
+.xg-file { display: grid; place-items: center; align-content: center; gap: 4px; background: var(--bg); color: var(--ink-3); }
+.xg-file b { font-size: 13px; color: #d93025; }
+.xg-name { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
 @media (max-width: 719px) { .tabs a span:not(.badge-n) { font-size: 10px; } }
+
+/* pet profile */
+a.pet-link { text-decoration: none; color: inherit; }
+a.pet-link .grow { flex: 1; min-width: 0; }
+.avatar.xl { width: 104px; height: 104px; font-size: 52px; }
+.profile-name { margin: 0; font-size: 26px; font-weight: 600; line-height: 1.2; }
+.back-link { display: inline-flex; align-items: center; gap: 4px; margin: 4px 2px 0; text-decoration: none; font-weight: 600; }
+[dir="ltr"] svg.back, [dir="rtl"] svg.flip.back { transform: scaleX(-1); }
+.wchart { width: 100%; height: 110px; display: block; margin: 4px 0 8px; }
+.wchart polyline { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.wchart circle { fill: var(--accent); }
+/* lost & found alert on the owner's page */
+.found-alert { background: var(--bad-soft); border-color: var(--bad); }
+.found-head { display: flex; gap: 12px; align-items: flex-start; }
+.found-head b { font-size: 17px; color: var(--bad); }
+.found-icon { font-size: 28px; line-height: 1; }
+.found-msg { margin: 10px 0 0; font-size: 15px; }
 
 /* lab results */
 details.labday { border-top: 1px solid var(--rule); padding: 10px 0; }
@@ -256,6 +275,7 @@ footer.site b { color: var(--ink-2); }
     clip: 'M9 4h6v3H9zM9 5H6a1 1 0 00-1 1v14a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1h-3M9 12h6M9 16h4',
     flask: 'M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 006 21h12a1.7 1.7 0 001.5-2.5L14 9V3M7.5 15h9',
     steth: 'M5 3v6a5 5 0 0010 0V3M10 14v2a5 5 0 0010 0v-2M20 11a2 2 0 100 4 2 2 0 000-4z',
+    chart: 'M3 3v18h18M7 15l4-4 3 3 5-6',
     star: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
   };
   const VIEWS = ['home', 'pets', 'appointments', 'prescriptions', 'requests', 'details'];
@@ -272,7 +292,9 @@ footer.site b { color: var(--ink-2); }
   const T = () => TEXT[L()];
   const fill = (s, v) => Object.keys(v || {}).reduce((a, k) => a.split('{' + k + '}').join(String(v[k])), s || '');
   const t = (k, v) => fill(k.split('.').reduce((o, p) => (o ? o[p] : undefined), T()) || k, v);
-  const view = () => { const v = location.hash.slice(1); return VIEWS.includes(v) ? v : 'home'; };
+  // '#pet:<id>' is a pet's own profile (shown under the Pets tab).
+  const profileId = () => (location.hash.startsWith('#pet:') ? decodeURIComponent(location.hash.slice(5)) : null);
+  const view = () => { if (profileId()) return 'pets'; const v = location.hash.slice(1); return VIEWS.includes(v) ? v : 'home'; };
 
   // Elements are built from text nodes only: nothing from the records is ever parsed as HTML.
   function h(tag, attrs, ...kids) {
@@ -459,11 +481,11 @@ footer.site b { color: var(--ink-2); }
     return h('div', { class: 'card' },
       h('h2', null, icon('paw'), t('pets'), h('a', Object.assign({ class: 'more' }, go('pets')), t('seeAll'), icon('chevron', 'flip'))),
       d.pets.length ? h('div', { class: 'petstrip' }, activePets().concat(d.pets.filter((p) => p.status !== 'ACTIVE')).map((p) =>
-        h('a', Object.assign({ class: p.status !== 'ACTIVE' ? 'greyed' : null }, go('pets'), { onclick: () => setTimeout(() => { const el = document.getElementById('pet-' + p.id); if (el) el.scrollIntoView({ behavior: 'smooth' }); }, 60) }), avatar(p), p.name)))
+        h('a', { class: p.status !== 'ACTIVE' ? 'greyed' : null, href: '#pet:' + encodeURIComponent(p.id) }, avatar(p), p.name)))
         : h('div', { class: 'empty' }, t('noPets')));
   }
   function homeView() {
-    return [nextCard(), stats(), h('div', { class: 'grid2' }, attentionCard(), latestRxCard()), petStrip()];
+    return [foundBanner(), nextCard(), stats(), h('div', { class: 'grid2' }, attentionCard(), latestRxCard()), petStrip()];
   }
 
   function petsView() {
@@ -478,11 +500,12 @@ footer.site b { color: var(--ink-2); }
         p.microchip_no ? [t('microchip'), p.microchip_no, true] : null,
       ].filter(Boolean);
       return h('article', { class: 'card pet' + (p.status !== 'ACTIVE' ? ' greyed' : ''), id: 'pet-' + p.id },
-        h('div', { class: 'pet-head' }, avatar(p, 'lg'),
-          h('div', null,
+        h('a', { class: 'pet-head pet-link', href: '#pet:' + encodeURIComponent(p.id) }, avatar(p, 'lg'),
+          h('div', { class: 'grow' },
             h('h3', null, p.name),
             h('div', { class: 'muted' }, t('species.' + p.species), p.breed ? ' · ' + p.breed : ''),
-            p.status !== 'ACTIVE' ? h('span', { class: 'badge grey' }, t('petStatus.' + p.status)) : null)),
+            p.status !== 'ACTIVE' ? h('span', { class: 'badge grey' }, t('petStatus.' + p.status)) : null),
+          h('span', { class: 'btn sm' }, t('openProfile'), icon('chevron', 'flip'))),
         h('ul', { class: 'chips' }, chips.map(([k, v, ltr]) => h('li', null, h('span', null, k), h('b', ltr ? { class: 'ltr' } : null, v)))),
         h('div', { class: 'subhead' }, icon('syringe'), t('vaccinations')),
         p.vaccinations.length ? h('ul', { class: 'rows' }, p.vaccinations.map((v) => {
@@ -600,6 +623,12 @@ footer.site b { color: var(--ink-2); }
       r.other ? h('div', { class: 'dx' }, h('span', null, t('otherTests')), h('b', null, r.other)) : null,
       r.notes ? h('div', { class: 'dx' }, h('span', null, t('vetNotes')), h('b', null, r.notes)) : null);
   }
+  function fileGallery(list) {
+    return h('div', { class: 'card xray-gallery' }, list.map((x) => h('a', { href: base + '/f/' + encodeURIComponent(x.id), target: '_blank', rel: 'noopener', class: 'xg-item' },
+      x.image ? h('img', { src: base + '/f/' + encodeURIComponent(x.id), alt: x.file_name, loading: 'lazy' }) : h('div', { class: 'xg-file' }, icon('download'), h('b', null, (x.file_name.split('.').pop() || '').toUpperCase())),
+      h('span', null, fmtDate(x.at) + ' · ' + x.pet_name),
+      h('span', { class: 'xg-name', dir: 'auto' }, x.file_name))));
+  }
   function requestsView() {
     const reqs = d.requests || [];
     const xr = d.xrays || [];
@@ -609,17 +638,16 @@ footer.site b { color: var(--ink-2); }
     const mine = (x) => reqPet === 'all' || x.pet_id === reqPet;
     const xrayReqs = reqs.filter((r) => r.kind === 'XRAY' && mine(r));
     const labReqs = reqs.filter((r) => r.kind === 'LAB' && mine(r));
-    const imgs = xr.filter(mine);
+    const imgs = xr.filter((x) => x.kind !== 'LAB' && mine(x));
+    const labFiles = xr.filter((x) => x.kind === 'LAB' && mine(x));
     return [
       petIds.length > 1 ? h('div', { class: 'filters', role: 'group' },
         h('button', { type: 'button', class: reqPet === 'all' ? 'on' : null, onclick: () => { reqPet = 'all'; render(); } }, t('allPets')),
         petIds.map((id) => h('button', { type: 'button', class: reqPet === id ? 'on' : null, onclick: () => { reqPet = id; render(); } }, petName(id) || '—'))) : null,
       xrayReqs.length ? [h('h2', { class: 'section-title' }, icon('clip'), t('xrayRequests')), xrayReqs.map(requestCard)] : null,
-      imgs.length ? [h('h2', { class: 'section-title' }, icon('eye'), t('xrayImages')),
-        h('div', { class: 'card xray-gallery' }, imgs.map((x) => h('a', { href: base + '/f/' + encodeURIComponent(x.id), target: '_blank', rel: 'noopener', class: 'xg-item' },
-          x.image ? h('img', { src: base + '/f/' + encodeURIComponent(x.id), alt: x.file_name, loading: 'lazy' }) : h('div', { class: 'xg-file' }, icon('download')),
-          h('span', null, fmtDate(x.at) + ' · ' + x.pet_name))))] : null,
+      imgs.length ? [h('h2', { class: 'section-title' }, icon('eye'), t('xrayImages')), fileGallery(imgs)] : null,
       labReqs.length ? [h('h2', { class: 'section-title' }, icon('flask'), t('labRequests')), labReqs.map(requestCard)] : null,
+      labFiles.length ? [h('h2', { class: 'section-title' }, icon('download'), t('labFiles')), fileGallery(labFiles)] : null,
     ];
   }
 
@@ -652,6 +680,103 @@ footer.site b { color: var(--ink-2); }
     ];
   }
 
+  // ---- lost & found: someone scanned a collar tag and pressed Alert
+  function mapLink(f) { return 'https://www.google.com/maps?q=' + f.lat + ',' + f.lng; }
+  function foundBanner(petId) {
+    const list = (d.found || []).filter((f) => !petId || f.pet_id === petId);
+    if (!list.length) return null;
+    return list.map((f) => {
+      const wa = e164(f.finder_phone);
+      return h('div', { class: 'card found-alert', role: 'alert' },
+        h('div', { class: 'found-head' }, h('span', { class: 'found-icon' }, '🚨'),
+          h('div', null, h('b', null, t('foundTitle', { pet: f.pet_name })), h('div', { class: 'small' }, t('foundWhen', { time: fmtLong(f.at) + ' · ' + fmtTime(f.at) })))),
+        f.message ? h('p', { class: 'found-msg' }, '“', f.message, '”') : null,
+        f.finder_name ? h('div', { class: 'small' }, t('foundBy', { name: f.finder_name })) : null,
+        h('div', { class: 'actions' },
+          f.lat != null ? h('a', { class: 'btn sm primary', href: mapLink(f), target: '_blank', rel: 'noopener noreferrer' }, icon('pin'), t('foundMap')) : h('span', { class: 'small' }, t('foundNoLocation')),
+          f.finder_phone ? h('a', { class: 'btn sm', href: 'tel:' + String(f.finder_phone).replace(/[^\d+]/g, '') }, icon('phone'), t('foundCall')) : null,
+          wa ? h('a', { class: 'btn sm', href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), 'WhatsApp') : null),
+        h('div', { class: 'small muted' }, t('foundClinicKnows')));
+    });
+  }
+
+  // ---- a pet's own profile ('#pet:<id>')
+  function weightChart(ws) {
+    if (ws.length < 2) return null;
+    const W = 300, H = 90, pad = 6;
+    const xs = ws.map((w) => Date.parse(w.at)), ys = ws.map((w) => w.kg);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const X = (x) => pad + (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0)) * (W - 2 * pad);
+    const Y = (y) => H - pad - (y1 === y0 ? 0.5 : (y - y0) / (y1 - y0)) * (H - 2 * pad);
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('class', 'wchart');
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', t('weightHistory'));
+    const line = document.createElementNS(NS, 'polyline');
+    line.setAttribute('points', ws.map((w) => X(Date.parse(w.at)).toFixed(1) + ',' + Y(w.kg).toFixed(1)).join(' '));
+    svg.append(line);
+    for (const w of ws) {
+      const c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', X(Date.parse(w.at)).toFixed(1)); c.setAttribute('cy', Y(w.kg).toFixed(1)); c.setAttribute('r', '3.5');
+      svg.append(c);
+    }
+    return svg;
+  }
+  function petProfile(p) {
+    const a = p.date_of_birth ? age(p.date_of_birth) : null;
+    const chips = [
+      [t('sexLabel'), t('sex.' + p.sex) + (p.is_neutered ? ' · ' + t('neutered') : '')],
+      a ? [t('age'), fill(T().ageValue, { y: a.y, m: a.m }) + (p.dob_is_estimate ? ' (' + t('estimate') + ')' : '')] : null,
+      p.date_of_birth ? [t('born'), fmtDate(p.date_of_birth)] : null,
+      p.weight ? [t('weight'), fmtNum(p.weight.kg, 2) + ' ' + t('kg')] : null,
+      p.color ? [t('color'), p.color] : null,
+      p.microchip_no ? [t('microchip'), p.microchip_no, true] : null,
+    ].filter(Boolean);
+    const appts = d.appointments.filter((x) => x.pet_id === p.id);
+    const rx = d.prescriptions.filter((x) => x.pet_id === p.id);
+    const reqs = (d.requests || []).filter((x) => x.pet_id === p.id);
+    const imgs = (d.xrays || []).filter((x) => x.pet_id === p.id);
+    const ws = p.weights || [];
+    return [
+      foundBanner(p.id),
+      h('article', { class: 'card profile-head' + (p.status !== 'ACTIVE' ? ' greyed' : '') },
+        h('div', { class: 'pet-head' }, avatar(p, 'xl'),
+          h('div', null,
+            h('h1', { class: 'profile-name' }, p.name),
+            h('div', { class: 'muted' }, t('species.' + p.species), p.breed ? ' · ' + p.breed : ''),
+            p.status !== 'ACTIVE' ? h('span', { class: 'badge grey' }, t('petStatus.' + p.status)) : null,
+            p.tag ? h('span', { class: 'badge ok' }, '🏷 ', t('tagActive')) : null)),
+        h('ul', { class: 'chips' }, chips.map(([k, v, ltr]) => h('li', null, h('span', null, k), h('b', ltr ? { class: 'ltr' } : null, v))))),
+      ws.length ? h('section', { class: 'card' },
+        h('h2', null, icon('chart'), t('weightHistory')),
+        weightChart(ws),
+        h('ul', { class: 'rows' }, ws.slice().reverse().slice(0, 6).map((w) => h('li', null, h('div', { class: 'grow' }, fmtDate(w.at)), h('b', { class: 'ltr' }, fmtNum(w.kg, 2) + ' ' + t('kg')))))) : null,
+      appts.length ? [h('h2', { class: 'section-title' }, icon('calendar'), t('appointments')), appts.map((x) => h('article', { class: 'card appt' }, dateTile(x.scheduled_at),
+        h('div', null, h('div', { class: 'time' }, h('bdi', null, fmtTime(x.scheduled_at)), ' · ', h('span', { class: 'muted' }, relDay(x.scheduled_at))),
+          h('div', null, t('visitType.' + x.type)), calButtons(x))))] : null,
+      h('section', { class: 'card' },
+        h('h2', null, icon('syringe'), t('vaccinations')),
+        p.vaccinations.length ? h('ul', { class: 'rows' }, p.vaccinations.map((v) => {
+          const s = vaccState(v);
+          return h('li', null,
+            h('div', { class: 'icobox ' + (s.cls === 'bad' ? 'bad' : s.cls === 'warn' ? 'warn' : s.cls === 'ok' ? 'ok' : '') }, icon(s.cls === 'ok' ? 'check' : s.cls === 'bad' ? 'alert' : 'syringe')),
+            h('div', { class: 'grow' }, h('b', null, v.name), h('span', { class: 'muted small' }, t('given', { date: fmtDate(v.administered_at) }), v.next_due_at ? ' · ' + t('nextDue', { date: fmtDate(v.next_due_at) }) : '')),
+            s.text && p.status === 'ACTIVE' ? h('span', { class: 'badge ' + s.cls }, s.text) : null);
+        })) : h('div', { class: 'muted small' }, t('noVaccinations'))),
+      (p.labs || []).length ? h('section', { class: 'card' }, labSection(p)) : null,
+      h('section', { class: 'card' }, visitHistory(p)),
+      rx.length ? [h('h2', { class: 'section-title' }, icon('pill'), t('prescriptions')), rx.map((v) => h('article', { class: 'card' },
+        h('div', { class: 'rxhead' }, h('b', null, fmtDate(v.visited_at)), h('span', { class: 'muted small' }, t('visitType.' + v.type) + (v.vet_name ? ' · ' + t('byVet', { name: v.vet_name }) : ''))),
+        v.diagnosis ? h('div', { class: 'dx' }, h('span', null, t('diagnosis')), h('b', null, v.diagnosis)) : null,
+        v.items.map(drug)))] : null,
+      reqs.length ? [h('h2', { class: 'section-title' }, icon('clip'), t('requestsTitle')), reqs.map(requestCard)] : null,
+      imgs.filter((x) => x.kind !== 'LAB').length ? [h('h2', { class: 'section-title' }, icon('eye'), t('xrayImages')), fileGallery(imgs.filter((x) => x.kind !== 'LAB'))] : null,
+      imgs.filter((x) => x.kind === 'LAB').length ? [h('h2', { class: 'section-title' }, icon('download'), t('labFiles')), fileGallery(imgs.filter((x) => x.kind === 'LAB'))] : null,
+    ];
+  }
+
   // ---- render
   function render() {
     const app = document.getElementById('app');
@@ -665,13 +790,16 @@ footer.site b { color: var(--ink-2); }
     if (!d) return;
     document.title = clinicName() + ' — ' + d.owner.full_name;
     const v = view();
-    const body = { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, requests: requestsView, details: detailsView }[v]();
+    const pid = profileId();
+    const profilePet = pid ? d.pets.find((p) => p.id === pid) : null;
+    const body = profilePet ? petProfile(profilePet) : { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, requests: requestsView, details: detailsView }[v]();
     app.replaceChildren(...[
       topbar(),
       v === 'home' ? hero() : null,
       tabs(),
       h('main', { class: 'wrap' },
-        v !== 'home' ? h('h1', { class: 'section-title' }, icon(NAV_ICON[v]), t('nav.' + v)) : null,
+        profilePet ? h('a', { class: 'back-link', href: '#pets' }, icon('chevron', 'back'), t('nav.pets'))
+          : v !== 'home' ? h('h1', { class: 'section-title' }, icon(NAV_ICON[v]), t('nav.' + v)) : null,
         h('div', { class: 'view view-' + v }, body)),
       h('footer', { class: 'site wrap' }, h('b', null, clinicName()), d.clinic.address ? ' · ' + d.clinic.address : '', h('div', null, t('updated', { time: fmtTime(d.at) }))),
     ].filter(Boolean));

@@ -29,7 +29,7 @@ fs.mkdirSync(path.join(out, 'rtl'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-data-'));
 const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-export-'));
 const dbFile = path.join(dataDir, 'clinic.sqlite');
-const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'audit_log'];
+const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'audit_log'];
 const SQL = await initSqlJs();
 // The schema version a fresh or upgraded database must reach (src/db/schema.ts).
 const CURRENT_SCHEMA = fs.readFileSync('src/db/schema.ts', 'utf8').match(/SCHEMA_VERSION = (\d+)/)[1];
@@ -378,7 +378,8 @@ async function pdfOf(hash, name, size = 'A5') {
     ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-edit', `#/pets/${petId}/edit`],
     ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
     ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`],
-    ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
+    ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`],
+    ['lost-found', '#/lost-found'], ['pet-tag', `#/pets/${petId}/tag`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
@@ -452,8 +453,10 @@ await app.close();
   db.run('ALTER TABLE owners DROP COLUMN portal_token');
   db.run('DROP INDEX IF EXISTS owners_code');
   db.run('ALTER TABLE owners DROP COLUMN code');
-  // …nor saved X-ray / lab requests (schema v17).
+  // …nor saved X-ray / lab requests (schema v17), nor collar tags and lost & found (v18).
   db.run('DROP TABLE test_requests');
+  db.run('DROP TABLE found_reports');
+  db.run('ALTER TABLE pets DROP COLUMN tag_token');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");

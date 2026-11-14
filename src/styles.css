@@ -745,3 +745,28 @@ a.owner-code:hover { text-decoration: underline; }
 .file-busy { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
 .file-name { font-size: 13px; font-weight: 600; line-height: 1.3; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 .file-sub { font-size: 11px; color: var(--ink-3); line-height: 1.3; }
+
+/* Lost & found (schema v18) */
+.nav-count { margin-inline-start: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--bad); color: #fff; font-size: 12px; font-weight: 600; line-height: 20px; text-align: center; }
+.found-list .found-item { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: start; padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.found-list .found-item.new { box-shadow: inset 3px 0 0 var(--bad); padding-inline-start: 12px; }
+[dir="rtl"] .found-list .found-item.new { box-shadow: inset -3px 0 0 var(--bad); }
+.found-list .found-item.open { background: var(--accent-soft); }
+.found-list .found-item.handled { opacity: .7; }
+.found-list .found-msg { margin: 6px 0 0; padding: 8px 10px; background: var(--bg-2); border-radius: var(--radius); }
+.found-banner { border-inline-start-color: var(--bad); background: var(--bad-soft); }
+/* Collar tags: printed small, cut out and put in a tag holder or laminated */
+.tag-sheet .tags { display: flex; flex-wrap: wrap; gap: 6mm; justify-content: center; margin-top: 6mm; }
+.collar-tag { border: 1px dashed #888; border-radius: 3mm; padding: 2mm; display: flex; flex-direction: column; align-items: center; gap: 1mm; text-align: center; break-inside: avoid; }
+.collar-tag .qr { border: 0; }
+.collar-tag b { font-size: 9pt; line-height: 1.1; }
+.collar-tag span { font-size: 6.5pt; line-height: 1.15; color: #333; }
+.collar-tag.lg { width: 46mm; }
+.collar-tag.lg .qr { width: 38mm; height: 38mm; }
+.collar-tag.lg b { font-size: 11pt; }
+.collar-tag.lg span { font-size: 7.5pt; }
+.collar-tag.sm { width: 30mm; }
+.collar-tag.sm .qr { width: 24mm; height: 24mm; }
+.collar-tag.round { width: 32mm; height: 32mm; border-radius: 50%; justify-content: center; padding: 3mm; }
+.collar-tag.round .qr { width: 19mm; height: 19mm; }
+.collar-tag.round b { font-size: 7pt; }

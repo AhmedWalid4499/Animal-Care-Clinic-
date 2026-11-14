@@ -58,6 +58,8 @@ export interface Pet {
   /** Comma-separated ALERT_FLAGS, and free text (e.g. "penicillin"). Schema v6. */
   alert_flags: string | null; alert_note: string | null;
   recall_sent_at: string | null;
+  /** Secret part of the pet's collar tag link (QR on the collar); null = no tag. Schema v18. */
+  tag_token?: string | null;
 }
 export interface Visit {
   id: string; pet_id: string; vet_id: string | null; visited_at: string; type: VisitType; complaint: string | null;
@@ -93,6 +95,12 @@ export type StockReason = (typeof STOCK_REASONS)[number];
 export interface StockMove {
   id: string; price_item_id: string; qty: number; reason: StockReason; invoice_id: string | null; note: string | null; user_id: string | null; at: string;
   batch_no: string | null; expires_at: string | null;
+}
+/** Someone scanned a pet's collar tag and pressed Alert (schema v18); written by the clinic server. */
+export interface FoundReport {
+  id: string; pet_id: string; owner_id: string | null; reported_at: string; lat: number | null; lng: number | null; accuracy_m: number | null;
+  finder_name: string | null; finder_phone: string | null; message: string | null; status: 'NEW' | 'HANDLED';
+  handled_by: string | null; handled_at: string | null;
 }
 export type RequestKind = 'XRAY' | 'LAB';
 export type RequestStatus = 'REQUESTED' | 'DONE' | 'CANCELLED';

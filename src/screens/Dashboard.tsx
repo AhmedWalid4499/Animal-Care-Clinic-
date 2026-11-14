@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import {
-  appointmentsBetween, dueVaccinations, getSettings, markAppointmentReminded, markVaccinationReminded, openBalance, quickSearch, waitingQueue, wardBoard,
+  appointmentsBetween, dueVaccinations, getSettings, markAppointmentReminded, markVaccinationReminded, openBalance, quickSearch, waitingQueue, wardBoard, newFoundCount,
 } from '../db/repo';
 import { addDays, daysBetween, startOfDayIso, today } from '../lib/dates';
 import { Badge, Icon, StatusBadge, WaButton, speciesEmoji } from '../components/ui';
@@ -46,6 +46,7 @@ export function Dashboard() {
   const due = useQuery(() => dueVaccinations(7));
   const waiting = useQuery(waitingQueue);
   const ward = useQuery(wardBoard);
+  const foundNew = useQuery(newFoundCount);
   const money = useQuery(openBalance);
   const toRemind = useQuery(remindersLeft);
   const settings = useQuery(getSettings);
@@ -96,6 +97,13 @@ export function Dashboard() {
         <Quick icon="chat" label={t('reminders.title')} badge={toRemind} onClick={() => nav('/reminders')} />
         <Quick icon="receipt" label={t('invoices.new')} onClick={() => nav('/invoices/new')} />
       </nav>
+
+      {foundNew > 0 && (
+        <p className="note bad found-banner">
+          🚨 <b>{t('lostFound.dashboard', { n: foundNew })}</b>{' '}
+          <a href="#/lost-found">{t('lostFound.open')} →</a>
+        </p>
+      )}
 
       <h2 className="dash-h">{t('dashboard.glance')}</h2>
       <div className="glance">

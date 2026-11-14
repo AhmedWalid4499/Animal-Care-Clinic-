@@ -24,6 +24,7 @@ import { DrugsPage, PricesPage, TemplatesPage, VaccinesPage } from './components
 import { useEffect, type ReactNode } from 'react';
 import { OwnerCardPrint } from './components/OwnerPage';
 import { CaseReport, LabReportPrint, RequestForm } from './screens/Documents';
+import { LostFound, PetTag } from './screens/LostFound';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
 
@@ -68,6 +69,8 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="pets/:id/edit" element={<PetFormPage />} />
           <Route path="pets/:id/print" element={<PetSummaryPrint />} />
           <Route path="pets/:id/certificate" element={<VaccinationCertificate />} />
+          <Route path="pets/:id/tag" element={<PetTag />} />
+          <Route path="lost-found" element={<LostFound />} />
           <Route path="pets/:id/labs/:date" element={<LabReportPrint />} />
           <Route path="pets/:id/report" element={<ClinicalOnly><CaseReport /></ClinicalOnly>} />
           <Route path="pets/:id/xray-request" element={<ClinicalOnly><RequestForm kind="XRAY" /></ClinicalOnly>} />
