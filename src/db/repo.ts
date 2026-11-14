@@ -141,6 +141,68 @@ export function setOwnerStatus(id: string, status: 'ACTIVE' | 'ARCHIVED') {
   tx(() => update('owners', id, { status }));
 }
 
+// ---------------------------------------------------------------- owner page (Phase 6)
+/** 128 random bits, URL-safe: the secret part of the owner page link. Unguessable, so the link is the key. */
+function newPortalToken(): string {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+/** Give the owner a page (QR code). Keeps an existing one, so a card already printed keeps working. */
+export function createOwnerPage(id: string): string {
+  return tx(() => {
+    const cur = get<{ portal_token: string | null }>('SELECT portal_token FROM owners WHERE id = ?', [id]);
+    if (cur?.portal_token) return cur.portal_token;
+    const token = newPortalToken();
+    update('owners', id, { portal_token: token });
+    return token;
+  });
+}
+/** Admin: a lost card. The old QR code stops working at once (on the server), a new one replaces it. */
+export function replaceOwnerPage(id: string): string {
+  const token = newPortalToken();
+  tx(() => update('owners', id, { portal_token: token }));
+  return token;
+}
+/** Admin: switch the owner's page off; the QR code stops working. */
+export function disableOwnerPage(id: string) {
+  tx(() => update('owners', id, { portal_token: null }));
+}
+
+// ---------------------------------------------------------------- prescription archive
+export interface RxVisit {
+  visit_id: string; pet_id: string; pet_name: string; species: string; pet_status: string; visited_at: string; type: VisitType;
+  diagnosis: string | null; weight_kg: number | null; vet_name: string | null; prescriptions: Prescription[];
+}
+/**
+ * Every prescription an owner's pets were given (or one pet's), grouped by visit, newest first.
+ * q matches drug, dose, instructions, diagnosis or pet name, so "the amoxicillin from the summer" is one search away.
+ */
+export function prescriptionArchive(scope: { ownerId?: string; petId?: string }, q = ''): RxVisit[] {
+  const where = scope.petId ? 'v.pet_id = ?' : 'p.owner_id = ?';
+  const rows = all<Prescription & { pet_id: string; pet_name: string; species: string; pet_status: string; visited_at: string; type: VisitType; diagnosis: string | null; weight_kg: number | null; vet_name: string | null }>(
+    `SELECT r.*, v.pet_id, p.name pet_name, p.species, p.status pet_status, v.visited_at, v.type, v.diagnosis, v.weight_kg, u.name vet_name
+     FROM prescriptions r JOIN visits v ON v.id = r.visit_id JOIN pets p ON p.id = v.pet_id LEFT JOIN users u ON u.id = v.vet_id
+     WHERE ${where} ORDER BY v.visited_at DESC, r.created_at`,
+    [scope.petId ?? scope.ownerId ?? ''],
+  );
+  const needle = q.trim().toLowerCase();
+  const byVisit = new Map<string, RxVisit>();
+  for (const r of rows) {
+    let v = byVisit.get(r.visit_id);
+    if (!v) {
+      v = { visit_id: r.visit_id, pet_id: r.pet_id, pet_name: r.pet_name, species: r.species, pet_status: r.pet_status, visited_at: r.visited_at, type: r.type, diagnosis: r.diagnosis, weight_kg: r.weight_kg, vet_name: r.vet_name, prescriptions: [] };
+      byVisit.set(r.visit_id, v);
+    }
+    v.prescriptions.push({ id: r.id, visit_id: r.visit_id, drug: r.drug, dose: r.dose, frequency: r.frequency, duration_days: r.duration_days, instructions: r.instructions });
+  }
+  const list = [...byVisit.values()];
+  if (!needle) return list;
+  return list.filter((v) =>
+    [v.pet_name, v.diagnosis, ...v.prescriptions.flatMap((r) => [r.drug, r.dose, r.frequency, r.instructions])]
+      .some((s) => s && s.toLowerCase().includes(needle)),
+  );
+}
+
 // ---------------------------------------------------------------- pets
 export interface PetRow extends Pet { owner_name: string; owner_phone: string; owner_whatsapp: string | null }
 export const getPet = (id: string) =>

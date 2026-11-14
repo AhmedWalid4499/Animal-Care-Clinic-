@@ -13,6 +13,8 @@ import { Appointments } from './screens/Appointments';
 import { InvoicesList, InvoiceFormPage, InvoiceDetail, InvoicePrint } from './screens/Invoices';
 import { Settings } from './screens/Settings';
 import { useEffect, type ReactNode } from 'react';
+import { OwnerCardPrint } from './components/OwnerPage';
+import { PrescriptionPrint } from './components/RxArchive';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
 
@@ -44,6 +46,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="owners/new" element={<OwnerFormPage />} />
           <Route path="owners/:id" element={<OwnerDetail />} />
           <Route path="owners/:id/edit" element={<OwnerFormPage />} />
+          <Route path="owners/:id/card" element={<OwnerCardPrint />} />
           <Route path="owners/:ownerId/pets/new" element={<PetFormPage />} />
           <Route path="pets/:id" element={<PetRecord />} />
           <Route path="pets/:id/edit" element={<PetFormPage />} />
@@ -51,6 +54,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
           <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
+          <Route path="visits/:visitId/prescription" element={<PrescriptionPrint />} />
           <Route path="intake/new" element={<ClinicalOnly><VisitPickPet intake /></ClinicalOnly>} />
           <Route path="pets/:petId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />

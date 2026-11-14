@@ -434,3 +434,25 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 /* ---- phone install (Phase 4) ---- */
 .install-banner { display: flex; align-items: center; gap: 10px; margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); }
 .install-banner img { border-radius: 8px; flex: none; }
+
+/* Owner page (Phase 6): QR code section on Owner detail, and the printable QR card */
+.owner-page-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 14px; }
+.owner-page-empty { margin-top: 10px; }
+.owner-page-empty p { margin: 0 0 12px; max-width: 60ch; }
+.qr { display: block; border: 1px solid var(--rule); border-radius: var(--radius); background: #fff; }
+.owner-page-link { display: block; font-size: 13px; overflow-wrap: anywhere; margin: 4px 0 0; }
+@media (max-width: 640px) {
+  .owner-page-body { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+}
+.owner-card { border: 1px dashed #999; padding: 6mm; }
+.owner-card-body { display: grid; grid-template-columns: auto 1fr; gap: 6mm; align-items: center; }
+.owner-card-body h2 { font-size: 14pt; margin: 0 0 4px; }
+.owner-card-body p { margin: 0 0 6px; font-size: 10.5pt; }
+.owner-card .qr { border: 0; width: 46mm; height: 46mm; }
+
+/* Prescription archive and the A5 prescription */
+.rx-archive .seg { flex-wrap: wrap; }
+.rx-archive .tl > li { padding: 12px 0; }
+.rx-sheet h2 { font-size: 14pt; }
+.rx-sign { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; margin-top: 18mm; font-size: 10.5pt; }
+.rx-sign .line { min-width: 45mm; border-top: 1px solid #111; padding-top: 3px; text-align: center; font-size: 9pt; }

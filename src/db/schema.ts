@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -51,6 +51,7 @@ CREATE TABLE owners (
   national_id TEXT,
   notes TEXT,
   status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','ARCHIVED')),
+  portal_token TEXT,
   ${ts}
 );
 CREATE INDEX owners_full_name ON owners(full_name);
@@ -284,6 +285,8 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v5 (5 Nov 2026, Phase 2): each queued change remembers who made it, so it is sent under that person's sign-in.
   5: `ALTER TABLE sync_outbox ADD COLUMN user_id TEXT;`,
+  // v6 (14 Nov 2026, Phase 6): the owner's page. The secret part of the link in the owner's QR code; NULL = no page.
+  6: `ALTER TABLE owners ADD COLUMN portal_token TEXT;`,
 };
 
 /** Tables included in the one-click export, in dependency order. */

@@ -30,6 +30,8 @@ export interface User {
 export interface Owner {
   id: string; full_name: string; phone: string; whatsapp: string | null; email: string | null; address: string | null;
   national_id: string | null; notes: string | null; status: 'ACTIVE' | 'ARCHIVED'; created_at: string;
+  /** Secret part of the owner page link (QR code); null = the owner has no page. Schema v6. */
+  portal_token: string | null;
 }
 export interface Pet {
   id: string; owner_id: string; name: string; species: Species; breed: string | null; sex: Sex; is_neutered: number;

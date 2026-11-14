@@ -30,6 +30,8 @@ export function refuse(role, change, before, userId) {
     if (!onlyReminder) return 'doctors and admins only';
   }
   if (tbl === 'owners' && 'status' in cols && (cols.status === 'ARCHIVED' || before?.status === 'ARCHIVED')) return 'archiving is for admins';
+  // Anyone at the desk may give an owner their page (QR code); replacing or switching off a printed one is for admins.
+  if (tbl === 'owners' && 'portal_token' in cols && before?.portal_token && cols.portal_token !== before.portal_token) return 'replacing the owner page code is for admins';
   if (tbl === 'invoices' && 'status' in cols && (cols.status === 'VOID' || before?.status === 'VOID')) return 'voiding is for admins';
   return null;
 }

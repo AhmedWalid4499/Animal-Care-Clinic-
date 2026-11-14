@@ -1,4 +1,4 @@
-// Cloud sync end-to-end test (docs/CLOUD-PLAN.md, Phases 1–5): a local Postgres + the clinic server +
+// Cloud sync end-to-end test (docs/CLOUD-PLAN.md, Phases 1–6): a local Postgres + the clinic server +
 // two desktop apps + a fake push service standing in for a phone.
 // Usage: npm run build && npm run build:cloud && xvfb-run -a node scripts/sync-test.mjs [outDir]
 // Needs a local Postgres you can reach with TEST_DATABASE_URL (default postgres://clinic:clinic@127.0.0.1:5432/clinic_sync_test,
@@ -512,6 +512,126 @@ await step('phase5: pre-diagnosis', async () => {
     `vet's notification: ${note?.event ?? 'none'}; in the vet's queue as emergency: ${!!inQueue.v}; doctor's laptop shows "with the vet": ${!!withVet.v}; visit form shows complaint "${shown}", heart rate ${hrShown}; saved as one visit (${visits}), stage ${v.stage}, vet = admin: ${v.vet_id === adminId}, intake by the doctor: ${v.intake_by === doctorId}, temperature corrected to ${v.temperature_c}; invoice offered: ${invoiceOffered}; queue empty after: ${!!emptied.v}; "visit recorded" sent at intake: ${earlyVisitNote}`);
 });
 
+// ---------------------------------------------------------------- Phase 6: owner page (QR) and prescription archive
+await step('phase6: owner page', async () => {
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY id LIMIT 1")).rows[0];
+  const ownerId = pet.data.owner_id;
+  const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [ownerId])).rows[0].data;
+  // The doctor (laptop B) gives the owner their page from the owner screen.
+  await go(B, `#/owners/${ownerId}`);
+  await B.win.locator('.create-owner-page').click();
+  await B.win.waitForSelector('.owner-page .qr');
+  const url = (await B.win.locator('.owner-page-link').innerText()).trim();
+  const token = url.split('/o/')[1];
+  const doctorCanReplace = await B.win.locator('.replace-owner-page').count();
+  await B.win.screenshot({ path: path.join(out, 'B-owner-page-qr.png'), fullPage: true });
+  const onServer = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'owners' AND id = $1 AND data->>'portal_token' = $2", [ownerId, token])).rowCount === 1, 10_000);
+  const html = await fetch(url);
+  const htmlText = await html.text();
+  const data = await (await fetch(`${url}/data`)).json();
+  const leaks = ['national_id', 'notes', 'diagnosis', 'treatment_notes', 'balance', 'password_hash'].filter((k) => JSON.stringify(data).includes(`"${k}"`));
+
+  // The owner opens it on their phone (a real browser at phone size). It stays open while the clinic works.
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const phonePage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await phonePage.goto(url);
+  await phonePage.waitForSelector('.hello');
+  const firstView = await phonePage.locator('main').innerText();
+
+  // The admin books the pet for the day after tomorrow on laptop A: the phone shows it without reloading.
+  const day = new Date(Date.now() + 2 * 86400_000);
+  const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  await go(A, `#/appointments?view=day&date=${date}`);
+  await A.win.locator('.slot.add').first().click();
+  await A.win.locator('.dialog input[type=search]').fill(pet.data.name);
+  await A.win.locator('.dialog .picker button').first().click();
+  await A.win.locator('.dialog input[type=datetime-local]').fill(`${date}T11:40`);
+  const gcal = phonePage.locator('a[href*="calendar.google.com/calendar/render?action=TEMPLATE"]');
+  const apptsBefore = await gcal.count();
+  let t0 = Date.now();
+  await A.win.locator('.dialog footer .btn.primary').click();
+  const apptLive = await until(async () => (await gcal.count()) === apptsBefore + 1, 10_000, 100);
+  const apptMs = Date.now() - t0;
+
+  // The doctor records a visit with a prescription on laptop B: it appears on the owner's phone by itself.
+  const DRUG = `Amoxiclav 250 mg ${Date.now() % 10000}`;
+  await go(B, `#/pets/${pet.id}/visits/new`);
+  await B.win.locator('.form-section', { hasText: '💊' }).locator('.row .btn.sm').click();
+  const rxInputs = B.win.locator('.repeat.rx input');
+  await rxInputs.nth(0).fill(DRUG);
+  await rxInputs.nth(1).fill('1 tablet');
+  await rxInputs.nth(2).fill('twice a day');
+  await rxInputs.nth(3).fill('7');
+  await rxInputs.nth(4).fill('With food');
+  t0 = Date.now();
+  await B.win.locator('.actionbar .btn.primary').click();
+  await B.win.waitForSelector('.dialog');
+  await B.win.keyboard.press('Escape');
+  const rxLive = await until(async () => (await phonePage.locator('main').innerText()).includes(DRUG), 15_000, 100);
+  const rxMs = Date.now() - t0;
+  const liveDot = await phonePage.locator('.status.on').count();
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-phone-ar.png'), fullPage: true });
+  await phonePage.locator('button.lang').click();
+  const english = await phonePage.locator('h1.hello').innerText();
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-phone-en.png'), fullPage: true });
+
+  // Calendar: the whole feed (to subscribe once) and one appointment (to add).
+  const after = await (await fetch(`${url}/data`)).json();
+  const appt = after.appointments.find((a) => a.pet_id === String(pet.id));
+  const feed = await (await fetch(`${url}/calendar.ics`)).text();
+  const one = appt ? await fetch(`${url}/a/${appt.id}.ics`) : null;
+  const oneText = one ? await one.text() : '';
+  const icsOk = feed.startsWith('BEGIN:VCALENDAR') && feed.includes('BEGIN:VEVENT') && feed.includes(pet.data.name) && one?.status === 200 && /DTSTART:\d{8}T\d{6}Z/.test(oneText) && feed.split('\r\n').every((l) => Buffer.byteLength(l) <= 75);
+
+  // The prescription archive: the doctor finds it again from the owner, by searching, and reprints it.
+  await go(B, `#/owners/${ownerId}`);
+  const inArchive = await until(async () => (await B.win.locator('.rx-archive-section').innerText()).includes(DRUG), 5000, 200);
+  await B.win.locator('.rx-search input').fill('no-such-drug-xyz');
+  const noneFound = (await B.win.locator('.rx-archive-section .rx-list > li.empty').count()) === 1;
+  await B.win.locator('.rx-search input').fill(DRUG.slice(0, 9).toLowerCase());
+  const searched = (await B.win.locator('.rx-archive-section').innerText()).includes(DRUG);
+  await B.win.screenshot({ path: path.join(out, 'B-prescription-archive.png'), fullPage: true });
+  await B.win.locator('.rx-archive-section .rx-list .btn.ghost', { hasText: /طباعة|Print/ }).first().click();
+  await B.win.waitForSelector('.rx-sheet');
+  const sheet = await B.win.locator('.rx-sheet').innerText();
+  await B.win.screenshot({ path: path.join(out, 'B-prescription-print.png'), fullPage: true });
+  await go(B, `#/pets/${pet.id}?tab=prescriptions`);
+  const petTab = (await B.win.locator('.rx-archive').innerText()).includes(DRUG);
+
+  // Only an Admin may replace a printed code; the server refuses it from a Doctor.
+  const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);
+  // The admin replaces the code (a lost card): the old link stops at once, and the open page says so.
+  await go(A, `#/owners/${ownerId}`);
+  await A.win.locator('.replace-owner-page').click();
+  await A.win.locator('.dialog .btn.danger').click();
+  const replaced = await until(async () => {
+    const r = (await pool.query("SELECT data->>'portal_token' t FROM rows WHERE tbl = 'owners' AND id = $1", [ownerId])).rows[0];
+    return r.t && r.t !== token && r.t;
+  }, 10_000);
+  const oldGone = await until(async () => (await fetch(`${url}/data`)).status === 404, 10_000);
+  const pageGone = await until(async () => (await phonePage.locator('.gone').count()) === 1, 10_000, 200);
+  const newWorks = replaced.v ? (await fetch(`${SERVER}/o/${replaced.v}/data`)).status : 0;
+  const wrong = (await fetch(`${SERVER}/o/AAAAAAAAAAAAAAAAAAAAAA/data`)).status;
+  await browser.close();
+
+  check('owner-page', 'An owner gets a QR code to a private page with their details, pets, upcoming appointments and prescriptions',
+    !!onServer.v && html.status === 200 && /no-store/.test(html.headers.get('cache-control')) && html.headers.get('referrer-policy') === 'no-referrer' && /script-src 'nonce-/.test(html.headers.get('content-security-policy') ?? '') &&
+      htmlText.includes('<html') && data.owner?.full_name === owner.full_name && data.pets?.some((p) => p.name === pet.data.name) && leaks.length === 0 && firstView.includes(pet.data.name) && doctorCanReplace === 0,
+    `QR made on the doctor's laptop, on the server: ${!!onServer.v}; page ${html.status} (no-store, no-referrer, CSP with nonce); shows ${data.pets?.length} pet(s) of ${data.owner?.full_name}; staff-only fields in the data: ${leaks.join(', ') || 'none'}; replace button for a Doctor: ${doctorCanReplace ? 'shown' : 'hidden'}`);
+  check('owner-page-live', 'The owner page updates by itself: a booking and a prescription appear on the open phone page within seconds',
+    !!apptLive.v && !!rxLive.v && liveDot === 1 && apptMs < 5000 && rxMs < 8000 && /^(Hello|أهلاً)/.test(english) && english.startsWith('Hello'),
+    `booking on laptop A visible on the phone after ${apptMs} ms (${apptsBefore} → ${apptsBefore + 1} appointments); prescription saved on laptop B visible after ${rxMs} ms (no reload); live indicator: ${liveDot ? 'on' : 'off'}; English switch: "${english}"`);
+  check('owner-page-calendar', 'Appointments can be added to the phone’s calendar: one at a time, or a feed that keeps itself up to date',
+    icsOk, `feed ${feed.split('BEGIN:VEVENT').length - 1} event(s), lines ≤ 75 bytes; one appointment .ics → ${one?.status}; Google Calendar link on the page: ${!!apptLive.v}`);
+  check('rx-archive', 'Every prescription of an owner is in one archive: searchable, per pet, and reprintable',
+    !!inArchive.v && noneFound && searched && sheet.includes(DRUG) && sheet.includes(pet.data.name) && petTab,
+    `on the owner screen: ${!!inArchive.v}; search with no match shows none: ${noneFound}; search "${DRUG.slice(0, 9).toLowerCase()}" finds it: ${searched}; A5 prescription shows the drug and ${pet.data.name}: ${sheet.includes(DRUG)}; pet's Prescriptions tab: ${petTab}`);
+  check('owner-page-replace', 'A lost card: only the Admin can replace the code; the old link stops at once and the open page says so',
+    refused.body.rejected?.length === 1 && !!replaced.v && !!oldGone.v && !!pageGone.v && newWorks === 200 && wrong === 404,
+    `Doctor's replace refused by the server: ${refused.body.rejected?.[0]?.reason ?? 'no'}; old link → 404: ${!!oldGone.v}; the open phone page shows "not active": ${!!pageGone.v}; new link → ${newWorks}; made-up link → ${wrong}`);
+});
+
 await step('phase5: password reset', async () => {
   await go(A, '#/settings?tab=users');
   await A.win.locator('tr.link', { hasText: 'desk@test.local' }).click();
@@ -931,6 +1051,6 @@ await pool.end();
 
 const failed = results.filter((r) => !r.pass);
 fs.writeFileSync(path.join(out, 'sync-test.json'), JSON.stringify(results, null, 2));
-fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync end-to-end test (Phases 1–5)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
+fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync end-to-end test (Phases 1–6)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
 console.log(`\n${results.length - failed.length}/${results.length} passed → ${out}`);
 process.exitCode = failed.length ? 1 : 0;

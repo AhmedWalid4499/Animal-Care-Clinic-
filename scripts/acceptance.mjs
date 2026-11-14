@@ -339,6 +339,12 @@ async function pdfOf(hash, name) {
   check('S7.5-receipt', 'A5 receipt prints on one A5 page', r.pages === 1 && r.a5, `receipt-A5.pdf: ${r.pages} page, ${r.size} (A5 = 420×595 pt)`);
   const s = await pdfOf(`#/pets/${pet}/print`, 'pet-summary-A5.pdf');
   check('S4-summary', 'Pet summary prints / saves as PDF', s.pages >= 1 && s.a5, `pet-summary-A5.pdf: ${s.pages} page(s), ${s.size}`);
+  // Phase 6: any past prescription can be found again and reprinted.
+  const rxVisit = db.exec('SELECT visit_id FROM prescriptions LIMIT 1')[0]?.values[0][0];
+  if (rxVisit) {
+    const p = await pdfOf(`#/visits/${rxVisit}/prescription`, 'prescription-A5.pdf');
+    check('rx-print', 'A past prescription reprints on one A5 page', p.pages === 1 && p.a5, `prescription-A5.pdf: ${p.pages} page, ${p.size}`);
+  }
 }
 
 // ------------------------------------------------------------------ 7. Arabic RTL pass
@@ -355,6 +361,7 @@ async function pdfOf(hash, name) {
     ['dashboard', '#/'], ['owners', '#/owners'], ['owner-new', '#/owners/new'], ['owner-detail', `#/owners/${ownerId}`],
     ['pet-new', `#/owners/${ownerId}/pets/new`], ['pet-timeline', `#/pets/${petId}?tab=timeline`], ['pet-vaccinations', `#/pets/${petId}?tab=vaccinations`],
     ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-edit', `#/pets/${petId}/edit`],
+    ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],

@@ -13,8 +13,9 @@ import { downloadAttachment, serverUrl } from '../sync/engine';
 import { Badge, Field, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
+import { RxArchive } from '../components/RxArchive';
 
-type Tab = 'timeline' | 'vaccinations' | 'weight' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'files';
 
 export function PetRecord() {
   const { id = '' } = useParams();
@@ -76,7 +77,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'weight', 'files'] as Tab[]).map((k) => (
+        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'files'] as Tab[]).map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -85,6 +86,7 @@ export function PetRecord() {
       <div key={tab} className="tab-enter">
         {tab === 'timeline' && <Timeline petId={id} />}
         {tab === 'vaccinations' && <Vaccinations petId={id} />}
+        {tab === 'prescriptions' && <RxArchive petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
         {tab === 'files' && <Files petId={id} />}
       </div>
@@ -113,6 +115,9 @@ function Timeline({ petId }: { petId: string }) {
                 {v.stage !== 'DONE' && <Badge kind="warn">{t(`intake.stage.${v.stage}`)}</Badge>}
                 {v.diagnosis && <b>{v.diagnosis}</b>}
                 <span className="spacer" />
+                {v.prescriptions.length > 0 && (
+                  <button className="btn ghost sm" onClick={() => nav(`/visits/${v.id}/prescription`)}><Icon name="print" /> {t('petRecord.printRx')}</button>
+                )}
                 {invId ? (
                   <button className="btn ghost sm" onClick={() => nav(`/invoices/${invId}`)}><Icon name="receipt" /> {t('petRecord.invoiced')}</button>
                 ) : (
