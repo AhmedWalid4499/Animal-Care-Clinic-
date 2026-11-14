@@ -44,7 +44,7 @@ export function VisitPickPet({ intake }: { intake?: boolean }) {
 interface RxRow { drug: string; dose: string; frequency: string; duration_days: string; instructions: string }
 interface VxRow { id?: string; vaccine_type_id: string; administered_at: string; next_due_at: string; batch_no: string; dueTouched?: boolean }
 interface Form {
-  visited_at: string; type: VisitType; complaint: string; weight_kg: string; temperature_c: string; diagnosis: string;
+  visited_at: string; type: VisitType; complaint: string; weight_kg: string; temperature_c: string; heart_rate: string; diagnosis: string;
   treatment_notes: string; follow_up_at: string; vet_id: string; prescriptions: RxRow[]; vaccinations: VxRow[];
   /** The pre-diagnosis this visit started with (Phase 5); null for a visit recorded directly. */
   intake: IntakeDraft | null;
@@ -85,7 +85,7 @@ export function VisitFormPage() {
       return {
         visited_at: toLocalInput(existing.visited_at), type: existing.type, complaint: existing.complaint ?? '',
         weight_kg: existing.weight_kg?.toString() ?? '', temperature_c: existing.temperature_c?.toString() ?? '',
-        diagnosis: existing.diagnosis ?? '', treatment_notes: existing.treatment_notes ?? '',
+        heart_rate: existing.heart_rate?.toString() ?? '', diagnosis: existing.diagnosis ?? '', treatment_notes: existing.treatment_notes ?? '',
         follow_up_at: existing.follow_up_at ? toLocalInput(existing.follow_up_at) : '', vet_id: existing.vet_id ?? '',
         prescriptions: existing.prescriptions.map((r) => ({ drug: r.drug, dose: r.dose ?? '', frequency: r.frequency ?? '', duration_days: r.duration_days?.toString() ?? '', instructions: r.instructions ?? '' })),
         vaccinations: existing.vaccinations.map((x) => ({ id: x.id, vaccine_type_id: x.vaccine_type_id, administered_at: x.administered_at, next_due_at: x.next_due_at ?? '', batch_no: x.batch_no ?? '', dueTouched: true })),
@@ -100,7 +100,7 @@ export function VisitFormPage() {
       };
     return {
       visited_at: appt ? toLocalInput(appt.scheduled_at) : nowLocalInput(), type: appt?.type ?? 'CHECKUP', complaint: appt?.notes ?? '',
-      weight_kg: '', temperature_c: '', diagnosis: '', treatment_notes: '', follow_up_at: '',
+      weight_kg: '', temperature_c: '', heart_rate: '', diagnosis: '', treatment_notes: '', follow_up_at: '',
       vet_id: user && user.role !== 'ASSISTANT' ? user.id : vets[0]?.id ?? '', prescriptions: [], vaccinations: [], intake: null, exam: emptyExam,
     };
   }, [existing, appt, user, vets]);
@@ -187,6 +187,8 @@ export function VisitFormPage() {
       pet_id: pet.id, vet_id: f.vet_id || null, visited_at: fromLocalInput(f.visited_at), type: f.type, complaint: ix ? ix.complaint : f.complaint,
       weight_kg: num(ix ? ix.weight_kg : f.weight_kg), temperature_c: num(ix ? ix.temperature_c : f.temperature_c), diagnosis: f.diagnosis, treatment_notes: f.treatment_notes,
       intake: ix ? { urgency: ix.urgency, history: ix.history, heart_rate: num(ix.heart_rate), resp_rate: num(ix.resp_rate), intake_notes: ix.intake_notes } : undefined,
+      // A visit recorded without a pre-diagnosis takes the heart rate here (14 Nov 2026); with one, it is part of the intake.
+      heart_rate: ix ? undefined : num(f.heart_rate ?? ''),
       exam: examFieldsOf(f.exam),
       follow_up_at: f.follow_up_at ? fromLocalInput(f.follow_up_at) : null,
       prescriptions: f.prescriptions.map((r) => ({ ...r, duration_days: r.duration_days ? Number(r.duration_days) : null })),
@@ -261,7 +263,9 @@ export function VisitFormPage() {
                 <Field label={t('visits.temperature')} optional>
                   <input type="number" step="0.1" min="30" max="45" inputMode="decimal" value={f.temperature_c} onChange={(e) => set('temperature_c', e.target.value)} />
                 </Field>
-                <div />
+                <Field label={t('intake.heartRate')} optional>
+                  <input type="number" min="0" max="400" inputMode="numeric" value={f.heart_rate ?? ''} onChange={(e) => set('heart_rate', e.target.value)} />
+                </Field>
               </>
             )}
             <div className="span-all">

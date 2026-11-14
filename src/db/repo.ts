@@ -395,6 +395,8 @@ export interface VisitInput {
   intake?: IntakeFields;
   /** Physical examination (schema v19). */
   exam?: ExamFields;
+  /** Heart rate (/min) of a visit recorded without a pre-diagnosis; with one, it comes in `intake`. */
+  heart_rate?: number | null;
 }
 
 // ---------------------------------------------------------------- physical examination (schema v19)
@@ -489,7 +491,7 @@ export function saveVisit(d: VisitInput, id?: string): string {
       pet_id: d.pet_id, vet_id: d.vet_id, visited_at: d.visited_at, type: d.type, complaint: blank(d.complaint),
       weight_kg: d.weight_kg, temperature_c: d.temperature_c, diagnosis: blank(d.diagnosis),
       treatment_notes: blank(d.treatment_notes), follow_up_at: d.follow_up_at, stage: 'DONE',
-      ...(d.intake ? intakeValues(d.intake) : {}),
+      ...(d.intake ? intakeValues(d.intake) : d.heart_rate !== undefined ? { heart_rate: d.heart_rate } : {}),
       ...(d.exam ? examValues(d.exam) : {}),
     };
     const visitId = id ?? insert('visits', values);

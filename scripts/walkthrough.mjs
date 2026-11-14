@@ -136,6 +136,7 @@ await step('new visit with vaccination + prescription + follow-up', async () => 
   await win.getByLabel('Complaint').fill('Rabies booster, mild itching');
   await win.getByLabel('Weight (kg)').fill('4.35');
   await win.getByLabel('Temperature (°C)').fill('38.6');
+  await win.getByLabel('Heart rate (/min)').fill('180');
   await win.getByLabel('Diagnosis').fill('Healthy — mild flea dermatitis');
   await win.getByLabel('Systolic', { exact: true }).fill('135');
   await win.getByLabel('Diastolic', { exact: true }).fill('85');
