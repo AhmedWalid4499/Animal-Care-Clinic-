@@ -1,6 +1,8 @@
 // The page behind a pet's collar tag (server/tags.mjs): who the animal is, who to call, and one big button that
 // alerts the owner and the clinic (with the finder's location if they allow it). Phone first, Arabic / English.
 // Everything from the records is added as text nodes, never parsed as HTML. Text comes from src/i18n (tag.page).
+import { PET_ICON } from './favicons.mjs';
+
 export function tagPageHtml({ nonce, text, found }) {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
@@ -11,6 +13,7 @@ export function tagPageHtml({ nonce, text, found }) {
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#2e6f73">
 <title>Animal Care Clinic</title>
+<link rel="icon" type="image/svg+xml" href="${PET_ICON}">
 <style nonce="${nonce}">
 @font-face { font-family: 'Plex Arabic'; font-weight: 400; font-display: swap; src: url(/o-font/arabic-400.woff2) format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+FB50-FDFF, U+FE70-FEFC, U+200C-200E; }
 @font-face { font-family: 'Plex Arabic'; font-weight: 600; font-display: swap; src: url(/o-font/arabic-600.woff2) format('woff2'); unicode-range: U+0600-06FF, U+0750-077F, U+FB50-FDFF, U+FE70-FEFC, U+200C-200E; }

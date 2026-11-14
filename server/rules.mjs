@@ -13,7 +13,9 @@ const ASSISTANT_TASK_COLS = new Set(['status', 'done_at', 'done_by', 'note', 'up
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
 // Assistants record the pre-diagnosis: they may create a visit that only waits for the vet (no vet, diagnosis,
 // treatment, follow-up or invoice), recorded as theirs, and correct its intake fields while the patient still waits.
-const INTAKE_EDIT_COLS = new Set(['type', 'complaint', 'weight_kg', 'temperature_c', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', 'updated_at']);
+// The physical examination (schema v19) is recorded with the weight and temperature, so it is part of the intake too.
+const EXAM_COLS = ['bp_systolic', 'bp_diastolic', 'mucous_membrane', 'eyes', 'skin_coat', 'glands', 'glands_note', 'anal_glands', 'nails', 'fleas_ticks'];
+const INTAKE_EDIT_COLS = new Set(['type', 'complaint', 'weight_kg', 'temperature_c', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', ...EXAM_COLS, 'updated_at']);
 const VET_ONLY_VISIT_COLS = ['vet_id', 'diagnosis', 'treatment_notes', 'follow_up_at', 'invoice_id'];
 function assistantIntake(change, before, userId) {
   const { op, cols } = change;

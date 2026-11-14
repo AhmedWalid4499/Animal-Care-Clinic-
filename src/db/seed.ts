@@ -162,14 +162,14 @@ export function seedDemo() {
       insert('vaccinations', { pet_id, visit_id, vaccine_type_id: vt[type], administered_at: addDays(t, -daysAgo), next_due_at: addDays(t, -daysAgo + interval), batch_no: `B-${1000 + daysAgo}` });
 
     // Luna: 4 visits for a weight chart; rabies due in 3 days.
-    visit(luna, 540, 'CHECKUP', { weight_kg: 3.1, temperature_c: 38.4, complaint: 'Annual check', diagnosis: 'Healthy' });
-    const lv2 = visit(luna, 362, 'VACCINATION', { weight_kg: 3.6, temperature_c: 38.6, diagnosis: 'Healthy, vaccinated' });
+    visit(luna, 540, 'CHECKUP', { weight_kg: 3.1, temperature_c: 38.4, complaint: 'Annual check', diagnosis: 'Healthy', heart_rate: 160, bp_systolic: 128, bp_diastolic: 80, mucous_membrane: 'PINK', eyes: 'Clear', skin_coat: 'Glossy coat', glands: 'NORMAL', nails: 'OK', fleas_ticks: 'NO' });
+    const lv2 = visit(luna, 362, 'VACCINATION', { weight_kg: 3.6, temperature_c: 38.6, diagnosis: 'Healthy, vaccinated', heart_rate: 172, bp_systolic: 135, bp_diastolic: 84, mucous_membrane: 'PINK', glands: 'NORMAL', nails: 'NEEDS_TRIM', fleas_ticks: 'YES', skin_coat: 'Flea dirt on the back' });
     vacc(luna, lv2, 'Rabies', 362, 365);
     vacc(luna, lv2, 'FVRCP', 362, 365);
-    const lv3 = visit(luna, 150, 'EMERGENCY', { weight_kg: 3.9, temperature_c: 39.8, complaint: 'Vomiting since yesterday', diagnosis: 'Gastritis', treatment_notes: 'IV fluids, antiemetic', follow_up_at: at(-147, 12) });
+    const lv3 = visit(luna, 150, 'EMERGENCY', { weight_kg: 3.9, temperature_c: 39.8, complaint: 'Vomiting since yesterday', diagnosis: 'Gastritis', treatment_notes: 'IV fluids, antiemetic', follow_up_at: at(-147, 12), heart_rate: 210, bp_systolic: 152, bp_diastolic: 96, mucous_membrane: 'PALE', eyes: 'Slightly sunken', skin_coat: 'Skin tent slow (dehydrated)', glands: 'ENLARGED', glands_note: 'Mandibular lymph nodes', fleas_ticks: 'NO' });
     insert('prescriptions', { visit_id: lv3, drug: 'Metoclopramide', dose: '0.5 ml', frequency: 'Twice daily', duration_days: 5, instructions: 'Before food' });
     insert('prescriptions', { visit_id: lv3, drug: 'Probiotic paste', dose: '1 g', frequency: 'Once daily', duration_days: 7 });
-    visit(luna, 30, 'CHECKUP', { weight_kg: 4.2, temperature_c: 38.5, complaint: 'Weight check', diagnosis: 'Good recovery' });
+    visit(luna, 30, 'CHECKUP', { weight_kg: 4.2, temperature_c: 38.5, complaint: 'Weight check', diagnosis: 'Good recovery', heart_rate: 168, bp_systolic: 132, bp_diastolic: 82, mucous_membrane: 'PINK', eyes: 'Clear', skin_coat: 'Normal', glands: 'NORMAL', anal_glands: 'EMPTY', nails: 'OK', fleas_ticks: 'NO' });
     // Lab results (demo values and ranges, not clinical guidance): kidney panel at the emergency and a month ago.
     const lab = (daysAgo: number, analyte: string, value: number, unit: string, lo: number, hi: number) =>
       insert('lab_results', { pet_id: luna, visit_id: daysAgo === 150 ? lv3 : null, taken_at: addDays(t, -daysAgo), panel: 'Kidney panel (demo)', analyte, value, unit, ref_low: lo, ref_high: hi, user_id: vetId });
@@ -178,18 +178,18 @@ export function seedDemo() {
     lab(30, 'Creatinine', 1.9, 'mg/dL', 0.8, 2.4);
     lab(30, 'BUN', 30, 'mg/dL', 16, 36);
 
-    const mv = visit(max, 90, 'VACCINATION', { weight_kg: 31.5, temperature_c: 38.7 });
+    const mv = visit(max, 90, 'VACCINATION', { weight_kg: 31.5, temperature_c: 38.7, mucous_membrane: 'PINK', anal_glands: 'FULL', nails: 'NEEDS_TRIM', fleas_ticks: 'YES', skin_coat: 'Ticks behind the ears' });
     vacc(max, mv, 'Deworming', 88, 90); // due in 2 days
     vacc(max, mv, 'DHPP', 90, 365);
     visit(max, 400, 'CHECKUP', { weight_kg: 30.2 });
     visit(max, 200, 'FOLLOW_UP', { weight_kg: 32.0, diagnosis: 'Mild arthritis' });
 
-    const rv = visit(rocky, 33, 'VACCINATION', { weight_kg: 34, temperature_c: 38.3 });
+    const rv = visit(rocky, 33, 'VACCINATION', { weight_kg: 34, temperature_c: 38.3, bp_systolic: 165, mucous_membrane: 'RED', glands: 'NORMAL', anal_glands: 'FULL', nails: 'OK', fleas_ticks: 'NO' });
     vacc(rocky, rv, 'Flea/tick', 33, 30); // overdue by 3 days
     const mm = visit(mishmish, 360, 'VACCINATION', { weight_kg: 4.5 });
     vacc(mishmish, mm, 'Rabies', 360, 365); // due in 5 days
     visit(zeus, 430, 'CHECKUP', { weight_kg: 24.5, complaint: 'Annual check', diagnosis: 'Healthy' });
-    visit(bondo, 20, 'CHECKUP', { weight_kg: 1.8, complaint: 'فحص دوري' });
+    visit(bondo, 20, 'CHECKUP', { weight_kg: 1.8, complaint: 'فحص دوري', mucous_membrane: 'PINK', nails: 'NEEDS_TRIM', fleas_ticks: 'YES', skin_coat: 'براغيث' });
 
     // In-patient (demo): Rocky, on fluids after a lump check; one treatment overdue, one given, one later today.
     const adm = insert('admissions', { pet_id: rocky, admitted_at: at(0, 8, 0), reason: 'IV fluids, observation (demo)', cage: 'A1', vet_id: vetId, status: 'IN', user_id: vetId });

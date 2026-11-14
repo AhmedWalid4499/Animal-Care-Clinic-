@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -20,6 +20,19 @@ const visitIntake = `stage TEXT NOT NULL DEFAULT 'DONE' CHECK (stage IN ('WAITIN
   intake_notes TEXT,
   intake_by TEXT REFERENCES users(id),
   intake_at TEXT`;
+// Physical examination (schema v19, 14 Nov 2026, change request): recorded with the weight and temperature, at the
+// pre-diagnosis or by the vet. Choices are plain text checked by the app (MUCOUS_MEMBRANES… in types.ts), not by
+// CHECK, so a choice added later does not mean rebuilding the visits table. NULL = not examined.
+const visitExam = `bp_systolic INTEGER,
+  bp_diastolic INTEGER,
+  mucous_membrane TEXT,
+  eyes TEXT,
+  skin_coat TEXT,
+  glands TEXT,
+  glands_note TEXT,
+  anal_glands TEXT,
+  nails TEXT,
+  fleas_ticks TEXT`;
 const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
 
@@ -318,6 +331,7 @@ CREATE TABLE visits (
   follow_up_at TEXT,
   invoice_id TEXT REFERENCES invoices(id),
   ${visitIntake},
+  ${visitExam},
   ${ts}
 );
 CREATE INDEX visits_pet_date ON visits(pet_id, visited_at DESC);
@@ -512,6 +526,9 @@ export const MIGRATIONS: Record<number, string> = {
   // v18 (14 Nov 2026): collar tags and lost & found.
   18: `ALTER TABLE pets ADD COLUMN tag_token TEXT;
     ${foundTables}`,
+  // v19 (14 Nov 2026): physical examination on visits (blood pressure, mucous membranes, eyes, skin and coat, glands,
+  // anal glands, nails, fleas / ticks).
+  19: visitExam.split(',\n').map((c) => `ALTER TABLE visits ADD COLUMN ${c.trim()};`).join('\n'),
 };
 
 /** Tables included in the one-click export, in dependency order. */

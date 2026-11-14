@@ -4,9 +4,9 @@ import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Admission, CareTask, CareTaskStatus, Consent, Drug, ExamFields, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
-import { ROLES, highestRole, userRoles } from './types';
+import { EXAM_KEYS, ROLES, highestRole, userRoles } from './types';
 import { CLINIC, OLD_ADDRESS } from './seed';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
@@ -393,12 +393,51 @@ export interface VisitInput {
   appointment_id?: string | null;
   /** The pre-diagnosis, when this visit started with one (the vet may correct it). */
   intake?: IntakeFields;
+  /** Physical examination (schema v19). */
+  exam?: ExamFields;
+}
+
+// ---------------------------------------------------------------- physical examination (schema v19)
+/** The exam columns of a visit, with free text trimmed (blank = not examined). */
+export const examValues = (e: ExamFields) => Object.fromEntries(EXAM_KEYS.map((k) => [k, blank(e[k])])) as Record<keyof ExamFields, unknown>;
+export interface ExamPoint extends ExamFields {
+  id: string; visited_at: string; type: VisitType; weight_kg: number | null; temperature_c: number | null; heart_rate: number | null; resp_rate: number | null;
+  vet_name: string | null;
+}
+/** A pet's vitals and examination findings, oldest first, for its Exam tab (visits with at least one of them). */
+export const petExams = (petId: string) =>
+  all<ExamPoint>(
+    `SELECT v.id, v.visited_at, v.type, v.weight_kg, v.temperature_c, v.heart_rate, v.resp_rate, ${EXAM_KEYS.map((k) => `v.${k}`).join(', ')}, u.name vet_name
+     FROM visits v LEFT JOIN users u ON u.id = v.vet_id
+     WHERE v.pet_id = ? AND (v.temperature_c IS NOT NULL OR v.heart_rate IS NOT NULL OR v.resp_rate IS NOT NULL OR ${EXAM_KEYS.map((k) => `v.${k} IS NOT NULL`).join(' OR ')})
+     ORDER BY v.visited_at`,
+    [petId],
+  );
+export interface ExamVisit extends ExamFields {
+  id: string; visited_at: string; pet_id: string; pet_name: string; species: Species; owner_name: string; temperature_c: number | null;
+}
+/**
+ * Visits examined between two local dates (inclusive), for the clinic's exam dashboard; species optional.
+ * Only visits with at least one examination finding count, so a visit with nothing examined doesn't lower the rates.
+ */
+export function examVisits(from: string, to: string, species?: Species | '') {
+  const start = new Date(`${from}T00:00:00`).toISOString();
+  const end = new Date(`${addDays(to, 1)}T00:00:00`).toISOString();
+  return all<ExamVisit>(
+    `SELECT v.id, v.visited_at, v.pet_id, p.name pet_name, p.species, o.full_name owner_name, v.temperature_c, ${EXAM_KEYS.map((k) => `v.${k}`).join(', ')}
+     FROM visits v JOIN pets p ON p.id = v.pet_id JOIN owners o ON o.id = p.owner_id
+     WHERE v.visited_at >= ? AND v.visited_at < ? AND (? = '' OR p.species = ?)
+       AND (${EXAM_KEYS.filter((k) => k !== 'glands_note' && k !== 'bp_diastolic').map((k) => `v.${k} IS NOT NULL`).join(' OR ')})
+     ORDER BY v.visited_at DESC`,
+    [start, end, species ?? '', species ?? ''],
+  );
 }
 
 // ---------------------------------------------------------------- pre-diagnosis (Phase 5)
 export interface IntakeFields { urgency: Urgency; history: string; heart_rate: number | null; resp_rate: number | null; intake_notes: string }
 export interface IntakeInput extends IntakeFields {
   pet_id: string; type: VisitType; complaint: string; weight_kg: number | null; temperature_c: number | null; appointment_id?: string | null;
+  exam?: ExamFields;
 }
 const intakeValues = (d: IntakeFields) => ({
   urgency: d.urgency, history: blank(d.history), heart_rate: d.heart_rate, resp_rate: d.resp_rate, intake_notes: blank(d.intake_notes),
@@ -406,7 +445,7 @@ const intakeValues = (d: IntakeFields) => ({
 /** A Doctor records the intake; the patient joins the "Waiting for the vet" queue. */
 export function saveIntake(d: IntakeInput, userId: string | null, id?: string): string {
   return tx(() => {
-    const values = { pet_id: d.pet_id, type: d.type, complaint: blank(d.complaint), weight_kg: d.weight_kg, temperature_c: d.temperature_c, ...intakeValues(d) };
+    const values = { pet_id: d.pet_id, type: d.type, complaint: blank(d.complaint), weight_kg: d.weight_kg, temperature_c: d.temperature_c, ...intakeValues(d), ...(d.exam ? examValues(d.exam) : {}) };
     if (id) {
       update('visits', id, values);
       return id;
@@ -451,6 +490,7 @@ export function saveVisit(d: VisitInput, id?: string): string {
       weight_kg: d.weight_kg, temperature_c: d.temperature_c, diagnosis: blank(d.diagnosis),
       treatment_notes: blank(d.treatment_notes), follow_up_at: d.follow_up_at, stage: 'DONE',
       ...(d.intake ? intakeValues(d.intake) : {}),
+      ...(d.exam ? examValues(d.exam) : {}),
     };
     const visitId = id ?? insert('visits', values);
     if (id) update('visits', id, values);

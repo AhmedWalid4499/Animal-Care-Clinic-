@@ -359,8 +359,10 @@ await step('notify: booking', async () => {
     if (r.status !== 200) throw new Error(`push subscribe → ${r.status}`);
   }
   const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted ORDER BY id LIMIT 1")).rows[0];
+  // Tomorrow at 08:00 (moved to 09:00 below): a fixed hour, so it never lands on the slots the offline step books at
+  // 15:00 / 15:10 (it did when the test ran between 14:00 and 15:00).
   const at = new Date(Date.now() + 86400_000);
-  at.setMinutes(0, 0, 0);
+  at.setHours(8, 0, 0, 0);
   appt = { id: crypto.randomUUID(), pet_id: pet.id, owner_id: pet.data.owner_id, pet: pet.data.name, at: at.toISOString() };
   const beforeB = await bell(B);
   const beforeA = await bell(A);
@@ -533,7 +535,7 @@ await step('phase5: pre-diagnosis', async () => {
   await A.win.screenshot({ path: path.join(out, 'A-visit-with-pre-diagnosis.png'), fullPage: true });
   // The vet corrects the temperature and completes the same visit.
   await A.win.locator('.intake-box input[type=number]').nth(1).fill('39.4');
-  await A.win.locator('form > .form-section:not(.intake-box) input[type=text]').first().fill('Acute gastroenteritis');
+  await A.win.locator('form input[name=diagnosis]').fill('Acute gastroenteritis');
   await A.win.locator('.actionbar .btn.primary').click();
   await A.win.waitForSelector('.dialog');
   const invoiceOffered = (await A.win.locator('.dialog footer .btn.primary').count()) === 1;
@@ -578,7 +580,7 @@ await step('phase5: assistant pre-diagnosis', async () => {
   const byShown = onB.v ? await B.win.locator('.section.queue li', { hasText: 'Simba' }).innerText() : '';
   await B.win.screenshot({ path: path.join(out, 'B-queue-from-assistant.png') });
   // While waiting the assistant may correct the intake, but not write a diagnosis.
-  const fix = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { heart_rate: 140, intake_notes: 'Owner says vomited once', updated_at: nowIso() } }]);
+  const fix = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { heart_rate: 140, intake_notes: 'Owner says vomited once', mucous_membrane: 'PALE', fleas_ticks: 'YES', bp_systolic: 150, updated_at: nowIso() } }]);
   const diag = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { diagnosis: 'Hairball', updated_at: nowIso() } }]);
   const rx = crypto.randomUUID();
   const presc = await push([{ tbl: 'prescriptions', id: rx, op: 'upsert', at: nowIso(), cols: { id: rx, visit_id: v, drug: 'Maropitant', created_at: nowIso(), updated_at: nowIso() } }]);
@@ -589,7 +591,7 @@ await step('phase5: assistant pre-diagnosis', async () => {
   check('assistant-intake', 'An Assistant records the pre-diagnosis for a new patient; the doctor and the admin are notified and see it in the queue; diagnosis and prescriptions stay with the vets',
     sent.rejected.length === 0 && !!docNote.v && !!adminNote && ownNote === 0 && !!onB.v && /Reception/.test(byShown) &&
       fix.rejected.length === 0 && diag.rejected.length === 1 && presc.rejected.length === 1 && late.rejected.length === 1 &&
-      row.stage === 'WITH_VET' && row.intake_by === deskId && Number(row.heart_rate) === 140 && row.diagnosis == null && row.complaint === 'Not eating for two days',
+      row.stage === 'WITH_VET' && row.intake_by === deskId && Number(row.heart_rate) === 140 && row.mucous_membrane === 'PALE' && row.fleas_ticks === 'YES' && Number(row.bp_systolic) === 150 && row.diagnosis == null && row.complaint === 'Not eating for two days',
     `new patient + pre-diagnosis accepted: ${sent.rejected.length === 0}; doctor notified: ${docNote.v ? docNote.v.event : 'no'}, admin: ${adminNote ? adminNote.event : 'no'}, assistant about own patient: ${ownNote}; in the doctor's queue: ${!!onB.v} ("${byShown.replace(/\s+/g, ' ').trim()}"); correction while waiting accepted: ${fix.rejected.length === 0}; diagnosis refused: ${diag.rejected[0]?.reason ?? 'NO'}; prescription refused: ${presc.rejected[0]?.reason ?? 'NO'}; edit after the doctor took it refused: ${late.rejected[0]?.reason ?? 'NO'}`);
 });
 

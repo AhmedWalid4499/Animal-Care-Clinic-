@@ -37,12 +37,13 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - Lab results (schema v11, `lab_results`, clinical: Admin + Doctor): one row per value with the range used (`ref_low`/`ref_high`); no ranges are built in — a new row takes the last unit/range used for that analyte (same species first); flagged H/L and charted per analyte (`src/screens/Labs.tsx`). Corrections update the row (audit keeps the old value).
 - Consent forms (schema v11, `consents`): bilingual text in i18n `consent.text.*` (wording to be confirmed by Dr. Waleed), signature = PNG data URL; any role may record one, nobody may change it (`server/rules.mjs`); listed in the pet's Files tab.
 - In-patients (schema v12): `admissions` (IN/OUT, never deleted) + `care_tasks` (one row per treatment time, DUE/DONE/SKIPPED). Admin + Doctor admit, add treatments and discharge; an Assistant may only tick a task (status/done_at/done_by = self/note, `server/rules.mjs`). Overdue = DUE more than 10 min past `due_at`: red on `/ward`, a note on the dashboard, and `WardWatcher` (mounted in `Layout`) toasts + raises a system notification once per task per computer.
+- Physical examination (schema v19, 14 Nov 2026, change request): on `visits` next to weight and temperature — blood pressure (`bp_systolic`/`bp_diastolic`), mucous membranes (pale / pink / red / congested), eyes and hair & skin (text), glands normal/enlarged + `glands_note` (which gland), anal glands empty/full, nails trimmed/need trimming, fleas/ticks yes/no; NULL = not examined; choices in `src/db/types.ts`, not CHECKed. One editor (`ExamEditor` in `src/components/Exam.tsx`) on the visit form and the pre-diagnosis (part of the intake an Assistant may edit while WAITING, `server/rules.mjs`). Shown on the timeline and case report, never on the owner page. Analytics (`src/screens/ExamStats.tsx`): pet record **Exam** tab (temperature / heart rate / blood pressure charts + findings table) and **Exam dashboard** `/exam` (Admin + Doctor, sidebar under Clinic): share of examined visits with each finding over 30 days / 3 / 12 months by species, 12-month trend, mucous membranes and systolic pressure distribution, patients with findings to check. No clinical thresholds built in.
 - Patient alerts: `pets.alert_flags` (comma-separated, `ALERT_FLAGS` in `src/db/types.ts`) + `pets.alert_note`; render with `PetAlerts` wherever a pet is handled.
 
 ## Screens (`SCOPE.md §4`) → routes
 Routes are hash routes (`#/owners`) because the app loads from `file://`.
 
-Sidebar (7 Nov 2026, at Ahmed's request; grouped 10 Nov: **Daily work** = Dashboard, Owners, Appointments, In-patients · **Clinic** = Invoices & prices, Stock, Treatment templates · then Settings): Dashboard · Owners · Appointments · **Pricing** (EN label "Invoices & prices") (`/invoices`, `/reports`, `/prices`, with tabs on top: `PricingTabs` in `src/components/Sections.tsx`) · **In-patients** (`/ward`) · **Stock** (`/stock`, `/stock/vaccines`, `/stock/drugs`: `StockTabs`) · **Treatment templates** (`/templates`, Admin + Doctor) · Settings. Old `/settings?tab=prices|vaccines|drugs|templates` links redirect.
+Sidebar (7 Nov 2026, at Ahmed's request; grouped 10 Nov: **Daily work** = Dashboard, Owners, Appointments, In-patients · **Clinic** = Invoices & prices, Stock, Treatment templates, Exam dashboard · then Settings): Dashboard · Owners · Appointments · **Pricing** (EN label "Invoices & prices") (`/invoices`, `/reports`, `/prices`, with tabs on top: `PricingTabs` in `src/components/Sections.tsx`) · **In-patients** (`/ward`) · **Stock** (`/stock`, `/stock/vaccines`, `/stock/drugs`: `StockTabs`) · **Treatment templates** (`/templates`, Admin + Doctor) · Settings. Old `/settings?tab=prices|vaccines|drugs|templates` links redirect.
 
 | Route | Screen |
 |---|---|
@@ -51,7 +52,7 @@ Sidebar (7 Nov 2026, at Ahmed's request; grouped 10 Nov: **Daily work** = Dashbo
 | `/owners`, `/owners/new` | 2 Owners |
 | `/owners/[id]` | 3 Owner detail (+ Owner page QR and prescription archive, Phase 6) |
 | `/owners/[id]/card` | Owner page QR card, print (Phase 6) |
-| `/pets/[id]` (+ `?tab=timeline\|vaccinations\|prescriptions\|weight\|labs\|requests\|files`) | 4 Pet record (Lab results tab: change request 7 Nov). Print summary, vaccination certificate and consent form sit in one "Print & forms" menu (`MenuButton` in `ui.tsx`, 10 Nov) |
+| `/pets/[id]` (+ `?tab=timeline\|vaccinations\|prescriptions\|weight\|exam\|labs\|requests\|files`) | 4 Pet record (Lab results tab: change request 7 Nov). Print summary, vaccination certificate and consent form sit in one "Print & forms" menu (`MenuButton` in `ui.tsx`, 10 Nov) |
 | `/pets/[id]/consent/new`, `/consents/[id]` | Consent form signed on screen, A5 English + Arabic (change request 7 Nov) |
 | `/pets/[id]/labs/[date]` | Lab report for one test day, A5 (change request 14 Nov) |
 | `/pets/[id]/report` | Case report, A4 — Admin + Doctor (change request 14 Nov) |
@@ -73,6 +74,7 @@ Sidebar (7 Nov 2026, at Ahmed's request; grouped 10 Nov: **Daily work** = Dashbo
 | `/account` | Settings for Doctors and Assistants (nav "Settings" for non-Admins): check for updates / restart to update (the auto-update on/off switch stays Admin-only), language, theme, password (`src/screens/MySettings.tsx`) |
 | `/pets/[id]/tag` | Collar tag QR, printable — everyone; replace / off Admin (change request 14 Nov) |
 | `/lost-found` | Lost & found: alerts from collar tags (change request 14 Nov) |
+| `/exam` (`?period=30\|90\|365&species=&finding=`) | Exam dashboard — Admin + Doctor: physical examination findings across the clinic (change request 14 Nov) |
 | server `/t/<token>` (not a hash route) | A pet's collar tag page, public by link, from `server/tags.mjs` |
 | server `/o/<token>` (not a hash route) | The owner's own page, public by link, from `server/portal.mjs` (Phase 6) |
 

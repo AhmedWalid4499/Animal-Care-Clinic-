@@ -379,7 +379,7 @@ async function pdfOf(hash, name, size = 'A5') {
     ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
     ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`],
     ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`],
-    ['lost-found', '#/lost-found'], ['pet-tag', `#/pets/${petId}/tag`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
+    ['lost-found', '#/lost-found'], ['exam-dashboard', '#/exam'], ['pet-exam', `#/pets/${petId}?tab=exam`], ['pet-tag', `#/pets/${petId}/tag`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
@@ -457,6 +457,8 @@ await app.close();
   db.run('DROP TABLE test_requests');
   db.run('DROP TABLE found_reports');
   db.run('ALTER TABLE pets DROP COLUMN tag_token');
+  // …nor the physical examination on visits (v19).
+  for (const c of ['bp_systolic', 'bp_diastolic', 'mucous_membrane', 'eyes', 'skin_coat', 'glands', 'glands_note', 'anal_glands', 'nails', 'fleas_ticks']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");

@@ -114,6 +114,21 @@ await step('pet record', async () => {
   await shot('pet-weight-chart');
 });
 
+// Physical examination analytics (schema v19): the pet's vitals and findings, and the clinic's exam dashboard.
+await step('exam analytics', async () => {
+  const back = await win.evaluate(() => location.hash);
+  await win.getByRole('tab', { name: 'Exam' }).click();
+  await win.waitForSelector('.exam-table');
+  await shot('pet-exam');
+  await win.evaluate(() => { location.hash = '#/exam?period=365'; });
+  await win.waitForSelector('.exam-tiles');
+  await shot('exam-dashboard');
+  await win.locator('.exam-tiles [data-finding=fleas_ticks]').click();
+  await win.locator('.exam-flagged tbody tr').first().waitFor();
+  await win.evaluate((h) => { location.hash = h; }, back);
+  await win.waitForSelector('.tabs');
+});
+
 let invoiceHash = '';
 await step('new visit with vaccination + prescription + follow-up', async () => {
   await win.locator('.pagehead').getByRole('button', { name: 'New visit' }).click();
@@ -122,6 +137,15 @@ await step('new visit with vaccination + prescription + follow-up', async () => 
   await win.getByLabel('Weight (kg)').fill('4.35');
   await win.getByLabel('Temperature (°C)').fill('38.6');
   await win.getByLabel('Diagnosis').fill('Healthy — mild flea dermatitis');
+  await win.getByLabel('Systolic', { exact: true }).fill('135');
+  await win.getByLabel('Diastolic', { exact: true }).fill('85');
+  await win.locator('[data-exam=mucous_membrane]').getByRole('radio', { name: 'Pink (rose)' }).click();
+  await win.getByLabel('Eyes').fill('Clear');
+  await win.getByLabel('Hair and skin').fill('Flea dirt at the tail base');
+  await win.locator('[data-exam=fleas_ticks]').getByRole('radio', { name: 'Yes' }).click();
+  await win.locator('[data-exam=nails]').getByRole('radio', { name: 'Need trimming' }).click();
+  await win.locator('.exam-editor').scrollIntoViewIfNeeded();
+  await shot('visit-exam');
   await win.getByRole('button', { name: 'Add drug' }).click();
   await win.getByLabel('Drug').fill('Bravecto spot-on');
   await win.getByLabel('Dose').fill('1 pipette');

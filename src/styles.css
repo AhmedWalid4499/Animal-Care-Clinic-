@@ -775,3 +775,26 @@ a.owner-code:hover { text-decoration: underline; }
 /* The clinic's address at the bottom of every document, under the other footer line if there is one. */
 .sheet .addr-foot { font-size: 8.5pt; }
 .sheet .foot + .addr-foot { border-top: 0; margin-top: 2px; padding-top: 0; }
+
+/* Physical examination (schema v19) and its analytics */
+.exam-editor { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--rule-2); }
+.exam-head { font-size: 15px; margin: 0 0 6px; }
+.exam-seg { flex-wrap: wrap; max-width: 100%; }
+.exam-seg button { min-height: 40px; }
+.exam-seg button.on.x-PALE, .exam-seg button.on.x-RED, .exam-seg button.on.x-CONGESTED, .exam-seg button.on.x-ENLARGED,
+.exam-seg button.on.x-FULL, .exam-seg button.on.x-NEEDS_TRIM, .exam-seg button.on.x-YES { background: var(--warn-soft); color: var(--warn); }
+.bp-pair { display: flex; align-items: center; gap: 6px; }
+.bp-pair input { width: 5.5em; min-width: 0; flex: 1 1 0; }
+.exam-summary { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-top: 4px; }
+.exam-summary .flag { color: var(--warn); font-weight: 600; }
+.exam-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 22px; }
+.exam-chart h3 { font-size: 14px; margin: 8px 0 0; }
+.chart.small-chart { height: 210px; margin-top: 6px; }
+.exam-table td.flag, .exam-flagged td .flag { color: var(--warn); font-weight: 600; }
+.exam-table td, .exam-table th { white-space: nowrap; }
+.exam-table td:nth-child(6), .exam-table td:nth-child(7) { white-space: normal; min-width: 10em; }
+.exam-tiles { margin-bottom: 14px; }
+.exam-tiles .glance-card.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
+.exam-dash .filters select { width: auto; }
+@media (max-width: 640px) { .exam-charts { grid-template-columns: 1fr; } }
+.nowrap { white-space: nowrap; }
