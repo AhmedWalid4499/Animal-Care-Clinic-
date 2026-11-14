@@ -18,7 +18,7 @@ export function waUrl(phone: string | null | undefined, text: string): string | 
   return n ? `https://wa.me/${n}?text=${encodeURIComponent(text)}` : null;
 }
 
-export type WaTemplate = 'vaccination' | 'appointment' | 'balance' | 'general';
+export type WaTemplate = 'vaccination' | 'appointment' | 'balance' | 'general' | 'portal';
 
 export function waMessage(t: T, template: WaTemplate, vars: Record<string, string>) {
   return t(`wa.${template}`, vars);

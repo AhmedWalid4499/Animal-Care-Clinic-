@@ -13,8 +13,9 @@ import { Badge, Field, Icon, MenuButton, PetAlerts, PetAvatar, StatusBadge, WaBu
 import { PageHead } from '../components/Layout';
 import { LabsTab } from './Labs';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
+import { RxArchive } from '../components/RxArchive';
 
-type Tab = 'timeline' | 'vaccinations' | 'weight' | 'labs' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'labs' | 'files';
 
 export function PetRecord() {
   const { id = '' } = useParams();
@@ -86,7 +87,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'weight', 'labs', 'files'] as Tab[]).map((k) => (
+        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'labs', 'files'] as Tab[]).map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -95,6 +96,7 @@ export function PetRecord() {
       <div key={tab} className="tab-enter">
         {tab === 'timeline' && <Timeline petId={id} />}
         {tab === 'vaccinations' && <Vaccinations petId={id} />}
+        {tab === 'prescriptions' && <RxArchive petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
         {tab === 'labs' && <LabsTab petId={id} />}
         {tab === 'files' && <Files petId={id} />}

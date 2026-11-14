@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS rows (
 );
 CREATE INDEX IF NOT EXISTS rows_clinic_seq ON rows (clinic_id, seq);
 CREATE INDEX IF NOT EXISTS rows_user_email ON rows (lower(data->>'email')) WHERE tbl = 'users';
+-- The owner page (server/portal.mjs, Phase 6): the owner by their link, and their records by owner / pet / visit.
+CREATE INDEX IF NOT EXISTS rows_owner_portal ON rows ((data->>'portal_token')) WHERE tbl = 'owners';
+CREATE INDEX IF NOT EXISTS rows_by_owner ON rows (clinic_id, (data->>'owner_id')) WHERE tbl = 'pets';
+CREATE INDEX IF NOT EXISTS rows_by_pet ON rows (clinic_id, tbl, (data->>'pet_id')) WHERE tbl IN ('visits', 'vaccinations', 'appointments');
+CREATE INDEX IF NOT EXISTS rows_by_visit ON rows (clinic_id, (data->>'visit_id')) WHERE tbl = 'prescriptions';
 CREATE TABLE IF NOT EXISTS notifications (
   id uuid PRIMARY KEY,
   clinic_id uuid NOT NULL REFERENCES clinics(id),

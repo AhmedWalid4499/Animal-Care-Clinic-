@@ -31,6 +31,8 @@ const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-export-'));
 const dbFile = path.join(dataDir, 'clinic.sqlite');
 const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'audit_log'];
 const SQL = await initSqlJs();
+// The schema version a fresh or upgraded database must reach (src/db/schema.ts).
+const CURRENT_SCHEMA = fs.readFileSync('src/db/schema.ts', 'utf8').match(/SCHEMA_VERSION = (\d+)/)[1];
 
 const results = [];
 function check(id, criterion, pass, evidence) {
@@ -339,6 +341,12 @@ async function pdfOf(hash, name) {
   check('S7.5-receipt', 'A5 receipt prints on one A5 page', r.pages === 1 && r.a5, `receipt-A5.pdf: ${r.pages} page, ${r.size} (A5 = 420×595 pt)`);
   const s = await pdfOf(`#/pets/${pet}/print`, 'pet-summary-A5.pdf');
   check('S4-summary', 'Pet summary prints / saves as PDF', s.pages >= 1 && s.a5, `pet-summary-A5.pdf: ${s.pages} page(s), ${s.size}`);
+  // Phase 6: any past prescription can be found again and reprinted.
+  const rxVisit = db.exec('SELECT visit_id FROM prescriptions LIMIT 1')[0]?.values[0][0];
+  if (rxVisit) {
+    const p = await pdfOf(`#/visits/${rxVisit}/prescription`, 'prescription-A5.pdf');
+    check('rx-print', 'A past prescription reprints on one A5 page', p.pages === 1 && p.a5, `prescription-A5.pdf: ${p.pages} page, ${p.size}`);
+  }
 }
 
 // ------------------------------------------------------------------ 7. Arabic RTL pass
@@ -355,6 +363,7 @@ async function pdfOf(hash, name) {
     ['dashboard', '#/'], ['owners', '#/owners'], ['owner-new', '#/owners/new'], ['owner-detail', `#/owners/${ownerId}`],
     ['pet-new', `#/owners/${ownerId}/pets/new`], ['pet-timeline', `#/pets/${petId}?tab=timeline`], ['pet-vaccinations', `#/pets/${petId}?tab=vaccinations`],
     ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-edit', `#/pets/${petId}/edit`],
+    ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
@@ -424,6 +433,8 @@ await app.close();
   // …nor the in-patient board (schema v12).
   db.run('DROP TABLE care_tasks');
   db.run('DROP TABLE admissions');
+  // …nor the owner page link (schema v15).
+  db.run('ALTER TABLE owners DROP COLUMN portal_token');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
@@ -442,7 +453,7 @@ const afterRelaunch = counts(openDbFile());
     const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
     const roles = db2.exec('SELECT role, COUNT(*) FROM users GROUP BY role')[0].values.map((r) => `${r[0]}×${r[1]}`).join(', ');
     const settingsLink = await win.locator('.nav a[href="#/settings"]').count();
-    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '14' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
+    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === CURRENT_SCHEMA && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
       `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
   }
   check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',

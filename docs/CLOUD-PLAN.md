@@ -6,6 +6,7 @@ Status, 5 Nov 2026:
 - **Phase 5 built and tested locally** (devices, temporary passwords / reset / invite, pre-diagnosis queue): `scripts/sync-test.mjs` passes 23/23.
 - **Phase 2 (offline) built and tested locally:** `scripts/sync-test.mjs` passes 31/31, including two laptops working with the server unreachable and ending identical.
 - **Phase 4 built and tested locally:** files on the volume, nightly backup (volume + off-site bucket) with a tested restore, phone install, live check. `scripts/sync-test.mjs` passes 35/35. Ahmed's part: the R2 bucket and the live-check secrets (`docs/RAILWAY-SETUP.md`).
+- **Phase 6 built and tested locally** (14 Nov): the owner page (QR code) and the prescription archive; see **Phase 6** below.
 - Open points are at the end.
 
 ## What Ahmed asked for
@@ -198,6 +199,25 @@ How Phase 5 is built:
 | Devices | `src/components/Devices.tsx`, `GET /api/devices`, `POST /api/devices/revoke` | Settings → Devices (Admin, when connected): every signed-in device with its user, last seen / online now. **Sign out** ends that session at once (live message) or at its next sync; the device needs the password again. No limit on the number of devices; tested with 12 at once. |
 | Sign-in brake | `server/index.mjs` | Now counts only wrong passwords (10 per 5 minutes per address): all the clinic's devices share one internet address, so counting every sign-in would have blocked a busy morning. |
 
+## Phase 6 — Owner page and prescription archive (Ahmed, 14 Nov 2026)
+
+| Ahmed asked for | Built |
+|---|---|
+| A code for each customer that opens a page with their data, their pets, upcoming appointments (add to calendar), prescriptions uploaded automatically, live updates | A **QR code** per owner (a 1-D barcode can't carry a web link a phone opens). It opens `https://<server>/o/<token>`: the owner's details, each pet (species, age, last weight, vaccinations with next due), upcoming appointments with **Google Calendar**, **iPhone / Outlook (.ics)** and **add all to my calendar** (a feed that updates itself, with vaccination due dates), and every prescription. The page is live: the server tells it "changed" (Server-Sent Events) after every push and it fetches again within a second. Arabic / English, phone first, prints. |
+| The doctor can't find a prescription again | **Prescriptions** on Owner detail (every prescription of every pet of that owner, newest first, search by drug / pet / diagnosis, filter by pet), a **Prescriptions** tab on the pet record, and **Print** for an A5 reprint of any past prescription. |
+
+| Piece | Where | Notes |
+|---|---|---|
+| The link | `owners.portal_token` (schema v15), `createOwnerPage` / `replaceOwnerPage` / `disableOwnerPage` in `repo.ts` | 128 random bits made on the device, synced like any owner edit. Anyone at the desk can create it; replacing or switching off a printed code is Admin-only, enforced in `server/rules.mjs`. An archived owner's page is off. |
+| Staff side | `src/components/OwnerPage.tsx` | Owner detail → **Owner page**: QR, link, **Print QR card** (`/owners/:id/card`), **Send by WhatsApp** (`wa.portal`), copy, open; Admin: **Replace QR code** (lost card) / **Turn off page**. Needs the device linked to the clinic server. |
+| The page | `server/portal.mjs` (routes, data, calendar, live), `server/portal-page.mjs` (the page) | Laid out like a members' portal: top bar (clinic, Live, language), welcome banner with Call / WhatsApp, and five views — **Home** (next appointment with countdown, summary tiles, vaccinations coming up, latest prescription, pets), **Pets**, **Appointments**, **Prescriptions**, **My details** — as a bottom tab bar on phones and top tabs on laptops. Each owner keeps the same QR for good; it changes only when an Admin replaces a lost one. A per-owner manifest lets them add the page to their home screen. Data from `/o/<token>/data`. Only owner-facing fields leave the server: no staff notes, national ID, diagnoses, treatment notes or money. Visits still in the vet's queue are left out until saved. Headers: no-store, no-referrer, noindex, CSP with a nonce. Wrong links are braked per address (30 per 10 min). Postgres indexes for the lookups in `server/db.mjs`. Fonts: Plex Sans Arabic from `@fontsource`. |
+| Calendar | `/o/<token>/calendar.ics`, `/o/<token>/a/<id>.ics` | RFC 5545, lines folded at 75 bytes (Arabic), 2-hour reminder on appointments, vaccination due dates as all-day events in the feed. |
+| Service worker | `public-cloud/sw.js` | Leaves `/o/…` alone, so a staff phone with the web app installed still opens the owner page and keeps its own app shell. |
+| Prescription archive | `src/components/RxArchive.tsx`, `prescriptionArchive()` | Owner detail section, pet tab `?tab=prescriptions`; Print opens the existing prescription sheet `/visits/:id/prescription`. |
+| Tests | `scripts/sync-test.mjs` "phase6" | QR made on the doctor's laptop, page opened in a phone-sized browser, a booking on laptop A and a prescription on laptop B appear on the open page without reload, calendar files, archive search and reprint, Doctor's replace refused, Admin's replace kills the old link and the open page says so. `scripts/acceptance.mjs`: new screens in the Arabic RTL pass, prescription prints on one A5 page. |
+
+Decisions taken for Ahmed to confirm: the owner sees prescriptions but **not** diagnoses or the vet's notes; the page needs no password (the QR is the key, like a house key: replace it when lost); pets that died or moved stay on the page, greyed.
+
 ## Scope impact (SCOPE §10)
 
 These are outside SCOPE §4, so they are change requests, quoted at list price and waived at Dr. Waleed's discretion:
@@ -208,6 +228,7 @@ These are outside SCOPE §4, so they are change requests, quoted at list price a
 - **Built for several clinics** (`clinic_id`, platform owner console): SCOPE §5 lists multi-clinic as v2.
 - **Phase 5:** the pre-assessment step (a new workflow), device management, and invite / password reset.
 - **Hosting under Ahmed's account** instead of Dr. Waleed's (§4 and §8).
+- **Phase 6:** the owner page is the "owner-facing portal" SCOPE §5 puts in v2 (read-only, no booking); the prescription archive is a new view of data already in scope.
 
 The rest moves the project back towards the scope: the phone install (§4, §7.8), Railway hosting in the EU (§8), and the nightly backup (§7.7).
 

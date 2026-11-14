@@ -22,6 +22,7 @@ import { ConsentNew, ConsentView } from './screens/Consent';
 import { Ward } from './screens/Ward';
 import { DrugsPage, PricesPage, TemplatesPage, VaccinesPage } from './components/Sections';
 import { useEffect, type ReactNode } from 'react';
+import { OwnerCardPrint } from './components/OwnerPage';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
 
@@ -60,6 +61,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="owners/new" element={<OwnerFormPage />} />
           <Route path="owners/:id" element={<OwnerDetail />} />
           <Route path="owners/:id/edit" element={<OwnerFormPage />} />
+          <Route path="owners/:id/card" element={<OwnerCardPrint />} />
           <Route path="owners/:ownerId/pets/new" element={<PetFormPage />} />
           <Route path="pets/:id" element={<PetRecord />} />
           <Route path="pets/:id/edit" element={<PetFormPage />} />

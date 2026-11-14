@@ -13,6 +13,7 @@ import { applyChanges, bootstrapRows, pullSince } from './sync.mjs';
 import { sendPush, setupPush } from './notify.mjs';
 import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backup.mjs';
 import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
+import { handleOwnerPage, ownerPagesChanged } from './portal.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -220,7 +221,10 @@ async function api(req, res, url) {
     if (!Array.isArray(changes) || changes.length > 2000) return send(res, 400, { error: 'changes must be an array of at most 2000' });
     const seenSeq = Number.isFinite(Number(cursor)) && cursor !== undefined && cursor !== null ? Number(cursor) : null;
     const r = await applyChanges(pool, { clinicId: s.clinicId, user: s.user, deviceId: s.deviceId, changes, seenSeq });
-    if (r.seq) broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
+    if (r.seq) {
+      broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
+      ownerPagesChanged(s.clinicId); // owners' pages open on their phones fetch again (Phase 6)
+    }
     deliver(s.clinicId, r.notifications);
     await endSessionsAfter(s, r.endSessions);
     return send(res, 200, { rejected: r.rejected, reverts: r.reverts, failed: r.failed, seq: r.seq });
@@ -236,7 +240,10 @@ async function api(req, res, url) {
     if (!Array.isArray(rows)) return send(res, 400, { error: 'rows must be an array' });
     const r = await bootstrapRows(pool, { clinicId: s.clinicId, deviceId: s.deviceId, rows, done: !!done });
     if (r.error) return send(res, 409, r);
-    if (done) broadcast(s.clinicId, { type: 'changed' });
+    if (done) {
+      broadcast(s.clinicId, { type: 'changed' });
+      ownerPagesChanged(s.clinicId);
+    }
     return send(res, 200, r);
   }
   if (p === '/api/notifications' && req.method === 'GET') {
@@ -356,6 +363,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+    // An owner's page from their QR code (server/portal.mjs): public, the link itself is the key.
+    if ((url.pathname.startsWith('/o/') || url.pathname.startsWith('/o-font/')) && (await handleOwnerPage(pool, req, res, url))) return;
     return serveStatic(req, res, url);
   } catch (e) {
     console.error(req.method, url.pathname, e);

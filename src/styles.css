@@ -618,3 +618,22 @@ b.neg { color: var(--bad); }
 .menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink); text-align: start; border-radius: var(--radius); cursor: pointer; }
 .menu button:hover, .menu button:focus-visible { background: var(--bg-2); }
 .menu button svg { width: 16px; height: 16px; color: var(--ink-3); }
+
+/* Owner page (Phase 6): QR code section on Owner detail, and the printable QR card */
+.owner-page-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 14px; }
+.owner-page-empty { margin-top: 10px; }
+.owner-page-empty p { margin: 0 0 12px; max-width: 60ch; }
+.qr { display: block; border: 1px solid var(--rule); border-radius: var(--radius); background: #fff; }
+.owner-page-link { display: block; font-size: 13px; overflow-wrap: anywhere; margin: 4px 0 0; }
+@media (max-width: 640px) {
+  .owner-page-body { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+}
+.owner-card { border: 1px dashed #999; padding: 6mm; }
+.owner-card-body { display: grid; grid-template-columns: auto 1fr; gap: 6mm; align-items: center; }
+.owner-card-body h2 { font-size: 14pt; margin: 0 0 4px; }
+.owner-card-body p { margin: 0 0 6px; font-size: 10.5pt; }
+.owner-card .qr { border: 0; width: 46mm; height: 46mm; }
+
+/* Prescription archive */
+.rx-archive .seg { flex-wrap: wrap; }
+.rx-archive .tl > li { padding: 12px 0; }

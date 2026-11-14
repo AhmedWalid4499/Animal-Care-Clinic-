@@ -6,6 +6,8 @@ import { ageParts } from '../lib/dates';
 import { telUrl } from '../lib/whatsapp';
 import { Confirm, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { OwnerPageSection } from '../components/OwnerPage';
+import { RxArchive } from '../components/RxArchive';
 
 export function OwnerDetail() {
   const { id = '' } = useParams();
@@ -92,6 +94,16 @@ export function OwnerDetail() {
           )}
         </section>
       </div>
+
+      <OwnerPageSection owner={owner} />
+
+      <section className="section rx-archive-section">
+        <header>
+          <h2>{t('rxArchive.title')}</h2>
+        </header>
+        <p className="faint small" style={{ margin: '8px 0 0' }}>{t('rxArchive.hint')}</p>
+        <RxArchive ownerId={id} />
+      </section>
 
       {isAdmin && (
         <div style={{ marginTop: 32 }}>
