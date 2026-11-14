@@ -18,6 +18,7 @@ import { ageParts } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { downloadAttachment, serverUrl } from '../sync/engine';
 import { Icon, SheetAddress } from '../components/ui';
+import { examParts } from '../components/Exam';
 import { labFlag } from './Labs';
 
 const range = (r: Pick<LabResult, 'ref_low' | 'ref_high'>) =>
@@ -256,6 +257,7 @@ export function CaseReport() {
                   v.heart_rate != null ? `♥ ${v.heart_rate}/min` : null,
                   v.resp_rate != null ? `🫁 ${v.resp_rate}/min` : null].filter(Boolean).join(' · ')}</p>
               )}
+              {examParts(v, t).length > 0 && <p className="vitals exam-line"><span>{t('exam.title')}:</span> {examParts(v, t).map((x) => `${x.label} ${x.text}`).join(' · ')}</p>}
               {v.intake_notes && <p><span>{t('intake.notes')}:</span> {v.intake_notes}</p>}
               {v.diagnosis && <p className="dx"><span>{t('visits.diagnosis')}:</span> <b>{v.diagnosis}</b></p>}
               {v.treatment_notes && <p><span>{t('visits.treatment')}:</span> {v.treatment_notes}</p>}

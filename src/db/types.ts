@@ -23,6 +23,19 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export type Role = 'ADMIN' | 'DOCTOR' | 'ASSISTANT';
 export const URGENCIES = ['ROUTINE', 'SOON', 'EMERGENCY'] as const;
 export type Urgency = (typeof URGENCIES)[number];
+// Physical examination (schema v19). Each finding is one of these, or null when it wasn't examined.
+export const MUCOUS_MEMBRANES = ['PALE', 'PINK', 'RED', 'CONGESTED'] as const;
+export const GLAND_STATES = ['NORMAL', 'ENLARGED'] as const;
+export const ANAL_GLAND_STATES = ['EMPTY', 'FULL'] as const;
+export const NAIL_STATES = ['OK', 'NEEDS_TRIM'] as const;
+export const YES_NO = ['NO', 'YES'] as const;
+export type MucousMembrane = (typeof MUCOUS_MEMBRANES)[number];
+export interface ExamFields {
+  bp_systolic: number | null; bp_diastolic: number | null; mucous_membrane: MucousMembrane | null; eyes: string | null;
+  skin_coat: string | null; glands: (typeof GLAND_STATES)[number] | null; glands_note: string | null;
+  anal_glands: (typeof ANAL_GLAND_STATES)[number] | null; nails: (typeof NAIL_STATES)[number] | null; fleas_ticks: (typeof YES_NO)[number] | null;
+}
+export const EXAM_KEYS: (keyof ExamFields)[] = ['bp_systolic', 'bp_diastolic', 'mucous_membrane', 'eyes', 'skin_coat', 'glands', 'glands_note', 'anal_glands', 'nails', 'fleas_ticks'];
 export type VisitStage = 'WAITING' | 'WITH_VET' | 'DONE';
 export const ROLES: Role[] = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
 export type Locale = 'ar' | 'en';
@@ -61,7 +74,7 @@ export interface Pet {
   /** Secret part of the pet's collar tag link (QR on the collar); null = no tag. Schema v18. */
   tag_token?: string | null;
 }
-export interface Visit {
+export interface Visit extends ExamFields {
   id: string; pet_id: string; vet_id: string | null; visited_at: string; type: VisitType; complaint: string | null;
   weight_kg: number | null; temperature_c: number | null; diagnosis: string | null; treatment_notes: string | null;
   follow_up_at: string | null; invoice_id: string | null;

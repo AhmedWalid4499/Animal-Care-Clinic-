@@ -11,6 +11,8 @@ import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
 import { Badge, Field, Icon, MenuButton, OwnerCode, PetAlerts, PetAvatar, StatusBadge, WaButton, SheetAddress } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { ExamSummary } from '../components/Exam';
+import { PetExamTab } from './ExamStats';
 import { LabsTab } from './Labs';
 import { isImage, useImages } from './Documents';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
@@ -18,7 +20,7 @@ import { RxArchive } from '../components/RxArchive';
 import { RequestsTab } from '../components/RequestsTab';
 import { mimeOf } from '../lib/mime';
 
-type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'labs' | 'requests' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'exam' | 'labs' | 'requests' | 'files';
 
 export function PetRecord() {
   const { id = '' } = useParams();
@@ -96,7 +98,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'labs', 'requests', 'files'] as Tab[]).map((k) => (
+        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'exam', 'labs', 'requests', 'files'] as Tab[]).map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -107,6 +109,7 @@ export function PetRecord() {
         {tab === 'vaccinations' && <Vaccinations petId={id} />}
         {tab === 'prescriptions' && <RxArchive petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
+        {tab === 'exam' && <PetExamTab petId={id} />}
         {tab === 'labs' && <LabsTab petId={id} />}
         {tab === 'requests' && <RequestsTab petId={id} active={pet.status === 'ACTIVE'} />}
         {tab === 'files' && <Files petId={id} />}
@@ -158,6 +161,7 @@ function Timeline({ petId }: { petId: string }) {
                 {v.resp_rate != null && <span>🫁 {v.resp_rate}/min</span>}
                 {v.follow_up_at && <span>↻ {t('visits.followUp')}: {fmt.dateTime(v.follow_up_at)}</span>}
               </div>
+              <ExamSummary v={v} />
               {v.treatment_notes && <p className="small">{v.treatment_notes}</p>}
               {(v.prescriptions.length > 0 || v.vaccinations.length > 0) && (
                 <ul className="rx">

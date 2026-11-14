@@ -6,6 +6,7 @@ import { allergyMatch, calcDose, doseText, findDrug } from '../lib/dose';
 import { addDays, fromLocalInput, localDateOf, nowLocalInput, toLocalInput } from '../lib/dates';
 import { Dialog, Field, Icon, PetAlerts, PetAvatar, PetPicker } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { ExamEditor, emptyExam, examDraftOf, examFieldsOf, type ExamDraft } from '../components/Exam';
 import { VISIT_TYPES, type Drug, type TreatmentTemplate, type VisitType } from '../db/types';
 import type { PetOption } from '../db/repo';
 import { IntakeEditor, NewPatientForm, num, type IntakeDraft } from './IntakeForm';
@@ -47,6 +48,8 @@ interface Form {
   treatment_notes: string; follow_up_at: string; vet_id: string; prescriptions: RxRow[]; vaccinations: VxRow[];
   /** The pre-diagnosis this visit started with (Phase 5); null for a visit recorded directly. */
   intake: IntakeDraft | null;
+  /** Physical examination (schema v19). */
+  exam: ExamDraft;
 }
 
 function draftKey(petId: string, visitId?: string) {
@@ -93,16 +96,17 @@ export function VisitFormPage() {
               heart_rate: existing.heart_rate?.toString() ?? '', resp_rate: existing.resp_rate?.toString() ?? '', intake_notes: existing.intake_notes ?? '',
             }
           : null,
+        exam: examDraftOf(existing),
       };
     return {
       visited_at: appt ? toLocalInput(appt.scheduled_at) : nowLocalInput(), type: appt?.type ?? 'CHECKUP', complaint: appt?.notes ?? '',
       weight_kg: '', temperature_c: '', diagnosis: '', treatment_notes: '', follow_up_at: '',
-      vet_id: user && user.role !== 'ASSISTANT' ? user.id : vets[0]?.id ?? '', prescriptions: [], vaccinations: [], intake: null,
+      vet_id: user && user.role !== 'ASSISTANT' ? user.id : vets[0]?.id ?? '', prescriptions: [], vaccinations: [], intake: null, exam: emptyExam,
     };
   }, [existing, appt, user, vets]);
 
   const [draft] = useState(() => readDraft(key));
-  const [f, setF] = useState<Form>(draft ? { ...initial, ...draft } : initial);
+  const [f, setF] = useState<Form>(draft ? { ...initial, ...draft, exam: { ...initial.exam, ...draft.exam } } : initial);
   const [restored, setRestored] = useState(!!draft);
   const [savedId, setSavedId] = useState<string | null>(null);
   // Dose calculator + treatment templates (6 Nov 2026).
@@ -183,6 +187,7 @@ export function VisitFormPage() {
       pet_id: pet.id, vet_id: f.vet_id || null, visited_at: fromLocalInput(f.visited_at), type: f.type, complaint: ix ? ix.complaint : f.complaint,
       weight_kg: num(ix ? ix.weight_kg : f.weight_kg), temperature_c: num(ix ? ix.temperature_c : f.temperature_c), diagnosis: f.diagnosis, treatment_notes: f.treatment_notes,
       intake: ix ? { urgency: ix.urgency, history: ix.history, heart_rate: num(ix.heart_rate), resp_rate: num(ix.resp_rate), intake_notes: ix.intake_notes } : undefined,
+      exam: examFieldsOf(f.exam),
       follow_up_at: f.follow_up_at ? fromLocalInput(f.follow_up_at) : null,
       prescriptions: f.prescriptions.map((r) => ({ ...r, duration_days: r.duration_days ? Number(r.duration_days) : null })),
       vaccinations: f.vaccinations.map((x) => ({ id: x.id, vaccine_type_id: x.vaccine_type_id, administered_at: x.administered_at, next_due_at: x.next_due_at, batch_no: x.batch_no })),
@@ -259,12 +264,15 @@ export function VisitFormPage() {
                 <div />
               </>
             )}
+            <div className="span-all">
+              <ExamEditor value={f.exam} onChange={(v) => set('exam', v)} />
+            </div>
             <div className="row span-all tpl-bar">
               <button type="button" className="btn sm" disabled={!templates.length} onClick={() => setTplPick(true)}><Icon name="file" /> {t('templates.use')}</button>
               <button type="button" className="btn ghost sm" disabled={!f.diagnosis.trim() && !f.prescriptions.length} onClick={() => setTplSave(f.diagnosis)}>{t('templates.saveAs')}</button>
             </div>
             <Field label={t('visits.diagnosis')} className="span-all" optional>
-              <input type="text" value={f.diagnosis} onChange={(e) => set('diagnosis', e.target.value)} />
+              <input type="text" name="diagnosis" value={f.diagnosis} onChange={(e) => set('diagnosis', e.target.value)} />
             </Field>
             <Field label={t('visits.treatment')} className="span-all" optional>
               <textarea value={f.treatment_notes} onChange={(e) => set('treatment_notes', e.target.value)} />

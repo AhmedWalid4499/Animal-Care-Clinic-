@@ -7,6 +7,7 @@ import { useApp, useQuery } from '../lib/app';
 import { getAppointment, getPet, getVisit, ownerPets, ownersByPhone, quickPatient, saveIntake, takePatient, waitingQueue, type IntakeInput, type QueueRow } from '../db/repo';
 import { Badge, Field, Icon, PetAlerts, PetAvatar, speciesEmoji } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { ExamEditor, examDraftOf, examFieldsOf, type ExamDraft } from '../components/Exam';
 import { SPECIES, URGENCIES, VISIT_TYPES, type Species, type Urgency, type VisitType } from '../db/types';
 
 /** The intake fields, shared by the pre-diagnosis screen and the top of the vet's visit form. */
@@ -154,6 +155,7 @@ export function IntakeFormPage() {
         }
       : { ...emptyIntake, complaint: appt?.notes ?? '' },
   );
+  const [exam, setExam] = useState<ExamDraft>(() => examDraftOf(existing));
   if (!pet) return <div className="page">{t('common.notFound')}</div>;
   if (locked) {
     return (
@@ -169,7 +171,7 @@ export function IntakeFormPage() {
     const input: IntakeInput = {
       pet_id: pet.id, type: f.urgency === 'EMERGENCY' && type === 'CHECKUP' ? 'EMERGENCY' : type, complaint: f.complaint,
       weight_kg: num(f.weight_kg), temperature_c: num(f.temperature_c), heart_rate: num(f.heart_rate), resp_rate: num(f.resp_rate),
-      urgency: f.urgency, history: f.history, intake_notes: f.intake_notes, appointment_id: appointmentId,
+      urgency: f.urgency, history: f.history, intake_notes: f.intake_notes, appointment_id: appointmentId, exam: examFieldsOf(exam),
     };
     saveIntake(input, user?.id ?? null, visitId);
     toast(t('intake.sent'));
@@ -200,6 +202,9 @@ export function IntakeFormPage() {
             </Field>
           </div>
           <IntakeEditor value={f} onChange={setF} />
+        </div>
+        <div className="form-section">
+          <ExamEditor value={exam} onChange={setExam} />
         </div>
         <div className="actionbar">
           <button type="button" className="btn" onClick={() => nav(-1)}>{t('common.cancel')}</button>
