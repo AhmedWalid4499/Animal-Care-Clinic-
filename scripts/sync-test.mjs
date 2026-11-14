@@ -141,7 +141,8 @@ async function signIn(d, email, password, { newPassword } = {}) {
   await d.win.locator('input[type=email]').fill(email);
   await d.win.locator('input[type=password]').fill(password);
   await d.win.locator('form button.signin').click();
-  await d.win.waitForSelector('.searchbox, .password-form', { timeout: 30_000 });
+  // Signed in = the sidebar's foot (name, Sign out) is there, whichever screen the app returns to.
+  await d.win.waitForSelector('.side-foot, .password-form', { timeout: 30_000 });
   // A temporary password from the Admin: the person must choose their own first.
   if (await d.win.locator('.password-form').count()) {
     if (!newPassword) throw new Error(`${email} was asked to choose a password`);
@@ -149,7 +150,7 @@ async function signIn(d, email, password, { newPassword } = {}) {
     await a.fill(newPassword);
     await b.fill(newPassword);
     await d.win.locator('.password-form .btn.primary').click();
-    await d.win.waitForSelector('.searchbox', { timeout: 10_000 });
+    await d.win.waitForSelector('.side-foot', { timeout: 10_000 });
     return 'changed';
   }
   return 'in';
@@ -828,6 +829,40 @@ await step('phase6: owner page', async () => {
   await go(B, `#/pets/${pet.id}?tab=prescriptions`);
   const petTab = (await B.win.locator('.rx-archive').innerText()).includes(DRUG);
 
+  // Requests (schema v17): the doctor saves an X-ray and a lab request and uploads an X-ray image on laptop B;
+  // the owner's open page shows them under Requests, and the image comes from the server.
+  await tab('requests');
+  t0 = Date.now();
+  await go(B, `#/pets/${pet.id}/xray-request`);
+  await B.win.locator('.xbox').nth(0).click();
+  await B.win.locator('.xbox').nth(2).click();
+  await B.win.locator('.save-request').click();
+  await go(B, `#/pets/${pet.id}/lab-request`);
+  await B.win.locator('.xbox', { hasText: /^CBC$/ }).click();
+  await B.win.locator('.xbox', { hasText: /^Creatinine$/ }).click();
+  await B.win.locator('.xray-write textarea').first().fill('Bile acids');
+  await B.win.locator('.save-request').click();
+  const reqLive = await until(async () => {
+    const txt = await phonePage.locator('main').innerText();
+    return txt.includes('CBC') && txt.includes('Bile acids') && (await phonePage.locator('.req-card').count()) >= 2;
+  }, 15_000, 200);
+  const reqMs = Date.now() - t0;
+  const xbytes = fs.readFileSync(path.join(process.cwd(), 'public-cloud', 'icon-192.png'));
+  const xfile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-xray-')), 'thorax-lateral.png');
+  fs.writeFileSync(xfile, xbytes);
+  await B.app.evaluate(({ dialog }, f) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] }); }, xfile);
+  await go(B, `#/pets/${pet.id}?tab=requests`);
+  await B.win.locator('.upload-xray').click();
+  const imgLive = await until(async () => (await phonePage.locator('.xray-gallery img').count()) > 0, 30_000, 300);
+  const imgId = imgLive.v ? (await (await fetch(`${url}/data`)).json()).xrays?.[0]?.id : null;
+  const imgSame = imgId ? Buffer.compare(Buffer.from(await (await fetch(`${url}/f/${imgId}`)).arrayBuffer()), xbytes) === 0 : false;
+  const otherImg = (await fetch(`${url}/f/not-this-owners-file`)).status;
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-8-requests-ar.png'), fullPage: true });
+  const deskReq = await api('/api/sync/push', { changes: [{ tbl: 'test_requests', id: crypto.randomUUID(), op: 'upsert', at: nowIso(), cols: { pet_id: String(pet.id), kind: 'LAB', status: 'REQUESTED', requested_at: nowIso(), items: 'haematology.cbc' } }] }, tokens.desk);
+  check('requests', 'X-ray and lab requests are kept in the pet\'s history and appear, with the X-ray images, on the owner\'s page',
+    !!reqLive.v && !!imgLive.v && imgSame && otherImg === 404 && deskReq.body.rejected?.length === 1,
+    `X-ray + lab request saved on laptop B, on the open phone page after ${reqMs} ms: ${!!reqLive.v}; X-ray image uploaded from the Requests tab shown on the page: ${!!imgLive.v}, same bytes from the server: ${imgSame}; another file id → ${otherImg}; an Assistant's request: ${deskReq.body.rejected?.[0]?.reason ?? 'ACCEPTED'}`);
+
   // Only an Admin may replace a printed code; the server refuses it from a Doctor.
   const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);
   // The admin replaces the code (a lost card): the old link stops at once, and the open page says so.
@@ -1109,7 +1144,7 @@ await step('phase4: files', async () => {
     };
   });
   await go(B, `#/pets/${pet.id}?tab=files`);
-  await B.win.locator('.list li.link', { hasText: 'xray-left-leg.png' }).click();
+  await B.win.locator('.file-tile', { hasText: 'xray-left-leg.png' }).click();
   const opened = await until(async () => B.app.evaluate(() => globalThis.__opened), 10_000, 200);
   const openedSha = opened.v ? sha(fs.readFileSync(opened.v)) : null;
   await B.win.screenshot({ path: path.join(out, 'B-files.png') });

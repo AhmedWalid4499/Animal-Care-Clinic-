@@ -12,10 +12,13 @@ import { downloadAttachment, serverUrl } from '../sync/engine';
 import { Badge, Field, Icon, MenuButton, OwnerCode, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { LabsTab } from './Labs';
+import { isImage, useImages } from './Documents';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 import { RxArchive } from '../components/RxArchive';
+import { RequestsTab } from '../components/RequestsTab';
+import { mimeOf } from '../lib/mime';
 
-type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'labs' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'labs' | 'requests' | 'files';
 
 export function PetRecord() {
   const { id = '' } = useParams();
@@ -47,6 +50,7 @@ export function PetRecord() {
             ...(canVisit ? [
               { icon: 'file', label: t('docs.reportButton'), onClick: () => nav(`/pets/${id}/report`) },
               { icon: 'clipboard', label: t('xray.button'), onClick: () => nav(`/pets/${id}/xray-request`) },
+              { icon: 'clipboard', label: t('labReq.button'), onClick: () => nav(`/pets/${id}/lab-request`) },
             ] : []),
             ...(pet.status === 'ACTIVE' ? [{ icon: 'edit', label: t('consent.button'), onClick: () => nav(`/pets/${id}/consent/new`) }] : []),
           ]}
@@ -91,7 +95,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'labs', 'files'] as Tab[]).map((k) => (
+        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'labs', 'requests', 'files'] as Tab[]).map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -103,6 +107,7 @@ export function PetRecord() {
         {tab === 'prescriptions' && <RxArchive petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
         {tab === 'labs' && <LabsTab petId={id} />}
+        {tab === 'requests' && <RequestsTab petId={id} active={pet.status === 'ACTIVE'} />}
         {tab === 'files' && <Files petId={id} />}
       </div>
     </div>
@@ -260,9 +265,27 @@ function WeightChart({ petId }: { petId: string }) {
   );
 }
 
+/** A document icon with its type on a coloured band, as file managers show them: red PDF, blue DOC, green XLS. */
+function DocIcon({ name }: { name: string }) {
+  const ext = (name.split('.').pop() ?? '').toLowerCase();
+  const label = ext === 'jpeg' ? 'JPG' : ext === 'docx' ? 'DOC' : ext === 'xlsx' ? 'XLS' : ext.slice(0, 4).toUpperCase() || 'FILE';
+  const colour = ext === 'pdf' ? '#d93025' : /^docx?$/.test(ext) ? '#2b579a' : /^xlsx?$|^csv$/.test(ext) ? '#217346' : /^(png|jpe?g|gif|webp|heic|bmp)$/.test(ext) ? '#8e44ad' : ext === 'dcm' ? '#2e6f73' : '#6b7280';
+  return (
+    <svg className="doc-icon" viewBox="0 0 48 60" aria-hidden="true">
+      <path d="M4 2h28l12 12v42a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2z" fill="var(--bg)" stroke="var(--rule-2)" strokeWidth="1.5" />
+      <path d="M32 2v10a2 2 0 002 2h10" fill="none" stroke="var(--rule-2)" strokeWidth="1.5" />
+      <rect x="0" y="34" width="40" height="15" rx="2" fill={colour} />
+      <text x="20" y="45" textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff" fontFamily="system-ui, sans-serif">{label}</text>
+    </svg>
+  );
+}
+
 function Files({ petId }: { petId: string }) {
   const { t, fmt, user, toast } = useApp();
   const files = useQuery(() => petAttachments(petId), [petId]);
+  // Previews only for pictures already on this computer (no downloads just to draw a tile).
+  const localImages = files.filter((a) => isImage(a) && !!get('SELECT 1 FROM attachment_blobs WHERE attachment_id = ?', [a.id]));
+  const thumbs = useImages(localImages, true);
   const consents = useQuery(() => petConsents(petId), [petId]);
   const nav = useNavigate();
   const [kind, setKind] = useState<AttachmentKind>('LAB');
@@ -300,8 +323,9 @@ function Files({ petId }: { petId: string }) {
         </Field>
         <button className="btn primary" style={{ alignSelf: 'flex-end' }} onClick={upload}><Icon name="file" /> {t('petRecord.upload')}</button>
       </div>
-      <ul className="list">
-        {files.length === 0 && <li className="empty">{t('petRecord.noFiles')}</li>}
+      {files.length === 0 && <p className="empty">{t('petRecord.noFiles')}</p>}
+      {/* Files side by side as document tiles (like large icons in Windows), not one wide row each (14 Nov 2026). */}
+      <ul className="file-grid">
         {files.map((a) => {
           // Added on another device: the bytes come from the clinic server the first time it is opened here.
           const here = !!get('SELECT 1 FROM attachment_blobs WHERE attachment_id = ?', [a.id]);
@@ -316,16 +340,17 @@ function Files({ petId }: { petId: string }) {
             else toast(t('petRecord.fileNotHere'));
           };
           return (
-            <li key={a.id} className="link" onClick={() => void open()}>
-              <Icon name="file" />
-              <div className="main-col">
-                <b>{a.file_name}</b>
-                <div className="sub">
-                  {t(`attachmentKind.${a.kind}`)} · {fmt.date(a.created_at)} · {Math.max(1, Math.round((a.size_bytes ?? 0) / 1024))} KB
-                  {!here && <> · ☁ {t('petRecord.onServer')}</>}
-                </div>
-              </div>
-              <span className="btn sm">{fetching === a.id ? '…' : t('common.open')}</span>
+            <li key={a.id}>
+              <button type="button" className="file-tile" title={a.file_name} onClick={() => void open()}>
+                <span className="file-thumb">
+                  {isImage(a) && thumbs[a.id] ? <img src={thumbs[a.id]!} alt="" /> : <DocIcon name={a.file_name} />}
+                  {fetching === a.id && <span className="file-busy">…</span>}
+                  {!here && <span className="file-cloud" title={t('petRecord.onServer')}>☁</span>}
+                </span>
+                <span className="file-name" dir="auto">{a.file_name}</span>
+                <span className="file-sub">{t(`attachmentKind.${a.kind}`)} · {fmt.date(a.created_at)}</span>
+                <span className="file-sub" dir="ltr">{Math.max(1, Math.round((a.size_bytes ?? 0) / 1024))} KB</span>
+              </button>
             </li>
           );
         })}
@@ -334,10 +359,6 @@ function Files({ petId }: { petId: string }) {
   );
 }
 
-function mimeOf(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return ({ pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', txt: 'text/plain', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dcm: 'application/dicom' } as Record<string, string>)[ext] ?? 'application/octet-stream';
-}
 
 /** Print / PDF summary of the pet record (A5, print CSS). */
 export function PetSummaryPrint() {

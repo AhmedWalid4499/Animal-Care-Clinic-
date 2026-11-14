@@ -45,6 +45,7 @@ users (clinic staff) ──< visits.vet_id, invoices.created_by
 | **admissions** (v12) | pet_id → pets, visit_id? → visits, admitted_at, reason, cage, vet_id → users, status `IN \| OUT`, discharged_at, discharge_note, user_id → users | A pet staying in the clinic (in-patient board). Admin + Doctor. |
 | **care_tasks** (v12) | admission_id → admissions, task, due_at, status `DUE \| DONE \| SKIPPED`, done_at, done_by → users, note | One row per treatment time (a repeating treatment is expanded when added). Assistants may only tick. |
 | **clinic_settings** | single row: name_en, name_ar, logo_url, phone, whatsapp, address, currency (EGP), locale_default, receipt_footer | Loaded once per request. |
+| **test_requests** (v17) | pet_id → pets, visit_id?, kind `XRAY \| LAB`, items (ticked keys, comma-separated), other, notes, status `REQUESTED \| DONE \| CANCELLED`, requested_by → users, requested_at | X-ray and lab requests given to the owner; never deleted. Lab test keys: `src/lib/lab-tests.json`. Shown on the owner page (not cancelled ones). |
 | **audit_log** | user_id, table_name, record_id, action `CREATE \| UPDATE \| DELETE \| LOGIN`, diff (jsonb), at | Who changed what. Append-only. |
 
 ## Indexes worth creating on day one

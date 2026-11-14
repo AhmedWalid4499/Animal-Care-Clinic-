@@ -176,6 +176,14 @@ main { padding: 20px 0 40px; }
 .tags span { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 2px 8px; color: var(--ink-2); }
 .drug .how { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
 
+/* requests */
+.req-tags span { font-size: 13px; }
+.xray-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.xg-item { display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: var(--ink-2); font-size: 13px; }
+.xg-item img, .xg-file { width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; border-radius: var(--radius-sm); }
+.xg-file { display: grid; place-items: center; background: var(--bg); color: var(--ink-3); }
+@media (max-width: 719px) { .tabs a span:not(.badge-n) { font-size: 10px; } }
+
 /* lab results */
 details.labday { border-top: 1px solid var(--rule); padding: 10px 0; }
 details.labday summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
@@ -244,12 +252,14 @@ footer.site b { color: var(--ink-2); }
     mail: 'M4 4h16v16H4zM4 6l8 7 8-7',
     pin: 'M12 22s-7-6.1-7-12a7 7 0 0114 0c0 5.9-7 12-7 12zM12 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
     shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+    eye: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 100-6 3 3 0 000 6z',
+    clip: 'M9 4h6v3H9zM9 5H6a1 1 0 00-1 1v14a1 1 0 001 1h12a1 1 0 001-1V6a1 1 0 00-1-1h-3M9 12h6M9 16h4',
     flask: 'M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 006 21h12a1.7 1.7 0 001.5-2.5L14 9V3M7.5 15h9',
     steth: 'M5 3v6a5 5 0 0010 0V3M10 14v2a5 5 0 0010 0v-2M20 11a2 2 0 100 4 2 2 0 000-4z',
     star: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
   };
-  const VIEWS = ['home', 'pets', 'appointments', 'prescriptions', 'details'];
-  const NAV_ICON = { home: 'home', pets: 'paw', appointments: 'calendar', prescriptions: 'pill', details: 'user' };
+  const VIEWS = ['home', 'pets', 'appointments', 'prescriptions', 'requests', 'details'];
+  const NAV_ICON = { home: 'home', pets: 'paw', appointments: 'calendar', prescriptions: 'pill', requests: 'clip', details: 'user' };
   const base = location.pathname.replace(/\\/+$/, '');
   let lang = null;
   try { lang = localStorage.getItem('owner-page-lang'); } catch (e) {}
@@ -387,7 +397,7 @@ footer.site b { color: var(--ink-2); }
         wa ? h('a', { href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), t('whatsappClinic')) : null)));
   }
   function tabs() {
-    const counts = { appointments: d.appointments.length, prescriptions: d.prescriptions.length, pets: d.pets.length };
+    const counts = { appointments: d.appointments.length, prescriptions: d.prescriptions.length, pets: d.pets.length, requests: (d.requests || []).length };
     return h('nav', { class: 'tabs', 'aria-label': clinicName() }, h('div', { class: 'wrap' },
       VIEWS.map((v) => h('a', { href: '#' + v, class: view() === v ? 'on' : null, 'aria-current': view() === v ? 'page' : null },
         icon(NAV_ICON[v]), h('span', null, t('nav.' + v)), counts[v] ? h('span', { class: 'badge-n' }, counts[v]) : null))));
@@ -572,6 +582,47 @@ footer.site b { color: var(--ink-2); }
     ];
   }
 
+  // ---- requests: X-ray and lab requests from the vet, and the pet's X-ray images
+  let reqPet = 'all';
+  function itemLabel(kind, key) {
+    if (kind === 'LAB') return (T().labTests || {})[key] || key;
+    const p = key.split('.');
+    if (p[0] === 'opt') return t('xray.opt.' + p[1]);
+    return t('xray.region.' + p[0]) + ': ' + t('xray.view.' + p[1]) + (p[2] ? ' (' + t(p[2] === 'L' ? 'xray.left' : 'xray.right') + ')' : '');
+  }
+  function requestCard(r) {
+    return h('article', { class: 'card req-card' },
+      h('div', { class: 'rxhead' },
+        h('b', null, fmtDate(r.requested_at)), h('span', { class: 'badge' }, r.pet_name),
+        h('span', { class: 'badge ' + (r.status === 'DONE' ? 'ok' : 'info') }, t('reqStatus.' + r.status)),
+        r.by ? h('span', { class: 'muted small' }, t('requestedBy', { name: r.by })) : null),
+      r.items.length ? h('div', { class: 'tags req-tags' }, r.items.map((k) => h('span', { dir: r.kind === 'LAB' ? 'ltr' : null }, itemLabel(r.kind, k)))) : null,
+      r.other ? h('div', { class: 'dx' }, h('span', null, t('otherTests')), h('b', null, r.other)) : null,
+      r.notes ? h('div', { class: 'dx' }, h('span', null, t('vetNotes')), h('b', null, r.notes)) : null);
+  }
+  function requestsView() {
+    const reqs = d.requests || [];
+    const xr = d.xrays || [];
+    if (!reqs.length && !xr.length) return [h('div', { class: 'card' }, h('div', { class: 'empty' }, h('div', { class: 'icobox' }, icon('clip')), t('noRequests')))];
+    const petIds = [...new Set([...reqs.map((r) => r.pet_id), ...xr.map((x) => x.pet_id)])];
+    if (reqPet !== 'all' && !petIds.includes(reqPet)) reqPet = 'all';
+    const mine = (x) => reqPet === 'all' || x.pet_id === reqPet;
+    const xrayReqs = reqs.filter((r) => r.kind === 'XRAY' && mine(r));
+    const labReqs = reqs.filter((r) => r.kind === 'LAB' && mine(r));
+    const imgs = xr.filter(mine);
+    return [
+      petIds.length > 1 ? h('div', { class: 'filters', role: 'group' },
+        h('button', { type: 'button', class: reqPet === 'all' ? 'on' : null, onclick: () => { reqPet = 'all'; render(); } }, t('allPets')),
+        petIds.map((id) => h('button', { type: 'button', class: reqPet === id ? 'on' : null, onclick: () => { reqPet = id; render(); } }, petName(id) || '—'))) : null,
+      xrayReqs.length ? [h('h2', { class: 'section-title' }, icon('clip'), t('xrayRequests')), xrayReqs.map(requestCard)] : null,
+      imgs.length ? [h('h2', { class: 'section-title' }, icon('eye'), t('xrayImages')),
+        h('div', { class: 'card xray-gallery' }, imgs.map((x) => h('a', { href: base + '/f/' + encodeURIComponent(x.id), target: '_blank', rel: 'noopener', class: 'xg-item' },
+          x.image ? h('img', { src: base + '/f/' + encodeURIComponent(x.id), alt: x.file_name, loading: 'lazy' }) : h('div', { class: 'xg-file' }, icon('download')),
+          h('span', null, fmtDate(x.at) + ' · ' + x.pet_name))))] : null,
+      labReqs.length ? [h('h2', { class: 'section-title' }, icon('flask'), t('labRequests')), labReqs.map(requestCard)] : null,
+    ];
+  }
+
   function detailsView() {
     const o = d.owner;
     const row = (ic, label, value, ltr) => (value ? h('li', null, h('div', { class: 'icobox' }, icon(ic)), h('div', null, h('span', null, label), h('b', ltr ? { class: 'ltr' } : null, value))) : null);
@@ -614,7 +665,7 @@ footer.site b { color: var(--ink-2); }
     if (!d) return;
     document.title = clinicName() + ' — ' + d.owner.full_name;
     const v = view();
-    const body = { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, details: detailsView }[v]();
+    const body = { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, requests: requestsView, details: detailsView }[v]();
     app.replaceChildren(...[
       topbar(),
       v === 'home' ? hero() : null,

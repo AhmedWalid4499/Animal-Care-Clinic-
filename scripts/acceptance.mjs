@@ -29,7 +29,7 @@ fs.mkdirSync(path.join(out, 'rtl'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-data-'));
 const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-export-'));
 const dbFile = path.join(dataDir, 'clinic.sqlite');
-const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'audit_log'];
+const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'audit_log'];
 const SQL = await initSqlJs();
 // The schema version a fresh or upgraded database must reach (src/db/schema.ts).
 const CURRENT_SCHEMA = fs.readFileSync('src/db/schema.ts', 'utf8').match(/SCHEMA_VERSION = (\d+)/)[1];
@@ -356,6 +356,8 @@ async function pdfOf(hash, name, size = 'A5') {
   }
   const x = await pdfOf(`#/pets/${pet}/xray-request`, 'xray-request-A5.pdf');
   check('xray-print', 'The X-ray request (every view in the menu) prints on one A5 page', x.pages === 1 && x.a5, `xray-request-A5.pdf: ${x.pages} page, ${x.size}`);
+  const lr = await pdfOf(`#/pets/${pet}/lab-request`, 'lab-request-A4.pdf', 'A4');
+  check('lab-request-print', 'The lab request (the clinic\'s whole test list) prints on one A4 page', lr.pages === 1 && lr.a4, `lab-request-A4.pdf: ${lr.pages} page, ${lr.size}`);
   const c = await pdfOf(`#/pets/${pet}/report`, 'case-report-A4.pdf', 'A4');
   check('case-report', 'The case report prints on A4 with the owner, the history and the diagnoses', c.pages >= 1 && c.a4 && (await win.locator('.case-report').innerText()).includes('AC-'), `case-report-A4.pdf: ${c.pages} page(s), ${c.size}`);
 }
@@ -375,7 +377,8 @@ async function pdfOf(hash, name, size = 'A5') {
     ['pet-new', `#/owners/${ownerId}/pets/new`], ['pet-timeline', `#/pets/${petId}?tab=timeline`], ['pet-vaccinations', `#/pets/${petId}?tab=vaccinations`],
     ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-edit', `#/pets/${petId}/edit`],
     ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
-    ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
+    ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`],
+    ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
@@ -449,6 +452,8 @@ await app.close();
   db.run('ALTER TABLE owners DROP COLUMN portal_token');
   db.run('DROP INDEX IF EXISTS owners_code');
   db.run('ALTER TABLE owners DROP COLUMN code');
+  // …nor saved X-ray / lab requests (schema v17).
+  db.run('DROP TABLE test_requests');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");

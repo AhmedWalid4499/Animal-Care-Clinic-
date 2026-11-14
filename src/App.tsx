@@ -23,7 +23,7 @@ import { Ward } from './screens/Ward';
 import { DrugsPage, PricesPage, TemplatesPage, VaccinesPage } from './components/Sections';
 import { useEffect, type ReactNode } from 'react';
 import { OwnerCardPrint } from './components/OwnerPage';
-import { CaseReport, LabReportPrint, XrayRequest } from './screens/Documents';
+import { CaseReport, LabReportPrint, RequestForm } from './screens/Documents';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
 
@@ -70,7 +70,9 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="pets/:id/certificate" element={<VaccinationCertificate />} />
           <Route path="pets/:id/labs/:date" element={<LabReportPrint />} />
           <Route path="pets/:id/report" element={<ClinicalOnly><CaseReport /></ClinicalOnly>} />
-          <Route path="pets/:id/xray-request" element={<ClinicalOnly><XrayRequest /></ClinicalOnly>} />
+          <Route path="pets/:id/xray-request" element={<ClinicalOnly><RequestForm kind="XRAY" /></ClinicalOnly>} />
+          <Route path="pets/:id/lab-request" element={<ClinicalOnly><RequestForm kind="LAB" /></ClinicalOnly>} />
+          <Route path="requests/:rid" element={<RequestForm />} />
           <Route path="pets/:id/consent/new" element={<ConsentNew />} />
           <Route path="consents/:id" element={<ConsentView />} />
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
