@@ -44,6 +44,10 @@ On the Mac, background mode (the bell → *Keep running in the menu bar and star
 - The first notification makes macOS ask for permission. If alerts never appear, allow Animal Care Clinic in **System Settings → Notifications**.
 - The first export may make macOS ask to let the app use the Documents folder; allow it.
 
+## Install on a Chromebook
+
+No download: the Chromebook uses the clinic server's web app, installed from Chrome. Open the clinic address in Chrome, sign in, and click **Install the app** (or the install icon at the end of the address bar). It then opens in its own window from the shelf, works offline, and updates itself from the server. Details and the Arabic steps for the clinic: [`docs/CHROMEBOOK.md`](docs/CHROMEBOOK.md).
+
 ## Updates
 
 Every merge to `main` publishes a new version to [Releases](https://github.com/AhmedWalid4499/Animal-Care-Clinic-/releases) (`.github/workflows/release.yml`, version `0.1.<run number>`). Installed apps on Windows and Mac pick it up by themselves:

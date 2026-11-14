@@ -6,6 +6,7 @@ import type { Locale } from '../db/types';
 import { isDesktop } from '../lib/platform';
 import { PageHead } from '../components/Layout';
 import { UpdatesSection } from '../components/Updates';
+import { ThisDeviceSection } from '../components/ThisDevice';
 import { ChangePasswordDialog } from '../components/Account';
 import { userRoles } from '../db/types';
 
@@ -18,6 +19,8 @@ export function MySettings() {
       <PageHead title={t('account.title')} sub={t('account.sub')} />
       {isDesktop ? (
         <UpdatesSection canChangeAuto={isAdmin} />
+      ) : __CLOUD__ ? (
+        <ThisDeviceSection />
       ) : (
         <div className="form-section">
           <h2>{t('updates.title')}</h2>

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/app';
 import { isDesktop, updates, type UpdateState } from '../lib/platform';
+import { reloadForUpdate, startWebUpdateChecks, useWebUpdate } from '../lib/webUpdate';
 
 export function useUpdateState(): UpdateState | null {
   const [st, setSt] = useState<UpdateState | null>(null);
@@ -20,7 +21,31 @@ export function useUpdateState(): UpdateState | null {
   return st;
 }
 
+/** Web app (Chromebook, phone, browser): a new version was deployed to the clinic server while the app was open. */
+function WebUpdateBanner() {
+  const { t } = useApp();
+  const st = useWebUpdate();
+  const [later, setLater] = useState(false);
+  useEffect(() => startWebUpdateChecks(), []);
+  if (later || st.status !== 'ready') return null;
+  return (
+    <div className="update-banner no-print" role="status">
+      <span>
+        <b>{t('updates.webReady')}</b> {t('updates.webReadyHint')}
+      </span>
+      <span className="row">
+        <button className="btn primary sm" onClick={() => void reloadForUpdate()}>{t('updates.reload')}</button>
+        <button className="btn ghost sm" onClick={() => setLater(true)}>{t('updates.later')}</button>
+      </span>
+    </div>
+  );
+}
+
 export function UpdateBanner() {
+  return __CLOUD__ ? <WebUpdateBanner /> : <DesktopUpdateBanner />;
+}
+
+function DesktopUpdateBanner() {
   const { t } = useApp();
   const st = useUpdateState();
   const [later, setLater] = useState(false);
@@ -61,6 +86,25 @@ export function UpdateBanner() {
  * a clear "Restart now" button (10 Nov 2026: updates used to be visible only under Settings → Data & backup).
  */
 export function SideUpdateStatus() {
+  return __CLOUD__ ? <SideWebUpdateStatus /> : <SideDesktopUpdateStatus />;
+}
+
+/** Web app (Chromebook, phone, browser): the version, or "New version · Reload" after a deploy. */
+function SideWebUpdateStatus() {
+  const { t, isAdmin } = useApp();
+  const nav = useNavigate();
+  const st = useWebUpdate();
+  if (st.status === 'ready') {
+    return <button type="button" className="side-update ready" onClick={() => void reloadForUpdate()}>⬆ {t('updates.sideWebReady')}</button>;
+  }
+  return (
+    <button type="button" className="side-update quiet" onClick={() => nav(isAdmin ? '/settings?tab=updates' : '/account')}>
+      {t('updates.sideVersion', { v: __APP_VERSION__ })}{st.status === 'none' ? ` · ${t('updates.sideUpToDate')}` : ''}
+    </button>
+  );
+}
+
+function SideDesktopUpdateStatus() {
   const { t, isAdmin } = useApp();
   const nav = useNavigate();
   const st = useUpdateState();
