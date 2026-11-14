@@ -894,6 +894,11 @@ await step('phase6: owner page', async () => {
   const pdfA5 = !!pdfBox && Math.abs(Number(pdfBox[1]) - 419.5) < 3 && Math.abs(Number(pdfBox[2]) - 595.3) < 3;
   if (pdfBuf.length) fs.writeFileSync(path.join(out, 'owner-xray-request.pdf'), pdfBuf);
   const pdfButton = await until(async () => (await phonePage.locator('.req-card .pdf-link').count()) > 0, 10_000, 300);
+  // The clinic's own page (14 Nov 2026), which the QR at the bottom left of every document opens.
+  const clinicRes = await fetch(`${new URL(url).origin}/clinic?lang=en`);
+  const clinicHtml = await clinicRes.text();
+  const clinicOk = clinicRes.status === 200 && clinicHtml.includes('https://ipn.eg/S/waleedelbourgi/instapay/8yJQ5M') && clinicHtml.includes('Dr. Waleed El-Bourgi') && clinicHtml.includes('Montasser St');
+  const docQr = labHtml.includes('class="sheet-qr"') && rxHtml.includes('class="sheet-qr"') && rxHtml.includes('<svg');
   const docPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await docPage.goto(new URL(reqHref, url).href);
   await docPage.waitForSelector('.sheet');
@@ -904,8 +909,8 @@ await step('phase6: owner page', async () => {
   await docPage.close();
   check('owner-documents', 'On the owner\'s page each request and prescription opens the document as the clinic prints it (logo, customer ID, address), to save as a PDF; only their own',
     !!reqHref && docLooks(labHtml) && ticked >= 2 && labHtml.includes('Bile acids') && rxRes?.status === 200 && docLooks(rxHtml) && rxHtml.includes(DRUG) && notTheirs === 404
-      && !!pdfReady.v && pdfOk && pdfPages === 1 && pdfA5 && !!pdfButton.v,
-    `Document button on the request card: ${!!reqHref}; lab request sheet with logo, customer ID and address: ${docLooks(labHtml)}, ${ticked} boxes ticked, other tests shown: ${labHtml.includes('Bile acids')}; prescription sheet → ${rxRes?.status}, logo/ID/address: ${docLooks(rxHtml)}, drug shown: ${rxHtml.includes(DRUG)}; someone else's visit → ${notTheirs}; X-ray request PDF made on laptop B and on the owner's page: ${!!pdfReady.v}, downloads as a PDF: ${pdfOk} (${pdfPages} page, A5: ${pdfA5}, ${pdfBuf.length} bytes), Download PDF button: ${!!pdfButton.v}`);
+      && !!pdfReady.v && pdfOk && pdfPages === 1 && pdfA5 && !!pdfButton.v && clinicOk && docQr,
+    `Document button on the request card: ${!!reqHref}; lab request sheet with logo, customer ID and address: ${docLooks(labHtml)}, ${ticked} boxes ticked, other tests shown: ${labHtml.includes('Bile acids')}; prescription sheet → ${rxRes?.status}, logo/ID/address: ${docLooks(rxHtml)}, drug shown: ${rxHtml.includes(DRUG)}; someone else's visit → ${notTheirs}; X-ray request PDF made on laptop B and on the owner's page: ${!!pdfReady.v}, downloads as a PDF: ${pdfOk} (${pdfPages} page, A5: ${pdfA5}, ${pdfBuf.length} bytes), Download PDF button: ${!!pdfButton.v}; clinic QR on the documents: ${docQr}; /clinic page (head, address, InstaPay): ${clinicOk}`);
 
   // Only an Admin may replace a printed code; the server refuses it from a Doctor.
   const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);

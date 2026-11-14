@@ -1,9 +1,8 @@
 // The owner's page (Phase 6): a private link on the clinic server, given to the owner as a QR code.
 // The page itself is served by server/portal.mjs; here staff create it, print the QR card, send the link,
 // and (Admin) replace or switch it off. Creating it is an ordinary owner edit, so it syncs like any other.
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import qrcode from 'qrcode-generator';
 import { useApp, useQuery } from '../lib/app';
 import { createOwnerPage, disableOwnerPage, getOwner, getSettings, ownerPets, replaceOwnerPage } from '../db/repo';
 import type { Owner } from '../db/types';
@@ -13,32 +12,8 @@ import { Confirm, Icon, WaButton, SheetAddress } from './ui';
 
 export const ownerPageUrl = (token: string, base = serverUrl()) => (base ? `${base}/o/${token}` : null);
 
-/** QR code as crisp SVG (one path; dark modules on white with the 4-module quiet zone scanners need). */
-export function QrCode({ text, size = 176, label }: { text: string; size?: number; label?: string }) {
-  const { d, n } = useMemo(() => {
-    const q = qrcode(0, 'M');
-    q.addData(text);
-    q.make();
-    const count = q.getModuleCount();
-    let path = '';
-    for (let r = 0; r < count; r++) {
-      for (let c = 0; c < count; c++) {
-        if (!q.isDark(r, c)) continue;
-        let run = 1;
-        while (c + run < count && q.isDark(r, c + run)) run++;
-        path += `M${c + 4} ${r + 4}h${run}v1h-${run}z`;
-        c += run - 1;
-      }
-    }
-    return { d: path, n: count + 8 };
-  }, [text]);
-  return (
-    <svg className="qr" width={size} height={size} viewBox={`0 0 ${n} ${n}`} role="img" aria-label={label} shapeRendering="crispEdges">
-      <rect width={n} height={n} fill="#fff" />
-      <path d={d} fill="#000" />
-    </svg>
-  );
-}
+import { QrCode } from './Qr';
+export { QrCode };
 
 /** Owner detail → "Owner page": QR, link, print card, WhatsApp, Admin replace / off. */
 export function OwnerPageSection({ owner }: { owner: Owner }) {
@@ -149,7 +124,7 @@ export function OwnerCardPrint() {
                 </div>
               </div>
               <div className="foot">{t('portal.cardPrivate')}</div>
-              <SheetAddress address={s.address} />
+              <SheetAddress address={s.address} qr={false} />
             </div>
           </div>
         </div>
