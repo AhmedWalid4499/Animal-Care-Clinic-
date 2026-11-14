@@ -7,7 +7,7 @@ import {
 } from '../db/repo';
 import { fromLocalInput, nowLocalInput } from '../lib/dates';
 import { platform } from '../lib/platform';
-import { Confirm, Dialog, Field, Icon, StatusBadge, WaButton } from '../components/ui';
+import { Confirm, Dialog, Field, Icon, StatusBadge, WaButton, SheetAddress } from '../components/ui';
 import { PricingTabs } from '../components/Sections';
 import { PageHead } from '../components/Layout';
 import { PAYMENT_METHODS, type InvoiceStatus, type PaymentMethod } from '../db/types';
@@ -360,7 +360,6 @@ export function InvoicePrint() {
           <div className="head">
             <div>
               <b style={{ fontSize: 15 }}>{locale === 'ar' ? s.name_ar : s.name_en}</b>
-              <div style={{ fontSize: 10 }}>{s.address}</div>
               {(s.phone || s.whatsapp) && <div style={{ fontSize: 10 }} className="ltr">{[...new Set([s.phone, s.whatsapp].filter(Boolean))].join(' · ')}</div>}
             </div>
             {s.logo_url && <img src={s.logo_url} alt="" />}
@@ -394,6 +393,7 @@ export function InvoicePrint() {
           </table>
           <div style={{ marginTop: 8, fontSize: 11 }}><b>{t(`invoiceStatus.${inv.status}`)}</b></div>
           {s.receipt_footer && <div className="foot">{s.receipt_footer}</div>}
+          <SheetAddress address={s.address} />
         </div>
       </div>
     </div>

@@ -17,7 +17,7 @@ import labTests from '../lib/lab-tests.json';
 import { ageParts } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Icon } from '../components/ui';
+import { Icon, SheetAddress } from '../components/ui';
 import { labFlag } from './Labs';
 
 const range = (r: Pick<LabResult, 'ref_low' | 'ref_high'>) =>
@@ -40,7 +40,13 @@ function PrintPage({ children, actions, onPrint }: { children: ReactNode; action
   );
 }
 
-/** Clinic name, address, phone and logo across the top of every document. */
+/** The clinic's address along the bottom of every document (14 Nov 2026: footer, not header). */
+function SheetFoot() {
+  const s = useQuery(getSettings);
+  return <SheetAddress address={s.address} />;
+}
+
+/** Clinic name, phone and logo across the top of every document (the address is in the footer). */
 function SheetHead() {
   const { locale } = useApp();
   const s = useQuery(getSettings);
@@ -48,7 +54,7 @@ function SheetHead() {
     <div className="head">
       <div>
         <b style={{ fontSize: 15 }}>{locale === 'ar' ? s.name_ar : s.name_en}</b>
-        <div style={{ fontSize: 10 }}>{s.address} {s.phone && <span className="ltr">· {s.phone}</span>}</div>
+        <div style={{ fontSize: 10 }}>{s.phone && <span className="ltr">{s.phone}</span>}</div>
       </div>
       {s.logo_url && <img src={s.logo_url} alt="" />}
     </div>
@@ -116,6 +122,7 @@ export function LabReportPrint() {
         {notes.map((n) => <p key={n} className="small">{n}</p>)}
         <div className="doc-sign"><div className="line" />{t('certificate.signature')}</div>
         <div className="foot">{t('docs.printed', { date: fmt.date(new Date().toISOString()) })}</div>
+        <SheetFoot />
       </div>
     </PrintPage>
   );
@@ -356,6 +363,7 @@ export function CaseReport() {
           <div><div className="line" />{t('certificate.signature')}</div>
         </div>
         <div className="foot">{t('docs.printed', { date: fmt.date(new Date().toISOString()) })}</div>
+        <SheetFoot />
       </div>
     </PrintPage>
   );
@@ -502,6 +510,7 @@ export function RequestForm({ kind: newKind }: { kind?: RequestKind }) {
         </div>
         <div className="doc-sign"><div className="line" />{t('certificate.signature')}</div>
         <div className="foot">{t(`${prefix}.foot`)}</div>
+        <SheetFoot />
       </div>
     </PrintPage>
   );

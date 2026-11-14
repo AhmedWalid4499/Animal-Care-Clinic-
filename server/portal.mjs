@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pageHtml } from './portal-page.mjs';
 import { fileBytes } from './files.mjs';
+import { clinicAddress } from './clinic.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
@@ -116,7 +117,7 @@ export async function ownerPageData(pool, owner) {
   const data = {
     clinic: {
       name_ar: settings.name_ar ?? null, name_en: settings.name_en ?? null, phone: settings.phone ?? null, whatsapp: settings.whatsapp ?? null,
-      address: settings.address ?? null, logo: imageOnly(settings.logo_url), locale: settings.locale_default === 'en' ? 'en' : 'ar',
+      address: clinicAddress(settings.address), logo: imageOnly(settings.logo_url), locale: settings.locale_default === 'en' ? 'en' : 'ar',
     },
     owner: { code: typeof owner.data.code === 'string' && /^AC-\d+$/.test(owner.data.code) ? owner.data.code : null, full_name: owner.data.full_name, phone: owner.data.phone, whatsapp: owner.data.whatsapp ?? null, email: owner.data.email ?? null, address: owner.data.address ?? null },
     pets: [...pets].sort((a, b) => status(a) - status(b) || byText('name')(a, b)).map((p) => {

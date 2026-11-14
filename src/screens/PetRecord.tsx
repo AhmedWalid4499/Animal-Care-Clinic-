@@ -9,7 +9,7 @@ import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Badge, Field, Icon, MenuButton, OwnerCode, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Badge, Field, Icon, MenuButton, OwnerCode, PetAlerts, PetAvatar, StatusBadge, WaButton, SheetAddress } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { LabsTab } from './Labs';
 import { isImage, useImages } from './Documents';
@@ -385,7 +385,7 @@ export function PetSummaryPrint() {
           <div className="head">
             <div>
               <b style={{ fontSize: 15 }}>{locale === 'ar' ? settings.name_ar : settings.name_en}</b>
-              <div style={{ fontSize: 10 }}>{settings.address} {settings.phone && <span className="ltr">· {settings.phone}</span>}</div>
+              <div style={{ fontSize: 10 }}>{settings.phone && <span className="ltr">{settings.phone}</span>}</div>
             </div>
             {settings.logo_url && <img src={settings.logo_url} alt="" />}
           </div>
@@ -417,6 +417,7 @@ export function PetSummaryPrint() {
             </tbody>
           </table>
           <div className="foot">{fmt.date(new Date().toISOString())}</div>
+          <SheetAddress address={settings.address} />
         </div>
       </div>
     </div>

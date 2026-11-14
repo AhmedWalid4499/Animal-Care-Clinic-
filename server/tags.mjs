@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inTx } from './db.mjs';
+import { clinicAddress } from './clinic.mjs';
 import { createFoundNotifications } from './notify.mjs';
 import { tagPageHtml } from './tag-page.mjs';
 
@@ -37,7 +38,7 @@ async function tagData(pool, pet) {
   const s = (await pool.query("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'clinic_settings' AND NOT deleted LIMIT 1", [pet.clinicId])).rows[0]?.data ?? {};
   const d = pet.data;
   return {
-    clinic: { name_ar: s.name_ar ?? null, name_en: s.name_en ?? null, phone: s.phone ?? null, whatsapp: s.whatsapp ?? null, address: s.address ?? null, logo: imageOnly(s.logo_url), locale: s.locale_default === 'en' ? 'en' : 'ar' },
+    clinic: { name_ar: s.name_ar ?? null, name_en: s.name_en ?? null, phone: s.phone ?? null, whatsapp: s.whatsapp ?? null, address: clinicAddress(s.address), logo: imageOnly(s.logo_url), locale: s.locale_default === 'en' ? 'en' : 'ar' },
     pet: {
       name: d.name, species: d.species, breed: d.breed ?? null, sex: d.sex, neutered: Number(d.is_neutered) === 1, color: d.color ?? null,
       microchip_no: d.microchip_no ?? null, photo: imageOnly(d.photo_url),

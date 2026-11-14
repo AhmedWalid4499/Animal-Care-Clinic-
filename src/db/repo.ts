@@ -7,6 +7,7 @@ import type {
   Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 import { ROLES, highestRole, userRoles } from './types';
+import { CLINIC, OLD_ADDRESS } from './seed';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
 const digits = (s: string) => s.replace(/\D/g, '');
@@ -88,7 +89,14 @@ const EMPTY_SETTINGS: ClinicSettings = {
   address: null, currency: 'EGP', locale_default: 'ar', receipt_footer: null,
 };
 /** Clinic settings; a device that has not downloaded its clinic yet gets neutral defaults. */
-export const getSettings = () => get<ClinicSettings>('SELECT * FROM clinic_settings WHERE id = 1') ?? EMPTY_SETTINGS;
+/**
+ * The clinic's street address (14 Nov 2026) wherever the settings still hold the old placeholder or nothing. A laptop
+ * linked to the clinic server keeps the server's settings, and the server replaces the placeholder only once it runs
+ * the new version, so documents read the address through here instead of waiting for that.
+ */
+const withAddress = (s: ClinicSettings): ClinicSettings =>
+  !s.address?.trim() || s.address.trim() === OLD_ADDRESS ? { ...s, address: CLINIC.address } : s;
+export const getSettings = () => withAddress(get<ClinicSettings>('SELECT * FROM clinic_settings WHERE id = 1') ?? EMPTY_SETTINGS);
 export function saveSettings(d: Partial<ClinicSettings>) {
   tx(() => {
     const before = getSettings();

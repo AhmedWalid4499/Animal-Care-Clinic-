@@ -6,7 +6,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { getConsent, getPet, getSettings, saveConsent } from '../db/repo';
 import { platform } from '../lib/platform';
-import { Field, Icon } from '../components/ui';
+import { Field, Icon, SheetAddress } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import ar from '../i18n/ar.json';
 import en from '../i18n/en.json';
@@ -162,7 +162,7 @@ export function ConsentView() {
             <div>
               <b style={{ fontSize: 15 }}>{settings.name_en}</b>
               <div dir="rtl" lang="ar" style={{ fontSize: 13, fontWeight: 600 }}>{settings.name_ar}</div>
-              <div style={{ fontSize: 10 }}>{settings.address} {settings.phone && <span className="ltr">· {settings.phone}</span>}</div>
+              <div style={{ fontSize: 10 }}>{settings.phone && <span className="ltr">{settings.phone}</span>}</div>
             </div>
             {settings.logo_url && <img src={settings.logo_url} alt="" />}
           </div>
@@ -194,6 +194,7 @@ export function ConsentView() {
               {c.user_name ? <div><Both k="consent.witness" /> {c.user_name}</div> : null}
             </div>
           </div>
+          <SheetAddress address={settings.address} />
         </div>
       </div>
     </div>
