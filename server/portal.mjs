@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { pageHtml } from './portal-page.mjs';
 import { fileBytes } from './files.mjs';
 import { clinicAddress } from './clinic.mjs';
+import { docPageHtml, prescriptionSheet, requestSheet } from './doc-page.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
@@ -166,6 +167,8 @@ export async function ownerPageData(pool, owner) {
     prescriptions: visits
       .map((v) => ({
         visit_id: String(v.id), pet_id: String(v.pet_id), pet_name: petName.get(String(v.pet_id)) ?? '', visited_at: v.visited_at, type: v.type, diagnosis: v.diagnosis ?? null,
+        // For the printable prescription (server/doc-page.mjs): the weight on the day and the next visit.
+        weight_kg: v.weight_kg != null ? Number(v.weight_kg) : null, follow_up_at: v.follow_up_at ?? null,
         vet_name: v.vet_id ? vets.get(String(v.vet_id)) ?? null : null,
         items: rx.filter((r) => String(r.visit_id) === String(v.id)).sort(byText('created_at'))
           .map((r) => ({ drug: r.drug, dose: r.dose ?? null, frequency: r.frequency ?? null, duration_days: r.duration_days ?? null, instructions: r.instructions ?? null })),
@@ -282,7 +285,7 @@ export async function handleOwnerPage(pool, req, res, url) {
     fs.createReadStream(file).pipe(res);
     return true;
   }
-  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics|\/f\/([^/]+))?\/?$/.exec(p);
+  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics|\/f\/([^/]+)|\/doc\/(rx|req)\/([^/]+))?\/?$/.exec(p);
   if (!m) return false;
   if (req.method !== 'GET' && req.method !== 'HEAD') return notFound(res);
   const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
@@ -311,6 +314,29 @@ export async function handleOwnerPage(pool, req, res, url) {
     const type = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', pdf: 'application/pdf' }[ext] ?? 'application/octet-stream';
     res.writeHead(200, { ...baseHeaders, 'Content-Type': type, 'Content-Length': bytes.length, 'Cache-Control': 'private, max-age=3600', 'Content-Disposition': `inline; filename="${encodeURIComponent(x.file_name)}"` });
     res.end(req.method === 'HEAD' ? undefined : bytes);
+    return true;
+  }
+  // A prescription or an X-ray / lab request as the clinic prints it (logo, customer ID, address…), to save as a PDF.
+  if (sub.startsWith('/doc/')) {
+    const id = decodeURIComponent(m[6]);
+    const lang = url.searchParams.get('lang') === 'en' ? 'en' : url.searchParams.get('lang') === 'ar' ? 'ar' : d.clinic.locale;
+    const rx = m[5] === 'rx' ? d.prescriptions.find((v) => v.visit_id === id) : null;
+    const rq = m[5] === 'req' ? (d.requests || []).find((r) => r.id === id) : null;
+    if (!rx && !rq) return notFound(res);
+    const T = TEXT[lang];
+    const title = rx ? `${T.docRx} — ${rx.pet_name}` : `${rq.kind === 'LAB' ? T.labRequests : T.xrayRequests} — ${rq.pet_name}`;
+    const other = lang === 'ar' ? 'en' : 'ar';
+    const nonce = crypto.randomBytes(16).toString('base64');
+    res.writeHead(200, {
+      ...baseHeaders, 'Content-Type': 'text/html; charset=utf-8',
+      'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+    });
+    res.end(req.method === 'HEAD' ? undefined : docPageHtml({
+      nonce, lang, title,
+      sheet: rx ? prescriptionSheet(d, rx, lang) : requestSheet(d, rq, lang),
+      back: `/o/${token}#${rx ? 'prescriptions' : 'requests'}`,
+      other: { lang: other, label: other === 'en' ? 'English' : 'عربي', href: `/o/${token}/doc/${m[5]}/${encodeURIComponent(id)}?lang=${other}` },
+    }));
     return true;
   }
   if (sub === '/manifest.webmanifest') {

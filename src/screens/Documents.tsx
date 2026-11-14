@@ -14,6 +14,7 @@ import {
 } from '../db/repo';
 import type { Attachment, LabResult, RequestKind } from '../db/types';
 import labTests from '../lib/lab-tests.json';
+import xrayMenu from '../lib/xray-menu.json';
 import { ageParts } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { downloadAttachment, serverUrl } from '../sync/engine';
@@ -373,17 +374,8 @@ export function CaseReport() {
 
 // ---------------------------------------------------------------- X-ray and lab requests (saved, schema v17)
 /** Regions and views on the X-ray request; limbs have a left / right box each. Labels in src/i18n (xray.*). */
-export const XRAY_MENU: { region: string; views: string[]; sides?: boolean }[] = [
-  { region: 'thorax', views: ['latR', 'latL', 'vd', 'dv'] },
-  { region: 'abdomen', views: ['lat', 'vd'] },
-  { region: 'skull', views: ['lat', 'dv', 'openMouth', 'dental', 'bulla'] },
-  { region: 'spine', views: ['cervical', 'thoracic', 'lumbar', 'lumbosacral'] },
-  { region: 'pelvis', views: ['vdExtended', 'vdFrog', 'lat'] },
-  { region: 'forelimb', views: ['shoulder', 'humerus', 'elbow', 'radiusUlna', 'carpus', 'paw'], sides: true },
-  { region: 'hindlimb', views: ['hip', 'femur', 'stifle', 'tibia', 'tarsus', 'paw'], sides: true },
-  { region: 'other', views: ['wholeBody', 'contrast', 'comparison'] },
-];
-const XRAY_OPTIONS = ['sedation', 'urgent', 'repeat'];
+export const XRAY_MENU: { region: string; views: string[]; sides?: boolean }[] = xrayMenu.regions;
+const XRAY_OPTIONS: string[] = xrayMenu.options;
 /** The lab tests, from the clinic's own request sheet (src/lib/lab-tests.json; test names stay in English). */
 export const LAB_GROUPS = labTests.groups;
 const LAB_LABEL = new Map(LAB_GROUPS.flatMap((g) => g.tests.map((x) => [x.key, x.label] as const)));

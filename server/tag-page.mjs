@@ -160,7 +160,7 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
       alertSection(),
       h('section', { class: 'card' },
         h('h2', null, t('clinicTitle')),
-        h('p', { class: 'muted' }, clinicName() + (d.clinic.address ? ' · ' + d.clinic.address : '')),
+        h('p', { class: 'muted' }, clinicName(), d.clinic.address ? [' · ', h('span', { dir: 'auto' }, d.clinic.address)] : null),
         d.clinic.phone ? h('a', { class: 'btn', href: tel(d.clinic.phone) }, '📞 ', t('callClinic')) : null,
         d.clinic.address ? h('a', { class: 'btn directions', href: directionsUrl(d.clinic.address), target: '_blank', rel: 'noopener noreferrer' }, '📍 ', t('directions')) : null),
       h('p', { class: 'muted' }, t('privacy')),
