@@ -218,6 +218,15 @@ How Phase 5 is built:
 
 Decided (14 Nov): **Dr. Waleed approved the change request.** The owner sees prescriptions **and diagnoses**, not the vet's notes; the page needs no password (the QR is the key, like a house key: replace it when lost); each owner keeps the same QR for good; pets that died or moved stay on the page, greyed.
 
+## Change requests of 14 Nov 2026 (Ahmed)
+
+| Asked for | Built | Sync notes |
+|---|---|---|
+| A unique, searchable, clickable customer ID that appears on the prescription | `owners.code` `AC-00001` (schema v16), on every list, document and the owner page | Numbered by the server like invoices (`TMP-…` offline); existing owners back-filled by the server at start-up; refused if anyone tries to change it |
+| Lab results as a printable document (logo, owner name and ID, pet, age, sex, results), and on the owner page | Lab report A5 per test day; owner page → Pets → Lab results (high / low flagged) | `lab_results` read by `server/portal.mjs` (index `rows_by_pet_labs`) |
+| Case report for the doctors, A4, with history, diagnoses and attached X-rays / pictures, and the owner's data | Pet → Print & forms → Case report (A4) | Images not on the device yet are fetched from the server (`downloadAttachment`) |
+| X-ray request, A5, with boxes to tick and space to write | Pet → Print & forms → X-ray request | Printed only; nothing new is stored |
+
 ## Scope impact (SCOPE §10)
 
 These are outside SCOPE §4, so they are change requests, quoted at list price and waived at Dr. Waleed's discretion:
@@ -229,6 +238,7 @@ These are outside SCOPE §4, so they are change requests, quoted at list price a
 - **Phase 5:** the pre-assessment step (a new workflow), device management, and invite / password reset.
 - **Hosting under Ahmed's account** instead of Dr. Waleed's (§4 and §8).
 - **Phase 6:** the owner page is the "owner-facing portal" SCOPE §5 puts in v2 (read-only, no booking); the prescription archive is a new view of data already in scope.
+- **14 Nov:** customer ID, lab report, case report and X-ray request (one new column, three new documents).
 
 The rest moves the project back towards the scope: the phone install (§4, §7.8), Railway hosting in the EU (§8), and the nightly backup (§7.7).
 

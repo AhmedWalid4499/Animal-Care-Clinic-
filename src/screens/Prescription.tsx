@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { getPet, getSettings, getTemplate, getVisit, lastWeight, listDrugs, templateRx, type PetOption } from '../db/repo';
+import { getPet, getSettings, getTemplate, getVisit, lastWeight, listDrugs, shownCode, templateRx, type PetOption } from '../db/repo';
 import { calcDose, doseText, findDrug } from '../lib/dose';
 import { platform } from '../lib/platform';
 import { Field, Icon, PetPicker, WaButton } from '../components/ui';
@@ -68,6 +68,7 @@ export function PrescriptionPrint() {
             <span>{L('rxSheet.pet')}: <b>{pet.name}</b> ({L(`species.${pet.species}`)})</span>
             {visit.weight_kg != null && <span>{L('visits.weight')}: <b className="ltr">{visit.weight_kg}</b></span>}
             <span>{L('rxSheet.owner')}: <b>{pet.owner_name}</b></span>
+            {shownCode(pet.owner_code) && <span>{L('owners.code')}: <b className="ltr">{pet.owner_code}</b></span>}
             <span>{L('common.date')}: <b>{dateIn(lang, visit.visited_at)}</b></span>
             {visit.vet_name && <span>{L('rxSheet.vet')}: <b>{visit.vet_name}</b></span>}
           </div>

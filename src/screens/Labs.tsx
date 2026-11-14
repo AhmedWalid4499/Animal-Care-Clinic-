@@ -2,6 +2,7 @@
 // reference range used, flagged high / low, and a trend chart per value over time. Admins and Doctors record them.
 // No reference ranges are built in (like doses, they are the clinic's): each row remembers the last unit and range used.
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useApp, useQuery } from '../lib/app';
 import { getPet, knownAnalytes, petLabResults, saveLabResults, updateLabResult, type LabInputRow } from '../db/repo';
@@ -16,6 +17,7 @@ const range = (r: Pick<LabResult, 'ref_low' | 'ref_high'>) =>
 
 export function LabsTab({ petId }: { petId: string }) {
   const { t, fmt, canVisit } = useApp();
+  const nav = useNavigate();
   const rows = useQuery(() => petLabResults(petId), [petId]);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<LabResult | null>(null);
@@ -40,7 +42,10 @@ export function LabsTab({ petId }: { petId: string }) {
       {groups.length === 0 && <p className="empty">{t('labs.none')}</p>}
       {groups.map((g) => (
         <section key={g.key} className="section lab-group">
-          <header><h2>{fmt.date(g.taken_at)}{g.panel ? ` · ${g.panel}` : ''}</h2><span className="count">{g.rows.length}</span></header>
+          <header>
+            <h2>{fmt.date(g.taken_at)}{g.panel ? ` · ${g.panel}` : ''} <span className="count">{g.rows.length}</span></h2>
+            <button type="button" className="btn ghost sm lab-print" onClick={() => nav(`/pets/${petId}/labs/${g.taken_at}`)}><Icon name="print" /> {t('docs.labPrint')}</button>
+          </header>
           <table className="t compact labs">
             <thead><tr><th>{t('labs.analyte')}</th><th className="r">{t('labs.value')}</th><th>{t('labs.unit')}</th><th>{t('labs.range')}</th><th /></tr></thead>
             <tbody>

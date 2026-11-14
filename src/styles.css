@@ -640,3 +640,69 @@ b.neg { color: var(--bad); }
 /* Prescription archive */
 .rx-archive .seg { flex-wrap: wrap; }
 .rx-archive .tl > li { padding: 12px 0; }
+
+/* Customer ID (schema v16): a chip that opens the customer */
+.owner-code { display: inline-block; font-size: 12px; font-weight: 600; line-height: 1.6; padding: 0 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); text-decoration: none; white-space: nowrap; vertical-align: middle; }
+a.owner-code:hover { text-decoration: underline; }
+.owner-code.pending { background: var(--bg-2); color: var(--ink-3); font-weight: 400; }
+
+/* Documents (14 Nov 2026): lab report A5, case report A4, X-ray request A5 */
+.sheet.a4 { width: 210mm; min-height: 297mm; padding: 14mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+.doc .doc-title { text-align: center; font-size: 15pt; margin: 4px 0 10px; }
+.doc .doc-facts { display: flex; flex-wrap: wrap; gap: 3px 16px; font-size: 10pt; margin-bottom: 8px; }
+.doc h3 { font-size: 11.5pt; margin: 14px 0 4px; padding-bottom: 2px; border-bottom: 1.5px solid #111; }
+.doc .doc-block h3 { border-bottom: 0; margin: 10px 0 2px; font-size: 10.5pt; }
+.doc tr.flag td { font-weight: 600; }
+.doc tr.flag td b { text-decoration: underline; }
+.doc .doc-sign { margin-top: 24px; font-size: 9pt; width: 60mm; margin-inline-start: auto; text-align: center; }
+.doc .doc-sign .line { border-bottom: 1px solid #111; height: 14mm; margin-bottom: 3px; }
+.doc .doc-sign.wide { width: auto; display: flex; justify-content: space-between; align-items: flex-end; text-align: start; gap: 16px; }
+.doc .doc-sign.wide > div:last-child { width: 60mm; text-align: center; }
+.case-report { font-size: 10pt; }
+.case-report .kv-table td:nth-child(odd) { color: #555; width: 18%; }
+.case-report .doc-dx { font-weight: 600; margin: 2px 0 0; }
+.case-report .visit-block { border-bottom: 1px solid #ccc; padding: 6px 0 8px; break-inside: avoid; }
+.case-report .visit-head { font-size: 10.5pt; margin-bottom: 2px; }
+.case-report .visit-body p { margin: 2px 0; }
+.case-report .visit-body p > span:first-child { color: #555; }
+.case-report .visit-body table { margin-top: 4px; font-size: 9.5pt; }
+.case-report .doc-images { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin: 6px 0 10px; }
+.case-report figure { margin: 0; break-inside: avoid; text-align: center; }
+.case-report figure img { max-width: 100%; max-height: 110mm; object-fit: contain; border: 1px solid #ddd; background: #000; }
+.case-report figcaption { font-size: 8.5pt; color: #555; margin-top: 2px; }
+.case-report .img-missing { border: 1px dashed #999; padding: 20mm 4mm; font-size: 9pt; color: #555; }
+.report-options { gap: 10px; }
+.report-options label { display: inline-flex; align-items: center; gap: 6px; }
+.report-options input[type=date] { min-height: 36px; width: auto; }
+/* Three columns, filled top to bottom, so the whole menu fits one A5 page with room to write. */
+.xray-sheet { font-size: 9pt; }
+.xray-sheet .doc-facts { font-size: 9pt; margin-bottom: 4px; }
+.xray-sheet .doc-title { margin: 2px 0 6px; font-size: 13pt; }
+.xray-grid { column-count: 3; column-gap: 8px; margin-top: 4px; }
+.xray-grid fieldset { border: 1px solid #bbb; border-radius: 4px; padding: 1px 5px 3px; margin: 0 0 5px; break-inside: avoid; display: block; width: 100%; }
+.xray-grid legend { font-weight: 600; font-size: 8.5pt; padding: 0 3px; }
+.xbox { display: flex; align-items: center; gap: 4px; font-size: 8pt; line-height: 1.3; padding: 0.5px 0; cursor: pointer; }
+.xbox input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.xbox .sq { width: 9px; height: 9px; border: 1.2px solid #111; display: inline-grid; place-items: center; font-size: 9px; line-height: 1; flex: none; }
+.xbox.on .sq { background: #111; color: #fff; }
+.xbox input:focus-visible + .sq { outline: 2px solid var(--accent); outline-offset: 1px; }
+.xside { display: flex; align-items: center; gap: 4px; font-size: 8pt; line-height: 1.3; }
+.xside-name { flex: 1; }
+.xray-opts { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 2px 0 2px; }
+.xray-opts .xbox { font-size: 9pt; }
+.xray-write .xw-label { font-weight: 600; font-size: 9pt; margin-top: 5px; }
+.xray-write textarea { width: 100%; font: inherit; font-size: 10pt; color: #111; background: #fff; border: 1px solid #bbb; border-radius: 4px; padding: 4px 6px; }
+.xray-write .lines { min-height: 8mm; border-bottom: 1px solid #999; white-space: pre-wrap; font-size: 10pt; background-image: repeating-linear-gradient(transparent 0 8.4mm, #bbb 8.4mm 8.6mm); }
+.xray-write .lines.tall { min-height: 17mm; }
+.xray-sheet .doc-sign { margin-top: 4px; }
+.xray-sheet .doc-sign .line { height: 8mm; }
+.xray-sheet .foot { margin-top: 6px; padding-top: 3px; }
+@media print {
+  .sheet.a4 { width: 100%; min-height: 0; padding: 0; box-shadow: none; zoom: 1; }
+  .xbox .sq { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+/* Phones only: on paper the page is narrower than 640 px too, and the menu must keep its three columns there. */
+@media screen and (max-width: 640px) {
+  .sheet-wrap { overflow-x: auto; }
+  .xray-grid { column-count: 2; }
+}

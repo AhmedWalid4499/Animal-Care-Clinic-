@@ -147,6 +147,20 @@ export function WaButton({ phone, text, onSent, label, small }: { phone: string 
 }
 
 /** Pet search-and-pick used by New visit, appointments and invoices. */
+/**
+ * The customer ID as a chip that opens the customer (Owner detail). A temporary ID (made offline, not synced yet)
+ * shows as "ID after sync".
+ */
+export function OwnerCode({ code, ownerId, plain }: { code: string | null | undefined; ownerId?: string; plain?: boolean }) {
+  const { t } = useApp();
+  if (!code) return null;
+  if (code.startsWith('TMP-')) return <span className="owner-code pending" title={t('owners.codePendingHint')}>{t('owners.codePending')}</span>;
+  if (plain || !ownerId) return <span className="owner-code ltr">{code}</span>;
+  return (
+    <a className="owner-code ltr" href={`#/owners/${ownerId}`} title={t('owners.code')} onClick={(e) => e.stopPropagation()}>{code}</a>
+  );
+}
+
 export function PetPicker({ value, onChange, autoFocus }: { value: PetOption | null; onChange: (p: PetOption | null) => void; autoFocus?: boolean }) {
   const { t } = useApp();
   const [q, setQ] = useState('');
@@ -157,7 +171,7 @@ export function PetPicker({ value, onChange, autoFocus }: { value: PetOption | n
       <div className="chosen">
         <span aria-hidden>{speciesEmoji[value.species]}</span>
         <div style={{ flex: 1 }}>
-          <b>{value.name}</b> <span className="muted small">· {value.owner_name} · <span className="ltr">{value.owner_phone}</span></span>
+          <b>{value.name}</b> <span className="muted small">· {value.owner_name} · <span className="ltr">{value.owner_phone}</span></span> <OwnerCode code={value.owner_code} plain />
         </div>
         <button type="button" className="btn ghost sm" onClick={() => onChange(null)}>{t('common.edit')}</button>
       </div>
@@ -175,7 +189,7 @@ export function PetPicker({ value, onChange, autoFocus }: { value: PetOption | n
             <button type="button" key={p.id} onClick={() => onChange(p)} className={p.status !== 'ACTIVE' ? 'greyed' : ''}>
               <span aria-hidden>{speciesEmoji[p.species]}</span>
               <span style={{ flex: 1 }}>
-                <b>{p.name}</b> <span className="muted small">· {p.owner_name}</span>
+                <b>{p.name}</b> <span className="muted small">· {p.owner_name}</span> <OwnerCode code={p.owner_code} plain />
               </span>
               <span className="muted small ltr">{p.owner_phone}</span>
             </button>

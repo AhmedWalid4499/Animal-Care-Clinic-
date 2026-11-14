@@ -48,6 +48,8 @@ export interface Owner {
   national_id: string | null; notes: string | null; status: 'ACTIVE' | 'ARCHIVED'; created_at: string;
   /** Secret part of the owner page link (QR code); null = the owner has no page. Schema v6. */
   portal_token: string | null;
+  /** Customer ID, e.g. AC-00012 (schema v16). TMP-… until the clinic server gives the real one. */
+  code: string | null;
 }
 export interface Pet {
   id: string; owner_id: string; name: string; species: Species; breed: string | null; sex: Sex; is_neutered: number;

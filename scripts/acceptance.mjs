@@ -315,22 +315,23 @@ check('S4-template', 'Spreadsheet template matches import/TEMPLATE.md', JSON.str
 }
 
 // ------------------------------------------------------------------ 6. A5 PDFs
-async function pdfOf(hash, name) {
+async function pdfOf(hash, name, size = 'A5') {
   await go(win, hash);
-  await win.waitForSelector('.sheet.a5');
+  await win.waitForSelector(size === 'A4' ? '.sheet.a4' : '.sheet.a5');
   await sleep(400);
-  const b64 = await app.evaluate(async ({ BrowserWindow }) => {
+  const b64 = await app.evaluate(async ({ BrowserWindow }, pageSize) => {
     const w = BrowserWindow.getAllWindows()[0];
-    const pdf = await w.webContents.printToPDF({ pageSize: 'A5', printBackground: true, preferCSSPageSize: true });
+    const pdf = await w.webContents.printToPDF({ pageSize, printBackground: true, preferCSSPageSize: true });
     return pdf.toString('base64');
-  });
+  }, size);
   const buf = Buffer.from(b64, 'base64');
   fs.writeFileSync(path.join(out, name), buf);
   const text = buf.toString('latin1');
   const pages = (text.match(/\/Type\s*\/Page(?!s)/g) || []).length;
   const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
   const a5 = box && Math.abs(Number(box[1]) - 419.5) < 3 && Math.abs(Number(box[2]) - 595.3) < 3;
-  return { pages, a5, size: box ? `${Math.round(box[1])}×${Math.round(box[2])} pt` : 'unknown' };
+  const a4 = box && Math.abs(Number(box[1]) - 595.3) < 3 && Math.abs(Number(box[2]) - 841.9) < 3;
+  return { pages, a5, a4, size: box ? `${Math.round(box[1])}×${Math.round(box[2])} pt` : 'unknown' };
 }
 {
   const db = openDbFile();
@@ -347,6 +348,16 @@ async function pdfOf(hash, name) {
     const p = await pdfOf(`#/visits/${rxVisit}/prescription`, 'prescription-A5.pdf');
     check('rx-print', 'A past prescription reprints on one A5 page', p.pages === 1 && p.a5, `prescription-A5.pdf: ${p.pages} page, ${p.size}`);
   }
+  // 14 Nov 2026: lab report and X-ray request (A5, one page each), case report (A4).
+  const labDay = db.exec(`SELECT taken_at FROM lab_results WHERE pet_id = '${pet}' ORDER BY taken_at DESC LIMIT 1`)[0]?.values[0][0];
+  if (labDay) {
+    const l = await pdfOf(`#/pets/${pet}/labs/${labDay}`, 'lab-report-A5.pdf');
+    check('lab-print', 'A lab report prints on one A5 page with the customer ID', l.pages === 1 && l.a5 && (await win.locator('.lab-sheet').innerText()).includes('AC-'), `lab-report-A5.pdf: ${l.pages} page, ${l.size}`);
+  }
+  const x = await pdfOf(`#/pets/${pet}/xray-request`, 'xray-request-A5.pdf');
+  check('xray-print', 'The X-ray request (every view in the menu) prints on one A5 page', x.pages === 1 && x.a5, `xray-request-A5.pdf: ${x.pages} page, ${x.size}`);
+  const c = await pdfOf(`#/pets/${pet}/report`, 'case-report-A4.pdf', 'A4');
+  check('case-report', 'The case report prints on A4 with the owner, the history and the diagnoses', c.pages >= 1 && c.a4 && (await win.locator('.case-report').innerText()).includes('AC-'), `case-report-A4.pdf: ${c.pages} page(s), ${c.size}`);
 }
 
 // ------------------------------------------------------------------ 7. Arabic RTL pass
@@ -363,7 +374,8 @@ async function pdfOf(hash, name) {
     ['dashboard', '#/'], ['owners', '#/owners'], ['owner-new', '#/owners/new'], ['owner-detail', `#/owners/${ownerId}`],
     ['pet-new', `#/owners/${ownerId}/pets/new`], ['pet-timeline', `#/pets/${petId}?tab=timeline`], ['pet-vaccinations', `#/pets/${petId}?tab=vaccinations`],
     ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-edit', `#/pets/${petId}/edit`],
-    ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
+    ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
+    ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
@@ -433,8 +445,10 @@ await app.close();
   // …nor the in-patient board (schema v12).
   db.run('DROP TABLE care_tasks');
   db.run('DROP TABLE admissions');
-  // …nor the owner page link (schema v15).
+  // …nor the owner page link (schema v15), nor customer IDs (schema v16).
   db.run('ALTER TABLE owners DROP COLUMN portal_token');
+  db.run('DROP INDEX IF EXISTS owners_code');
+  db.run('ALTER TABLE owners DROP COLUMN code');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
@@ -453,6 +467,9 @@ const afterRelaunch = counts(openDbFile());
     const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
     const roles = db2.exec('SELECT role, COUNT(*) FROM users GROUP BY role')[0].values.map((r) => `${r[0]}×${r[1]}`).join(', ');
     const settingsLink = await win.locator('.nav a[href="#/settings"]').count();
+    const noId = db2.exec("SELECT COUNT(*) FROM owners WHERE code IS NULL OR code NOT LIKE 'AC-%'")[0].values[0][0];
+    const ids = db2.exec('SELECT COUNT(*), COUNT(DISTINCT code) FROM owners')[0].values[0];
+    check('upgrade-codes', 'Updating gives every existing owner a customer ID, all different', noId === 0 && ids[0] === ids[1], `owners without an ID: ${noId}; ${ids[1]} different IDs for ${ids[0]} owners`);
     check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === CURRENT_SCHEMA && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
       `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
   }

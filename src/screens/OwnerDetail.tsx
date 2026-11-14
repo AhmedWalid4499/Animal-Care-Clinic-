@@ -4,7 +4,7 @@ import { useApp, useQuery } from '../lib/app';
 import { getOwner, getSettings, ownerBalance, ownerInvoices, ownerPets, setOwnerStatus } from '../db/repo';
 import { ageParts } from '../lib/dates';
 import { telUrl } from '../lib/whatsapp';
-import { Confirm, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Confirm, Icon, OwnerCode, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { OwnerPageSection } from '../components/OwnerPage';
 import { RxArchive } from '../components/RxArchive';
@@ -32,6 +32,7 @@ export function OwnerDetail() {
       </PageHead>
 
       <div className="facts" style={{ marginTop: 0 }}>
+        <div><span>{t('owners.code')}</span><b><OwnerCode code={owner.code} plain /></b></div>
         <div><span>{t('owners.phone')}</span><b className="ltr">{owner.phone}</b></div>
         <div><span>{t('owners.whatsapp')}</span><b className="ltr">{owner.whatsapp || owner.phone}</b></div>
         {owner.email && <div><span>{t('owners.email')}</span><b className="ltr">{owner.email}</b></div>}

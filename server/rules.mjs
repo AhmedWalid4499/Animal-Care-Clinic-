@@ -36,6 +36,8 @@ export function refuse(role, change, before, userId) {
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
   if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
+  // A customer ID is given once (by the server) and never changes, not even by an Admin: it is printed on documents.
+  if (tbl === 'owners' && 'code' in cols && typeof before?.code === 'string' && /^AC-\d+$/.test(before.code) && cols.code !== before.code) return 'a customer ID never changes';
   // Stock movements are a log: never changed afterwards. Front desk and vets record sales on invoices; restocking
   // and count corrections are the Admin's.
   if (tbl === 'stock_moves' && before) return 'stock movements are append-only';

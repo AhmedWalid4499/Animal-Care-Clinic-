@@ -4,12 +4,12 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useApp, useQuery } from '../lib/app';
 import {
   addAttachment, getAttachmentBytes, getPet, getSettings, lastWeight, markVaccinationReminded, petAppointments, petAttachments,
-  petVaccinations, petVisits, petWeights, visitInvoice, petConsents } from '../db/repo';
+  petVaccinations, petVisits, petWeights, visitInvoice, petConsents, shownCode } from '../db/repo';
 import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Badge, Field, Icon, MenuButton, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Badge, Field, Icon, MenuButton, OwnerCode, PetAlerts, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { LabsTab } from './Labs';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
@@ -44,6 +44,10 @@ export function PetRecord() {
           items={[
             { icon: 'print', label: t('petRecord.printSummary'), onClick: () => nav(`/pets/${id}/print`) },
             { icon: 'print', label: t('certificate.button'), onClick: () => nav(`/pets/${id}/certificate`) },
+            ...(canVisit ? [
+              { icon: 'file', label: t('docs.reportButton'), onClick: () => nav(`/pets/${id}/report`) },
+              { icon: 'clipboard', label: t('xray.button'), onClick: () => nav(`/pets/${id}/xray-request`) },
+            ] : []),
             ...(pet.status === 'ACTIVE' ? [{ icon: 'edit', label: t('consent.button'), onClick: () => nav(`/pets/${id}/consent/new`) }] : []),
           ]}
         />
@@ -75,7 +79,7 @@ export function PetRecord() {
             <div><span>{t('pets.color')}</span><b>{pet.color || '—'}</b></div>
             <div><span>{t('pets.microchip')}</span><b className="ltr num">{pet.microchip_no || '—'}</b></div>
             <div><span>{t('pets.lastWeight')}</span><b className="num">{weight ? `${fmt.num(weight.weight_kg, 2)} ${t('common.kg')}` : '—'}</b></div>
-            <div><span>{t('pets.owner')}</span><b><a href={`#/owners/${pet.owner_id}`}>{pet.owner_name}</a> <span className="ltr muted small">{pet.owner_phone}</span></b></div>
+            <div><span>{t('pets.owner')}</span><b><a href={`#/owners/${pet.owner_id}`}>{pet.owner_name}</a> <OwnerCode code={pet.owner_code} ownerId={pet.owner_id} /> <span className="ltr muted small">{pet.owner_phone}</span></b></div>
           </div>
           {pet.notes && <p className="note" style={{ marginTop: 12, marginBottom: 0 }}>{pet.notes}</p>}
           {upcoming.length > 0 && (
@@ -368,7 +372,7 @@ export function PetSummaryPrint() {
             <tbody>
               <tr><td>{t('pets.species')}</td><td>{t(`species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ''}</td><td>{t('pets.sex')}</td><td>{t(`sex.${pet.sex}`)}{pet.is_neutered ? ` · ${t('pets.neutered')}` : ''}</td></tr>
               <tr><td>{t('pets.dob')}</td><td>{fmt.date(pet.date_of_birth)}{age ? ` (${t('pets.ageValue', { y: age.years, m: age.months })})` : ''}</td><td>{t('pets.microchip')}</td><td className="ltr">{pet.microchip_no || '—'}</td></tr>
-              <tr><td>{t('pets.owner')}</td><td>{pet.owner_name}</td><td>{t('owners.phone')}</td><td className="ltr">{pet.owner_phone}</td></tr>
+              <tr><td>{t('pets.owner')}</td><td>{pet.owner_name}{shownCode(pet.owner_code) ? ` · ${pet.owner_code}` : ''}</td><td>{t('owners.phone')}</td><td className="ltr">{pet.owner_phone}</td></tr>
             </tbody>
           </table>
           <h3 style={{ margin: '12px 0 4px' }}>{t('petRecord.vaccinations')}</h3>

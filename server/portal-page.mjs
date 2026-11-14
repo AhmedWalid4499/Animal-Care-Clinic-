@@ -69,6 +69,7 @@ svg.i { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor;
 .hero .wrap { padding-top: 26px; padding-bottom: 30px; }
 .hero h1 { margin: 0; font-size: clamp(22px, 5.5vw, 30px); font-weight: 600; line-height: 1.25; }
 .hero p { margin: 6px 0 0; opacity: .9; max-width: 56ch; }
+.hero .idchip { display: inline-block; margin-top: 10px; padding: 3px 12px; border-radius: 999px; background: rgba(255,255,255,.16); font-size: 14px; }
 .hero .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .hero .quick a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 16px; border-radius: 999px; background: rgba(255,255,255,.16); color: #fff; text-decoration: none; font-weight: 600; font-size: 15px; border: 1px solid rgba(255,255,255,.25); }
 .hero .quick a:active { background: rgba(255,255,255,.26); }
@@ -175,6 +176,15 @@ main { padding: 20px 0 40px; }
 .tags span { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 2px 8px; color: var(--ink-2); }
 .drug .how { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
 
+/* lab results */
+details.labday { border-top: 1px solid var(--rule); padding: 10px 0; }
+details.labday summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+table.labt { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+table.labt th { text-align: start; font-size: 12px; color: var(--ink-3); font-weight: 600; padding: 4px 6px 4px 0; border-bottom: 1px solid var(--rule); }
+table.labt td { padding: 6px 6px 6px 0; border-bottom: 1px dashed var(--rule); vertical-align: top; }
+table.labt tr.flag td { color: var(--bad); }
+table.labt .badge { margin-inline-start: 6px; }
+
 /* diagnoses */
 .dx { margin-top: 10px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--bg); }
 .dx span { display: block; font-size: 12px; color: var(--ink-3); }
@@ -234,6 +244,7 @@ footer.site b { color: var(--ink-2); }
     mail: 'M4 4h16v16H4zM4 6l8 7 8-7',
     pin: 'M12 22s-7-6.1-7-12a7 7 0 0114 0c0 5.9-7 12-7 12zM12 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z',
     shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+    flask: 'M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 006 21h12a1.7 1.7 0 001.5-2.5L14 9V3M7.5 15h9',
     steth: 'M5 3v6a5 5 0 0010 0V3M10 14v2a5 5 0 0010 0v-2M20 11a2 2 0 100 4 2 2 0 000-4z',
     star: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
   };
@@ -370,6 +381,7 @@ footer.site b { color: var(--ink-2); }
     return h('section', { class: 'hero' }, h('div', { class: 'wrap' },
       h('h1', { class: 'hello' }, greeting()),
       h('p', null, t('lead', { clinic: clinicName() })),
+      d.owner.code ? h('div', { class: 'idchip' }, t('customerId'), ' ', h('b', { class: 'ltr' }, d.owner.code)) : null,
       h('div', { class: 'quick' },
         phone ? h('a', { href: 'tel:' + String(phone).replace(/[^\\d+]/g, '') }, icon('phone'), t('callClinic')) : null,
         wa ? h('a', { href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), t('whatsappClinic')) : null)));
@@ -471,8 +483,29 @@ footer.site b { color: var(--ink-2); }
               h('span', { class: 'muted small' }, t('given', { date: fmtDate(v.administered_at) }), v.next_due_at ? ' · ' + t('nextDue', { date: fmtDate(v.next_due_at) }) : '')),
             s.text && p.status === 'ACTIVE' ? h('span', { class: 'badge ' + s.cls }, s.text) : null);
         })) : h('div', { class: 'muted small' }, t('noVaccinations')),
+        labSection(p),
         visitHistory(p));
     });
+  }
+
+  function labSection(p) {
+    const days = p.labs || [];
+    if (!days.length) return null;
+    const rng = (r) => (r.ref_low != null && r.ref_high != null ? r.ref_low + '–' + r.ref_high : r.ref_low != null ? '≥ ' + r.ref_low : r.ref_high != null ? '≤ ' + r.ref_high : '');
+    const table = (day) => h('table', { class: 'labt' },
+      h('thead', null, h('tr', null, h('th', null, t('labTest')), h('th', null, t('labResult')), h('th', null, t('labRange')))),
+      h('tbody', null, day.items.map((r) => h('tr', { class: r.flag ? 'flag' : null },
+        h('td', null, r.panel ? h('span', { class: 'muted small' }, r.panel + ' · ') : null, r.analyte),
+        h('td', { class: 'ltr' }, h('b', null, r.value != null ? fmtNum(r.value, 2) : r.value_text || '—'), r.unit ? ' ' + r.unit : '',
+          r.flag ? h('span', { class: 'badge bad' }, t(r.flag === 'H' ? 'labHigh' : 'labLow')) : null),
+        h('td', { class: 'ltr muted' }, rng(r))))));
+    return [
+      h('div', { class: 'subhead' }, icon('flask'), t('labResults')),
+      days.map((day, i) => h('details', { class: 'labday', open: i === 0 ? true : null },
+        h('summary', null, fmtDate(day.date), ' · ', t('labCount', { n: day.items.length }),
+          day.items.some((r) => r.flag) ? h('span', { class: 'badge warn' }, t('labFlagged')) : null),
+        table(day))),
+    ];
   }
 
   function visitHistory(p) {
@@ -547,6 +580,7 @@ footer.site b { color: var(--ink-2); }
       h('div', { class: 'card' },
         h('h2', null, icon('user'), t('yourDetails')),
         h('ul', { class: 'kv' },
+          row('shield', t('customerId'), o.code, true),
           row('user', t('name'), o.full_name),
           row('phone', t('phone'), o.phone, true),
           o.whatsapp && o.whatsapp !== o.phone ? row('chat', t('whatsapp'), o.whatsapp, true) : null,

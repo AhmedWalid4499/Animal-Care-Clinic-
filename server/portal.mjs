@@ -37,6 +37,22 @@ async function findOwner(pool, token) {
   return r;
 }
 
+const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+function labDays(rows) {
+  const days = new Map();
+  for (const r of [...rows].sort((a, b) => byText('taken_at')(b, a) || byText('panel')(a, b) || byText('created_at')(a, b))) {
+    const key = String(r.taken_at);
+    if (!days.has(key)) days.set(key, { date: key, items: [] });
+    const value = num(r.value);
+    const lo = num(r.ref_low);
+    const hi = num(r.ref_high);
+    days.get(key).items.push({
+      panel: r.panel ?? null, analyte: r.analyte, value, value_text: r.value_text ?? null, unit: r.unit ?? null, ref_low: lo, ref_high: hi,
+      flag: value == null ? null : hi != null && value > hi ? 'H' : lo != null && value < lo ? 'L' : null,
+    });
+  }
+  return [...days.values()];
+}
 const imageOnly = (v) => (typeof v === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,/.test(v) ? v : null);
 const byText = (k) => (a, b) => String(a[k] ?? '').localeCompare(String(b[k] ?? ''));
 
@@ -50,7 +66,9 @@ export async function ownerPageData(pool, owner) {
   const settings = (await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'clinic_settings' AND NOT deleted LIMIT 1", [cid]))[0] ?? {};
   const pets = await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'pets' AND data->>'owner_id' = $2 AND NOT deleted", [cid, String(owner.id)]);
   const petIds = pets.map((p) => String(p.id));
-  const [visitsAll, vaccinations, appointments] = await Promise.all([forPets('visits', petIds), forPets('vaccinations', petIds), forPets('appointments', petIds)]);
+  const [visitsAll, vaccinations, appointments, labRows] = await Promise.all([
+    forPets('visits', petIds), forPets('vaccinations', petIds), forPets('appointments', petIds), forPets('lab_results', petIds),
+  ]);
   // A visit still in the vet's queue isn't finished: its prescriptions appear once the vet saves it.
   const visits = visitsAll.filter((v) => (v.stage ?? 'DONE') === 'DONE');
   const visitIds = visits.map((v) => String(v.id));
@@ -81,7 +99,7 @@ export async function ownerPageData(pool, owner) {
       name_ar: settings.name_ar ?? null, name_en: settings.name_en ?? null, phone: settings.phone ?? null, whatsapp: settings.whatsapp ?? null,
       address: settings.address ?? null, logo: imageOnly(settings.logo_url), locale: settings.locale_default === 'en' ? 'en' : 'ar',
     },
-    owner: { full_name: owner.data.full_name, phone: owner.data.phone, whatsapp: owner.data.whatsapp ?? null, email: owner.data.email ?? null, address: owner.data.address ?? null },
+    owner: { code: typeof owner.data.code === 'string' && /^AC-\d+$/.test(owner.data.code) ? owner.data.code : null, full_name: owner.data.full_name, phone: owner.data.phone, whatsapp: owner.data.whatsapp ?? null, email: owner.data.email ?? null, address: owner.data.address ?? null },
     pets: [...pets].sort((a, b) => status(a) - status(b) || byText('name')(a, b)).map((p) => {
       const w = weightOf(String(p.id));
       return {
@@ -89,6 +107,8 @@ export async function ownerPageData(pool, owner) {
         date_of_birth: p.date_of_birth ?? null, dob_is_estimate: Number(p.dob_is_estimate) === 1, color: p.color ?? null, microchip_no: p.microchip_no ?? null,
         photo: imageOnly(p.photo_url), status: p.status,
         weight: w ? { kg: Number(w.weight_kg), at: w.visited_at } : null,
+        // Lab results by test day, newest first, flagged high / low against the range the clinic recorded.
+        labs: labDays(labRows.filter((r) => String(r.pet_id) === String(p.id))),
         // Finished visits with what the vet found (diagnosis only: complaint and treatment notes stay with the clinic).
         visits: visits.filter((v) => String(v.pet_id) === String(p.id)).sort((a, b) => byText('visited_at')(b, a))
           .map((v) => ({ visited_at: v.visited_at, type: v.type, diagnosis: v.diagnosis ?? null, vet_name: v.vet_id ? vets.get(String(v.vet_id)) ?? null : null })),

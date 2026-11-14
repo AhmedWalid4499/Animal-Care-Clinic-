@@ -692,8 +692,33 @@ await step('expenses: admin only', async () => {
 });
 
 // ---------------------------------------------------------------- Phase 6: owner page (QR) and prescription archive
+await step('customer IDs', async () => {
+  // Every owner has an AC-number; one made on a linked laptop gets its real number from the server (TMP-… until then).
+  await go(A, '#/owners/new');
+  await A.win.getByLabel(/الاسم الكامل|Full name/).fill('ID Owner Test');
+  await A.win.getByLabel(/^\s*(الهاتف|Phone)\s*$/).fill('01090000777');
+  await A.win.locator('.actionbar .btn.primary').click();
+  const real = await until(async () => {
+    const r = (await pool.query("SELECT id, data->>'code' code FROM rows WHERE tbl = 'owners' AND data->>'full_name' = 'ID Owner Test'")).rows[0];
+    return r && /^AC-\d{5}$/.test(r.code) && r;
+  }, 10_000);
+  const onA = await until(async () => (await A.win.locator('.facts .owner-code').innerText().catch(() => '')) === real.v?.code, 10_000, 200);
+  const onB = await until(async () => {
+    await go(B, '#/owners');
+    await B.win.locator('.searchbox input').fill(real.v?.code ?? 'x');
+    await sleep(250);
+    return (await B.win.locator('tbody tr.link').innerText().catch(() => '')).includes('ID Owner Test');
+  }, 10_000, 300);
+  const stats = (await pool.query("SELECT COUNT(*) n, COUNT(DISTINCT data->>'code') d, COUNT(*) FILTER (WHERE data->>'code' !~ '^AC-[0-9]+$' OR data->>'code' IS NULL) bad FROM rows WHERE tbl = 'owners' AND NOT deleted")).rows[0];
+  const changed = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: real.v?.id, op: 'upsert', cols: { code: 'AC-99999' }, at: nowIso() }] }, tokens.admin);
+  check('customer-id', 'Every owner has a unique customer ID; a new one gets its number from the server, finds the owner on any laptop, and never changes',
+    !!real.v && !!onA.v && !!onB.v && Number(stats.bad) === 0 && Number(stats.n) === Number(stats.d) && changed.body.rejected?.length === 1,
+    `new owner on laptop A → ${real.v?.code ?? 'no ID'} from the server, shown on laptop A: ${!!onA.v}; laptop B finds it by searching the ID: ${!!onB.v}; owners on the server ${stats.n}, different IDs ${stats.d}, without an AC-number ${stats.bad}; changing it (even as Admin): ${changed.body.rejected?.[0]?.reason ?? 'ACCEPTED'}`);
+});
+
 await step('phase6: owner page', async () => {
-  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY id LIMIT 1")).rows[0];
+  // Luna (demo) has lab results, which the owner page shows too; any active pet otherwise.
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY data->>'name' = 'Luna' DESC, id LIMIT 1")).rows[0];
   const ownerId = pet.data.owner_id;
   const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [ownerId])).rows[0].data;
   // The doctor (laptop B) gives the owner their page from the owner screen.
@@ -764,6 +789,9 @@ await step('phase6: owner page', async () => {
   await phonePage.screenshot({ path: path.join(out, 'owner-page-4-prescriptions-ar.png'), fullPage: true });
   await tab('pets');
   const dxOnPets = (await phonePage.locator('main').innerText()).includes(DX);
+  const labsInDb = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'lab_results' AND NOT deleted AND data->>'pet_id' = $1", [String(pet.id)])).rows[0].n);
+  const labsOnPage = labsInDb ? (await phonePage.locator('details.labday').count()) > 0 && /Creatinine|BUN/.test(await phonePage.locator('main').innerText()) : true;
+  const idOnPage = !!owner.code && (await phonePage.locator('main').innerText().then((x) => x.includes(owner.code)).catch(() => false) || (await phonePage.locator('.hero').innerText().catch(() => '')).includes(owner.code));
   const privateShown = JSON.stringify(await (await fetch(`${url}/data`)).json()).includes(PRIVATE);
   await phonePage.screenshot({ path: path.join(out, 'owner-page-2-pets-ar.png'), fullPage: true });
   await tab('details');
@@ -821,8 +849,8 @@ await step('phase6: owner page', async () => {
       htmlText.includes('<html') && data.owner?.full_name === owner.full_name && data.pets?.some((p) => p.name === pet.data.name) && leaks.length === 0 && firstView.includes(pet.data.name) && doctorCanReplace === 0,
     `QR made on the doctor's laptop, on the server: ${!!onServer.v}; page ${html.status} (no-store, no-referrer, CSP with nonce); shows ${data.pets?.length} pet(s) of ${data.owner?.full_name}; staff-only fields in the data: ${leaks.join(', ') || 'none'}; replace button for a Doctor: ${doctorCanReplace ? 'shown' : 'hidden'}`);
   check('owner-page-live', 'The owner page updates by itself: a booking and a prescription appear on the open phone page within seconds',
-    !!apptLive.v && !!rxLive.v && dxOnPets && !privateShown && liveDot === 1 && apptMs < 5000 && rxMs < 8000 && /^Good (morning|afternoon|evening)/.test(english) && manifest.start_url === `/o/${token}`,
-    `booking on laptop A visible on the phone after ${apptMs} ms (${apptsBefore} → ${apptsBefore + 1} appointments); prescription and its diagnosis saved on laptop B visible after ${rxMs} ms (no reload); diagnosis in the pet's visit history: ${dxOnPets}; treatment notes sent to the owner: ${privateShown}; live indicator: ${liveDot ? 'on' : 'off'}; English switch: "${english}"; add to home screen opens /o/…: ${manifest.start_url === `/o/${token}`}`);
+    !!apptLive.v && !!rxLive.v && dxOnPets && !privateShown && labsOnPage && labsInDb > 0 && idOnPage && liveDot === 1 && apptMs < 5000 && rxMs < 8000 && /^Good (morning|afternoon|evening)/.test(english) && manifest.start_url === `/o/${token}`,
+    `booking on laptop A visible on the phone after ${apptMs} ms (${apptsBefore} → ${apptsBefore + 1} appointments); prescription and its diagnosis saved on laptop B visible after ${rxMs} ms (no reload); diagnosis in the pet's visit history: ${dxOnPets}; lab results (${labsInDb} in the clinic) on the pet: ${labsOnPage}; customer ID ${owner.code} on the page: ${idOnPage}; treatment notes sent to the owner: ${privateShown}; live indicator: ${liveDot ? 'on' : 'off'}; English switch: "${english}"; add to home screen opens /o/…: ${manifest.start_url === `/o/${token}`}`);
   check('owner-page-calendar', 'Appointments can be added to the phone’s calendar: one at a time, or a feed that keeps itself up to date',
     icsOk, `feed ${feed.split('BEGIN:VEVENT').length - 1} event(s), lines ≤ 75 bytes; one appointment .ics → ${one?.status}; Google Calendar link on the page: ${!!apptLive.v}`);
   check('rx-archive', 'Every prescription of an owner is in one archive: searchable, per pet, and reprintable',
