@@ -359,8 +359,10 @@ await step('notify: booking', async () => {
     if (r.status !== 200) throw new Error(`push subscribe → ${r.status}`);
   }
   const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted ORDER BY id LIMIT 1")).rows[0];
+  // Tomorrow at 08:00 (moved to 09:00 below): a fixed hour, so it never lands on the slots the offline step books at
+  // 15:00 / 15:10 (it did when the test ran between 14:00 and 15:00).
   const at = new Date(Date.now() + 86400_000);
-  at.setMinutes(0, 0, 0);
+  at.setHours(8, 0, 0, 0);
   appt = { id: crypto.randomUUID(), pet_id: pet.id, owner_id: pet.data.owner_id, pet: pet.data.name, at: at.toISOString() };
   const beforeB = await bell(B);
   const beforeA = await bell(A);
