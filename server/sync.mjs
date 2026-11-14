@@ -104,6 +104,11 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes, se
           data.number = await nextInvoiceNumber(c, clinicId, data.issued_at);
           versions.number = stamp(new Date().toISOString(), 'server');
         }
+        // Customer ID: a new owner from a device (TMP-…), or from an app too old to make one, gets the next AC-number.
+        if (ch.tbl === 'owners' && !deleted && (typeof data.code !== 'string' || !data.code || data.code.startsWith('TMP-'))) {
+          data.code = await nextOwnerCode(c, clinicId);
+          versions.code = stamp(new Date().toISOString(), 'server');
+        }
       }
       const seq = (await c.query("SELECT nextval('change_seq') AS s")).rows[0].s;
       await c.query(
@@ -131,6 +136,42 @@ async function nextInvoiceNumber(c, clinicId, issuedAt) {
   counters[year] = n;
   await c.query('UPDATE clinics SET invoice_counters = $2 WHERE id = $1', [clinicId, counters]);
   return `INV-${year}-${String(n).padStart(4, '0')}`;
+}
+
+/** Customer IDs: AC-00001, sequential per clinic, never reused (the counter only goes up). */
+async function nextOwnerCode(c, clinicId) {
+  const cl = (await c.query('SELECT invoice_counters FROM clinics WHERE id = $1 FOR UPDATE', [clinicId])).rows[0];
+  const counters = cl?.invoice_counters ?? {};
+  const maxExisting = (await c.query(
+    "SELECT COALESCE(MAX(substr(data->>'code', 4)::int), 0) AS m FROM rows WHERE clinic_id = $1 AND tbl = 'owners' AND data->>'code' ~ '^AC-[0-9]+$'",
+    [clinicId],
+  )).rows[0].m;
+  const n = Math.max(Number(counters.owner ?? 0), Number(maxExisting)) + 1;
+  counters.owner = n;
+  await c.query('UPDATE clinics SET invoice_counters = $2 WHERE id = $1', [clinicId, counters]);
+  return `AC-${String(n).padStart(5, '0')}`;
+}
+
+/**
+ * Owners without a customer ID (made before IDs existed, or uploaded by an older app) get one, oldest first.
+ * Runs at start-up and after a first upload; devices receive the IDs with their next pull.
+ */
+export async function assignOwnerCodes(pool, clinicId) {
+  return inTx(pool, async (c) => {
+    const missing = (await c.query(
+      `SELECT id, versions FROM rows WHERE clinic_id = $1 AND tbl = 'owners' AND NOT deleted
+         AND (data->>'code' IS NULL OR data->>'code' = '' OR data->>'code' LIKE 'TMP-%')
+       ORDER BY data->>'created_at', id FOR UPDATE`,
+      [clinicId],
+    )).rows;
+    for (const r of missing) {
+      const code = await nextOwnerCode(c, clinicId);
+      const versions = { ...r.versions, code: stamp(new Date().toISOString(), 'server') };
+      await c.query("UPDATE rows SET data = data || jsonb_build_object('code', $3::text), versions = $4, seq = nextval('change_seq') WHERE clinic_id = $1 AND tbl = 'owners' AND id = $2",
+        [clinicId, r.id, code, versions]);
+    }
+    return missing.length;
+  });
 }
 
 /** Rows changed after `since`, oldest first. */

@@ -2,7 +2,7 @@
 // English and Arabic whatever the app language, with the clinic logo and a signature / stamp area.
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { getPet, getSettings, petVaccinations } from '../db/repo';
+import { getPet, getSettings, petVaccinations, shownCode } from '../db/repo';
 import { platform } from '../lib/platform';
 import { Icon } from '../components/ui';
 import ar from '../i18n/ar.json';
@@ -57,7 +57,7 @@ export function VaccinationCertificate() {
               <tr><td><Bi k="pets.dob" /></td><td>{intlDate(pet.date_of_birth)}{pet.date_of_birth && pet.dob_is_estimate ? <> ({both('pets.dobEstimate')})</> : null}</td></tr>
               {pet.color && <tr><td><Bi k="pets.color" /></td><td>{pet.color}</td></tr>}
               <tr><td><Bi k="pets.microchip" /></td><td className="ltr">{pet.microchip_no || '—'}</td></tr>
-              <tr><td><Bi k="certificate.owner" /></td><td>{pet.owner_name} · <span className="ltr">{pet.owner_phone}</span></td></tr>
+              <tr><td><Bi k="certificate.owner" /></td><td>{pet.owner_name} · <span className="ltr">{pet.owner_phone}</span>{shownCode(pet.owner_code) ? <> · <span className="ltr">{pet.owner_code}</span></> : null}</td></tr>
             </tbody>
           </table>
           <h3 style={{ margin: '12px 0 4px' }}><Bi k="petRecord.vaccinations" /></h3>

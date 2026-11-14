@@ -29,6 +29,7 @@ CREATE INDEX IF NOT EXISTS rows_user_email ON rows (lower(data->>'email')) WHERE
 CREATE INDEX IF NOT EXISTS rows_owner_portal ON rows ((data->>'portal_token')) WHERE tbl = 'owners';
 CREATE INDEX IF NOT EXISTS rows_by_owner ON rows (clinic_id, (data->>'owner_id')) WHERE tbl = 'pets';
 CREATE INDEX IF NOT EXISTS rows_by_pet ON rows (clinic_id, tbl, (data->>'pet_id')) WHERE tbl IN ('visits', 'vaccinations', 'appointments');
+CREATE INDEX IF NOT EXISTS rows_by_pet_labs ON rows (clinic_id, (data->>'pet_id')) WHERE tbl = 'lab_results';
 CREATE INDEX IF NOT EXISTS rows_by_visit ON rows (clinic_id, (data->>'visit_id')) WHERE tbl = 'prescriptions';
 CREATE TABLE IF NOT EXISTS notifications (
   id uuid PRIMARY KEY,

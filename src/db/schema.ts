@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -186,6 +186,7 @@ CREATE TABLE owners (
   notes TEXT,
   status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','ARCHIVED')),
   portal_token TEXT,
+  code TEXT,
   ${ts}
 );
 CREATE INDEX owners_full_name ON owners(full_name);
@@ -463,6 +464,10 @@ export const MIGRATIONS: Record<number, string> = {
   14: v14Cols,
   // v15 (14 Nov 2026, owner page): the owner's page. The secret part of the link in the owner's QR code; NULL = no page.
   15: `ALTER TABLE owners ADD COLUMN portal_token TEXT;`,
+  // v16 (14 Nov 2026): customer ID (AC-00001), searchable and on every document. Given by the clinic server while
+  // linked (TMP-… until synced, like invoice numbers), by this device otherwise (src/db/core.ts ownerCode).
+  16: `ALTER TABLE owners ADD COLUMN code TEXT;
+    CREATE INDEX IF NOT EXISTS owners_code ON owners(code);`,
 };
 
 /** Tables included in the one-click export, in dependency order. */

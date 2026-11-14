@@ -10,6 +10,15 @@ import { ROLES, highestRole, userRoles } from './types';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
 const digits = (s: string) => s.replace(/\D/g, '');
+/** A customer ID to show: a temporary one (not synced yet) is left out. */
+export const shownCode = (code: string | null | undefined) => (code && !code.startsWith('TMP-') ? code : null);
+/** "AC-00012", "ac12", "#12" → 12: a customer ID typed in a search box. */
+export const codeNumber = (q: string) => {
+  const m = /^\s*(?:ac[-\s]?|#)0*(\d{1,7})\s*$/i.exec(q);
+  return m ? Number(m[1]) : null;
+};
+const codeSql = (alias: string) => `(lower(COALESCE(${alias}.code,'')) LIKE ? OR (${alias}.code LIKE 'AC-%' AND CAST(substr(${alias}.code, 4) AS INTEGER) = ?))`;
+const codeParams = (q: string) => [like(q), codeNumber(q) ?? -1];
 const blank = (v: unknown) => (typeof v === 'string' ? v.trim() || null : v ?? null);
 
 // ---------------------------------------------------------------- auth & users
@@ -117,9 +126,9 @@ export function searchOwners(q: string, status: 'ACTIVE' | 'ARCHIVED' | 'ALL', w
   }
   if (q.trim()) {
     const d = digits(q);
-    where.push(`(lower(o.full_name) LIKE ? OR EXISTS (SELECT 1 FROM pets p WHERE p.owner_id = o.id AND lower(p.name) LIKE ?)
+    where.push(`(lower(o.full_name) LIKE ? OR EXISTS (SELECT 1 FROM pets p WHERE p.owner_id = o.id AND lower(p.name) LIKE ?) OR ${codeSql('o')}
       ${d.length >= 2 ? "OR replace(replace(o.phone,' ',''),'-','') LIKE ? OR replace(replace(COALESCE(o.whatsapp,''),' ',''),'-','') LIKE ?" : ''})`);
-    params.push(like(q), like(q));
+    params.push(like(q), like(q), ...(codeParams(q) as string[]));
     if (d.length >= 2) params.push(`%${d}%`, `%${d}%`);
   }
   const rows = all<OwnerRow>(
@@ -231,10 +240,10 @@ export function prescriptionArchive(scope: { ownerId?: string; petId?: string },
 }
 
 // ---------------------------------------------------------------- pets
-export interface PetRow extends Pet { owner_name: string; owner_phone: string; owner_whatsapp: string | null }
+export interface PetRow extends Pet { owner_name: string; owner_phone: string; owner_whatsapp: string | null; owner_code: string | null }
 export const getPet = (id: string) =>
   get<PetRow>(
-    `SELECT p.*, o.full_name owner_name, o.phone owner_phone, o.whatsapp owner_whatsapp FROM pets p JOIN owners o ON o.id = p.owner_id WHERE p.id = ?`,
+    `SELECT p.*, o.full_name owner_name, o.phone owner_phone, o.whatsapp owner_whatsapp, o.code owner_code FROM pets p JOIN owners o ON o.id = p.owner_id WHERE p.id = ?`,
     [id],
   );
 export const ownerPets = (ownerId: string) =>
@@ -256,15 +265,15 @@ export function setPetStatus(id: string, status: PetStatus) {
   tx(() => update('pets', id, { status, deceased_at: status === 'DECEASED' ? today() : null }));
 }
 
-export interface PetOption { id: string; name: string; species: string; owner_id: string; owner_name: string; owner_phone: string; status: string }
+export interface PetOption { id: string; name: string; species: string; owner_id: string; owner_name: string; owner_phone: string; owner_code?: string | null; status: string }
 export function searchPets(q: string, limit = 20): PetOption[] {
   const d = digits(q);
   return all<PetOption>(
-    `SELECT p.id, p.name, p.species, p.owner_id, p.status, o.full_name owner_name, o.phone owner_phone
+    `SELECT p.id, p.name, p.species, p.owner_id, p.status, o.full_name owner_name, o.phone owner_phone, o.code owner_code
      FROM pets p JOIN owners o ON o.id = p.owner_id
-     WHERE lower(p.name) LIKE ? OR lower(o.full_name) LIKE ? ${d.length >= 2 ? "OR replace(o.phone,' ','') LIKE ?" : ''}
+     WHERE lower(p.name) LIKE ? OR lower(o.full_name) LIKE ? OR ${codeSql('o')} ${d.length >= 2 ? "OR replace(o.phone,' ','') LIKE ?" : ''}
      ORDER BY p.status = 'ACTIVE' DESC, p.name COLLATE NOCASE LIMIT ?`,
-    d.length >= 2 ? [like(q), like(q), `%${d}%`, limit] : [like(q), like(q), limit],
+    d.length >= 2 ? [like(q), like(q), ...codeParams(q), `%${d}%`, limit] : [like(q), like(q), ...codeParams(q), limit],
   );
 }
 
@@ -273,10 +282,10 @@ export interface SearchHit { kind: 'owner' | 'pet'; id: string; title: string; s
 export function quickSearch(q: string): SearchHit[] {
   if (q.trim().length < 2) return [];
   const owners = searchOwners(q, 'ALL').slice(0, 8).map<SearchHit>((o) => ({
-    kind: 'owner', id: o.id, title: o.full_name, subtitle: [o.phone, o.pet_names].filter(Boolean).join(' · '), status: o.status,
+    kind: 'owner', id: o.id, title: o.full_name, subtitle: [shownCode(o.code), o.phone, o.pet_names].filter(Boolean).join(' · '), status: o.status,
   }));
   const pets = searchPets(q, 8).map<SearchHit>((p) => ({
-    kind: 'pet', id: p.id, title: p.name, subtitle: `${p.owner_name} · ${p.owner_phone}`, status: p.status, species: p.species,
+    kind: 'pet', id: p.id, title: p.name, subtitle: [p.owner_name, shownCode(p.owner_code), p.owner_phone].filter(Boolean).join(' · '), status: p.status, species: p.species,
   }));
   return [...pets, ...owners];
 }

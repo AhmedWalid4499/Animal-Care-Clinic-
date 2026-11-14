@@ -66,9 +66,38 @@ export function audit(table: string, recordId: string | null, action: 'CREATE' |
 }
 
 /** Insert a row from an object, stamping id/created_at/updated_at and auditing it. Returns the id. */
+const linked = () => get<{ value: string }>("SELECT value FROM sync_state WHERE key = 'enabled'")?.value === '1';
+/** Customer IDs: AC-00001, AC-00002… */
+export const OWNER_CODE = /^AC-(\d+)$/;
+const formatCode = (n: number) => `AC-${String(n).padStart(5, '0')}`;
+/**
+ * The next customer ID. Linked to a clinic server: a temporary one; the server gives the real sequential ID on sync
+ * (two offline laptops would otherwise both give AC-00042). Standalone: the next number on this device.
+ */
+export function ownerCode(): string {
+  if (linked()) {
+    const dev = (get<{ value: string }>("SELECT value FROM sync_state WHERE key = 'device_id'")?.value ?? 'dev').slice(0, 4);
+    return `TMP-${dev}-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 36 ** 2).toString(36).toUpperCase()}`;
+  }
+  const max = get<{ n: number | null }>("SELECT MAX(CAST(substr(code, 4) AS INTEGER)) n FROM owners WHERE code LIKE 'AC-%'")?.n ?? 0;
+  return formatCode(max + 1);
+}
+/**
+ * A standalone device gives every owner without an ID one, oldest first (linked devices get theirs from the server).
+ * That includes temporary IDs left by a device that was disconnected from its clinic server.
+ */
+function assignMissingOwnerCodes() {
+  if (linked()) return;
+  const missing = all<{ id: string }>("SELECT id FROM owners WHERE code IS NULL OR code = '' OR code LIKE 'TMP-%' ORDER BY created_at, id");
+  if (!missing.length) return;
+  let n = get<{ n: number | null }>("SELECT MAX(CAST(substr(code, 4) AS INTEGER)) n FROM owners WHERE code LIKE 'AC-%'")?.n ?? 0;
+  for (const o of missing) run('UPDATE owners SET code = ? WHERE id = ?', [formatCode(++n), o.id]);
+}
+
 export function insert(table: string, values: Row, opts: { audit?: boolean } = {}): string {
   const id = (values.id as string) ?? uuid();
-  const row: Row = { ...values, id };
+  // Every new owner gets a customer ID, however it is created (form, import, pre-diagnosis "New patient", seed).
+  const row: Row = table === 'owners' && !values.code ? { ...values, code: ownerCode(), id } : { ...values, id };
   const cols = Object.keys(row);
   run(`INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`, cols.map((c) => row[c] as Param));
   if (opts.audit !== false) audit(table, id, 'CREATE', strip(row));
@@ -202,6 +231,7 @@ function migrate() {
     stepped = true;
   }
   ensureSyncTriggers();
+  assignMissingOwnerCodes();
   if (stepped) changed();
 }
 

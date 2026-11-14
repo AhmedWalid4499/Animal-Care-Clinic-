@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { WebSocketServer } from 'ws';
 import { createPool, migrate } from './db.mjs';
-import { applyChanges, bootstrapRows, pullSince } from './sync.mjs';
+import { applyChanges, assignOwnerCodes, bootstrapRows, pullSince } from './sync.mjs';
 import { sendPush, setupPush } from './notify.mjs';
 import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backup.mjs';
 import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
@@ -59,6 +59,10 @@ async function bootstrapServer() {
     }
   }
   await adminRecovery(clinic.id, email);
+  for (const { id } of (await pool.query('SELECT id FROM clinics')).rows) {
+    const n = await assignOwnerCodes(pool, id);
+    if (n) console.log(`gave ${n} owner(s) a customer ID`);
+  }
 }
 
 /**
@@ -241,6 +245,7 @@ async function api(req, res, url) {
     const r = await bootstrapRows(pool, { clinicId: s.clinicId, deviceId: s.deviceId, rows, done: !!done });
     if (r.error) return send(res, 409, r);
     if (done) {
+      await assignOwnerCodes(pool, s.clinicId);
       broadcast(s.clinicId, { type: 'changed' });
       ownerPagesChanged(s.clinicId);
     }
