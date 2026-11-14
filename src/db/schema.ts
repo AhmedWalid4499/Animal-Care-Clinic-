@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -122,6 +122,8 @@ const requestTables = `CREATE TABLE IF NOT EXISTS test_requests (
   status TEXT NOT NULL DEFAULT 'REQUESTED' CHECK (status IN ('REQUESTED','DONE','CANCELLED')),
   requested_by TEXT REFERENCES users(id),
   requested_at TEXT NOT NULL,
+  pdf_id TEXT,
+  pdf_key TEXT,
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS test_requests_pet ON test_requests(pet_id, requested_at);`;
@@ -529,6 +531,10 @@ export const MIGRATIONS: Record<number, string> = {
   // v19 (14 Nov 2026): physical examination on visits (blood pressure, mucous membranes, eyes, skin and coat, glands,
   // anal glands, nails, fleas / ticks).
   19: visitExam.split(',\n').map((c) => `ALTER TABLE visits ADD COLUMN ${c.trim()};`).join('\n'),
+  // v20 (14 Nov 2026): a saved X-ray / lab request keeps its PDF (an attachment, so it reaches the clinic server and the
+  // owner's page) and what it was made from (items, other tests, notes), to make a new one when the vet changes them.
+  20: `ALTER TABLE test_requests ADD COLUMN pdf_id TEXT;
+    ALTER TABLE test_requests ADD COLUMN pdf_key TEXT;`,
 };
 
 /** Tables included in the one-click export, in dependency order. */

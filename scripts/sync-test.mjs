@@ -878,6 +878,21 @@ await step('phase6: owner page', async () => {
   const docLooks = (html) => html.includes('<img src="data:image/') && (!dataNow.owner.code || html.includes(dataNow.owner.code)) && html.includes('Montasser St');
   const ticked = (labHtml.match(/class="xbox on"/g) || []).length;
   const notTheirs = (await fetch(`${url}/doc/rx/not-this-owners-visit`)).status;
+  // The saved X-ray request as a real PDF (schema v20): the doctor's laptop makes it from the sheet once the request is
+  // saved; it reaches the server like any file and the owner's page offers it as a download.
+  const xrReq = dataNow.requests.find((r) => r.kind === 'XRAY');
+  await go(B, `#/requests/${xrReq.id}`);
+  const pdfReady = await until(async () => {
+    const r = (await (await fetch(`${url}/data`)).json()).requests.find((x) => x.id === xrReq.id);
+    return r?.pdf ? r : null;
+  }, 40_000, 500);
+  const pdfRes = pdfReady.v ? await fetch(`${url}/f/${pdfReady.v.pdf}?download=1`) : null;
+  const pdfBuf = pdfRes ? Buffer.from(await pdfRes.arrayBuffer()) : Buffer.alloc(0);
+  const pdfOk = pdfRes?.status === 200 && pdfRes.headers.get('content-type') === 'application/pdf' && /attachment/.test(pdfRes.headers.get('content-disposition') ?? '') && pdfBuf.subarray(0, 4).toString() === '%PDF';
+  const pdfPages = (pdfBuf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
+  const pdfA5 = /\/MediaBox\s*\[\s*0\s+0\s+41\d/.test(pdfBuf.toString('latin1'));
+  if (pdfBuf.length) fs.writeFileSync(path.join(out, 'owner-xray-request.pdf'), pdfBuf);
+  const pdfButton = await until(async () => (await phonePage.locator('.req-card .pdf-link').count()) > 0, 10_000, 300);
   const docPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await docPage.goto(new URL(reqHref, url).href);
   await docPage.waitForSelector('.sheet');
@@ -887,8 +902,9 @@ await step('phase6: owner page', async () => {
   await docPage.screenshot({ path: path.join(out, 'owner-page-10-prescription-document.png'), fullPage: true });
   await docPage.close();
   check('owner-documents', 'On the owner\'s page each request and prescription opens the document as the clinic prints it (logo, customer ID, address), to save as a PDF; only their own',
-    !!reqHref && docLooks(labHtml) && ticked >= 2 && labHtml.includes('Bile acids') && rxRes?.status === 200 && docLooks(rxHtml) && rxHtml.includes(DRUG) && notTheirs === 404,
-    `Document button on the request card: ${!!reqHref}; lab request sheet with logo, customer ID and address: ${docLooks(labHtml)}, ${ticked} boxes ticked, other tests shown: ${labHtml.includes('Bile acids')}; prescription sheet → ${rxRes?.status}, logo/ID/address: ${docLooks(rxHtml)}, drug shown: ${rxHtml.includes(DRUG)}; someone else's visit → ${notTheirs}`);
+    !!reqHref && docLooks(labHtml) && ticked >= 2 && labHtml.includes('Bile acids') && rxRes?.status === 200 && docLooks(rxHtml) && rxHtml.includes(DRUG) && notTheirs === 404
+      && !!pdfReady.v && pdfOk && pdfPages === 1 && pdfA5 && !!pdfButton.v,
+    `Document button on the request card: ${!!reqHref}; lab request sheet with logo, customer ID and address: ${docLooks(labHtml)}, ${ticked} boxes ticked, other tests shown: ${labHtml.includes('Bile acids')}; prescription sheet → ${rxRes?.status}, logo/ID/address: ${docLooks(rxHtml)}, drug shown: ${rxHtml.includes(DRUG)}; someone else's visit → ${notTheirs}; X-ray request PDF made on laptop B and on the owner's page: ${!!pdfReady.v}, downloads as a PDF: ${pdfOk} (${pdfPages} page, A5: ${pdfA5}, ${pdfBuf.length} bytes), Download PDF button: ${!!pdfButton.v}`);
 
   // Only an Admin may replace a printed code; the server refuses it from a Doctor.
   const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);

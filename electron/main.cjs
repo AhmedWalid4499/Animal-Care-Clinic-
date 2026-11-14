@@ -290,6 +290,14 @@ ipcMain.handle('app:print', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   win.webContents.print({ printBackground: true });
 });
+// The page on screen as a PDF, exactly as Print lays it out (14 Nov 2026: a saved X-ray / lab request becomes a PDF the
+// owner downloads from their page). printToPDF exists the same way on Electron 22 (32-bit Windows 7) and current.
+ipcMain.handle('app:pdf', async (e, pageSize) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return null;
+  const size = pageSize === 'A4' ? 'A4' : 'A5';
+  return win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, pageSize: size });
+});
 
 // Minimal macOS menu: app (About/Hide/Quit), Edit (copy/paste/undo in text fields), Window. No reload/devtools.
 function macMenu() {

@@ -121,6 +121,8 @@ export type RequestStatus = 'REQUESTED' | 'DONE' | 'CANCELLED';
 export interface TestRequest {
   id: string; pet_id: string; visit_id: string | null; kind: RequestKind; items: string | null; other: string | null; notes: string | null;
   status: RequestStatus; requested_by: string | null; requested_at: string; created_at: string;
+  /** The request as a PDF (attachments.id, kind DOCUMENT) and what it was made from (requestPdfKey). Schema v20. */
+  pdf_id?: string | null; pdf_key?: string | null;
 }
 export interface LabResult {
   id: string; pet_id: string; visit_id: string | null; taken_at: string; panel: string | null; analyte: string; value: number | null; value_text: string | null;

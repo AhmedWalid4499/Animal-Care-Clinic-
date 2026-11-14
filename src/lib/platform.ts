@@ -34,6 +34,7 @@ interface DesktopBridge {
   openExternal(url: string): Promise<void>;
   showDataFolder(): Promise<void>;
   print(): Promise<void>;
+  pdf(pageSize: 'A4' | 'A5'): Promise<Uint8Array | null>;
   updateGet(): Promise<UpdateState>;
   updateCheck(): Promise<UpdateState>;
   updateInstall(): Promise<boolean>;
@@ -197,6 +198,13 @@ export const platform = {
   print() {
     if (desktop) desktop.print();
     else window.print();
+  },
+  /** Desktop: the page on screen as a PDF, laid out as Print does. Browser: not available (null). */
+  canPdf: !!desktop,
+  async pdf(pageSize: 'A4' | 'A5'): Promise<Uint8Array | null> {
+    if (!desktop?.pdf) return null;
+    const b = await desktop.pdf(pageSize);
+    return b ? new Uint8Array(b) : null;
   },
 };
 

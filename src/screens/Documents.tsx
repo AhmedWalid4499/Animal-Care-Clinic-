@@ -4,12 +4,12 @@
 //    vaccinations, lab results, and the attached X-rays and photos printed in the report. Admins and Doctors.
 //  - X-ray request (A5) and lab request (A4, the clinic's own sheet): ticked from a menu, plus the vet's notes; saved in the
 //    pet's history (test_requests, schema v17) and shown on the owner page.
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import {
   getAttachmentBytes, getOwner, getPet, getSettings, getTestRequest, lastWeight, petAttachments, petLabResults, petVaccinations, petVisits,
-  petTestRequests, saveTestRequest, shownCode,
+  petTestRequests, requestPdfKey, saveRequestPdf, saveTestRequest, shownCode,
   type PetRow,
 } from '../db/repo';
 import type { Attachment, LabResult, RequestKind } from '../db/types';
@@ -413,6 +413,29 @@ export function RequestForm({ kind: newKind }: { kind?: RequestKind }) {
     setOther(saved.other ?? '');
     setDirty(false);
   }
+  // A saved request becomes a PDF for the owner's page (14 Nov 2026, Ahmed): made from the sheet on screen, laid out as
+  // Print does, once the vet's ticks and notes are saved, and again whenever they change them. Desktop app only (the
+  // browser can't make a PDF by itself); a request without one is still shown on the owner's page as a page to print.
+  const making = useRef(false);
+  useEffect(() => {
+    if (!saved || dirty || !canVisit || !platform.canPdf || saved.status === 'CANCELLED') return;
+    const key = requestPdfKey(saved);
+    if (saved.pdf_id && saved.pdf_key === key) return;
+    const here = window.location.hash;
+    const h = setTimeout(async () => {
+      if (window.location.hash !== here || making.current) return;
+      making.current = true;
+      try {
+        const bytes = await platform.pdf(saved.kind === 'LAB' ? 'A4' : 'A5');
+        if (bytes && window.location.hash === here) saveRequestPdf(saved.id, bytes, key, user?.id ?? null);
+      } catch {
+        /* made again the next time the request is opened */
+      } finally {
+        making.current = false;
+      }
+    }, 700);
+    return () => clearTimeout(h);
+  }, [saved, dirty, canVisit, user?.id]);
   if (!pet || (rid && !saved)) return null;
   const editable = canVisit && saved?.status !== 'CANCELLED';
   const toggle = (k: string) => {
