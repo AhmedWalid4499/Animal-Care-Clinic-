@@ -866,6 +866,30 @@ await step('phase6: owner page', async () => {
     !!reqLive.v && !!imgLive.v && imgSame && otherImg === 404 && deskReq.body.rejected?.length === 1,
     `X-ray + lab request saved on laptop B, on the open phone page after ${reqMs} ms: ${!!reqLive.v}; X-ray image uploaded from the Requests tab shown on the page: ${!!imgLive.v}, same bytes from the server: ${imgSame}; another file id → ${otherImg}; an Assistant's request: ${deskReq.body.rejected?.[0]?.reason ?? 'ACCEPTED'}`);
 
+  // The documents as the clinic prints them (14 Nov 2026): each request and prescription on the owner's page opens its
+  // sheet with the logo, customer ID and address, to save as a PDF; nobody else's documents.
+  const dataNow = await (await fetch(`${url}/data`)).json();
+  const reqHref = await phonePage.locator('.req-card .doc-link').first().getAttribute('href');
+  const labReq = dataNow.requests.find((r) => r.kind === 'LAB');
+  const labHtml = labReq ? await (await fetch(`${url}/doc/req/${labReq.id}?lang=en`)).text() : '';
+  const rxId = dataNow.prescriptions[0]?.visit_id;
+  const rxRes = rxId ? await fetch(`${url}/doc/rx/${rxId}?lang=en`) : null;
+  const rxHtml = rxRes ? await rxRes.text() : '';
+  const docLooks = (html) => html.includes('<img src="data:image/') && (!dataNow.owner.code || html.includes(dataNow.owner.code)) && html.includes('Montasser St');
+  const ticked = (labHtml.match(/class="xbox on"/g) || []).length;
+  const notTheirs = (await fetch(`${url}/doc/rx/not-this-owners-visit`)).status;
+  const docPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await docPage.goto(new URL(reqHref, url).href);
+  await docPage.waitForSelector('.sheet');
+  await docPage.screenshot({ path: path.join(out, 'owner-page-9-request-document.png'), fullPage: true });
+  await docPage.goto(`${url}/doc/rx/${rxId}`);
+  await docPage.waitForSelector('.sheet');
+  await docPage.screenshot({ path: path.join(out, 'owner-page-10-prescription-document.png'), fullPage: true });
+  await docPage.close();
+  check('owner-documents', 'On the owner\'s page each request and prescription opens the document as the clinic prints it (logo, customer ID, address), to save as a PDF; only their own',
+    !!reqHref && docLooks(labHtml) && ticked >= 2 && labHtml.includes('Bile acids') && rxRes?.status === 200 && docLooks(rxHtml) && rxHtml.includes(DRUG) && notTheirs === 404,
+    `Document button on the request card: ${!!reqHref}; lab request sheet with logo, customer ID and address: ${docLooks(labHtml)}, ${ticked} boxes ticked, other tests shown: ${labHtml.includes('Bile acids')}; prescription sheet → ${rxRes?.status}, logo/ID/address: ${docLooks(rxHtml)}, drug shown: ${rxHtml.includes(DRUG)}; someone else's visit → ${notTheirs}`);
+
   // Only an Admin may replace a printed code; the server refuses it from a Doctor.
   const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);
   // The admin replaces the code (a lost card): the old link stops at once, and the open page says so.

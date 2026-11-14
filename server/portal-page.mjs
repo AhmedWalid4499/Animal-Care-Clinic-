@@ -611,7 +611,8 @@ footer.site b { color: var(--ink-2); }
       list.map((v) => h('article', { class: 'card' },
         h('div', { class: 'rxhead' }, h('b', null, fmtDate(v.visited_at)), h('span', { class: 'badge' }, v.pet_name), h('span', { class: 'muted small' }, t('visitType.' + v.type) + (v.vet_name ? ' · ' + t('byVet', { name: v.vet_name }) : ''))),
         v.diagnosis ? h('div', { class: 'dx' }, h('span', null, t('diagnosis')), h('b', null, v.diagnosis)) : null,
-        v.items.map(drug))),
+        v.items.map(drug),
+        h('div', { class: 'actions' }, docButton('rx', v.visit_id)))),
       h('div', { class: 'actions no-print' }, h('button', { type: 'button', class: 'btn', onclick: () => window.print() }, icon('print'), t('print'))),
     ];
   }
@@ -632,7 +633,12 @@ footer.site b { color: var(--ink-2); }
         r.by ? h('span', { class: 'muted small' }, t('requestedBy', { name: r.by })) : null),
       r.items.length ? h('div', { class: 'tags req-tags' }, r.items.map((k) => h('span', { dir: r.kind === 'LAB' ? 'ltr' : null }, itemLabel(r.kind, k)))) : null,
       r.other ? h('div', { class: 'dx' }, h('span', null, t('otherTests')), h('b', null, r.other)) : null,
-      r.notes ? h('div', { class: 'dx' }, h('span', null, t('vetNotes')), h('b', null, r.notes)) : null);
+      r.notes ? h('div', { class: 'dx' }, h('span', null, t('vetNotes')), h('b', null, r.notes)) : null,
+      h('div', { class: 'actions' }, docButton('req', r.id)));
+  }
+  // The document as the clinic prints it (logo, customer ID, address…), to save as a PDF or print (server/doc-page.mjs).
+  function docButton(kind, id) {
+    return h('a', { class: 'btn sm doc-link', href: base + '/doc/' + kind + '/' + encodeURIComponent(id) + '?lang=' + L() }, icon('download'), t('document'));
   }
   function fileGallery(list) {
     return h('div', { class: 'card xray-gallery' }, list.map((x) => h('a', { href: base + '/f/' + encodeURIComponent(x.id), target: '_blank', rel: 'noopener', class: 'xg-item' },
@@ -664,7 +670,7 @@ footer.site b { color: var(--ink-2); }
 
   function detailsView() {
     const o = d.owner;
-    const row = (ic, label, value, ltr) => (value ? h('li', null, h('div', { class: 'icobox' }, icon(ic)), h('div', null, h('span', null, label), h('b', ltr ? { class: 'ltr' } : null, value))) : null);
+    const row = (ic, label, value, ltr) => (value ? h('li', null, h('div', { class: 'icobox' }, icon(ic)), h('div', null, h('span', null, label), h('b', ltr ? { class: 'ltr' } : { dir: 'auto' }, value))) : null);
     const wa = waClinic();
     return [
       h('div', { class: 'card' },
@@ -817,7 +823,7 @@ footer.site b { color: var(--ink-2); }
         profilePet ? h('a', { class: 'back-link', href: '#pets' }, icon('chevron', 'back'), t('nav.pets'))
           : v !== 'home' ? h('h1', { class: 'section-title' }, icon(NAV_ICON[v]), t('nav.' + v)) : null,
         h('div', { class: 'view view-' + v }, body)),
-      h('footer', { class: 'site wrap' }, h('b', null, clinicName()), d.clinic.address ? ' · ' + d.clinic.address : '', h('div', null, t('updated', { time: fmtTime(d.at) }))),
+      h('footer', { class: 'site wrap' }, h('b', null, clinicName()), d.clinic.address ? [' · ', h('span', { dir: 'auto' }, d.clinic.address)] : '', h('div', null, t('updated', { time: fmtTime(d.at) }))),
     ].filter(Boolean));
   }
   function refreshStatus() {
