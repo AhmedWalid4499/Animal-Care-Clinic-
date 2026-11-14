@@ -634,11 +634,15 @@ footer.site b { color: var(--ink-2); }
       r.items.length ? h('div', { class: 'tags req-tags' }, r.items.map((k) => h('span', { dir: r.kind === 'LAB' ? 'ltr' : null }, itemLabel(r.kind, k)))) : null,
       r.other ? h('div', { class: 'dx' }, h('span', null, t('otherTests')), h('b', null, r.other)) : null,
       r.notes ? h('div', { class: 'dx' }, h('span', null, t('vetNotes')), h('b', null, r.notes)) : null,
-      h('div', { class: 'actions' }, docButton('req', r.id)));
+      h('div', { class: 'actions' }, pdfButton(r), docButton('req', r.id)));
   }
   // The document as the clinic prints it (logo, customer ID, address…), to save as a PDF or print (server/doc-page.mjs).
   function docButton(kind, id) {
     return h('a', { class: 'btn sm doc-link', href: base + '/doc/' + kind + '/' + encodeURIComponent(id) + '?lang=' + L() }, icon('download'), t('document'));
+  }
+  // A request's own PDF, made by the clinic when it saved the request: one tap downloads it.
+  function pdfButton(r) {
+    return r.pdf ? h('a', { class: 'btn sm primary pdf-link', href: base + '/f/' + encodeURIComponent(r.pdf) + '?download=1', download: r.pdf_name || '' }, icon('download'), t('downloadPdf')) : null;
   }
   function fileGallery(list) {
     return h('div', { class: 'card xray-gallery' }, list.map((x) => h('a', { href: base + '/f/' + encodeURIComponent(x.id), target: '_blank', rel: 'noopener', class: 'xg-item' },

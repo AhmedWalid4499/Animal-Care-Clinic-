@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -125,6 +125,10 @@ const requestTables = `CREATE TABLE IF NOT EXISTS test_requests (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS test_requests_pet ON test_requests(pet_id, requested_at);`;
+// Schema v20 (14 Nov 2026): a saved request's PDF (attachments.id) and what it was made from. Added after the table (not
+// in it), so an install older than v17 creates test_requests at v17 and gains these at v20 like everyone else.
+const requestPdfCols = `ALTER TABLE test_requests ADD COLUMN pdf_id TEXT;
+ALTER TABLE test_requests ADD COLUMN pdf_key TEXT;`;
 // Schema v18 (14 Nov 2026): lost & found. Someone scans a pet's collar tag (pets.tag_token) and presses Alert: the
 // clinic server writes a report (with the finder's location if they allowed it); devices only mark it handled.
 const foundTables = `CREATE TABLE IF NOT EXISTS found_reports (
@@ -424,6 +428,7 @@ ${expensesTable}
 ${clinicalDocs}
 ${wardTables}
 ${requestTables}
+${requestPdfCols}
 ${foundTables}
 ${v13Cols}
 ${v14Cols}
@@ -529,6 +534,9 @@ export const MIGRATIONS: Record<number, string> = {
   // v19 (14 Nov 2026): physical examination on visits (blood pressure, mucous membranes, eyes, skin and coat, glands,
   // anal glands, nails, fleas / ticks).
   19: visitExam.split(',\n').map((c) => `ALTER TABLE visits ADD COLUMN ${c.trim()};`).join('\n'),
+  // v20 (14 Nov 2026): a saved X-ray / lab request keeps its PDF (an attachment, so it reaches the clinic server and the
+  // owner's page) and what it was made from (items, other tests, notes), to make a new one when the vet changes them.
+  20: requestPdfCols,
 };
 
 /** Tables included in the one-click export, in dependency order. */

@@ -87,9 +87,14 @@ export async function ownerPageData(pool, owner) {
   // X-ray images and lab result files whose bytes are on the server's volume (one still on the laptop that added it waits
   // for its upload). Other files (documents, photos) stay with the clinic.
   const xrayFiles = files.filter((a) => a.kind === 'XRAY' || a.kind === 'LAB');
-  const onServer = new Set(xrayFiles.length
-    ? (await pool.query('SELECT id FROM files WHERE clinic_id = $1 AND id = ANY($2::text[])', [cid, xrayFiles.map((a) => String(a.id))])).rows.map((r) => r.id)
+  // A saved request's PDF (schema v20, made by the clinic's device from the printed sheet), to download.
+  const pdfIds = new Set(requestRows.map((r) => r.pdf_id).filter(Boolean).map(String));
+  const pdfFiles = files.filter((a) => pdfIds.has(String(a.id)));
+  const wanted = [...xrayFiles, ...pdfFiles].map((a) => String(a.id));
+  const onServer = new Set(wanted.length
+    ? (await pool.query('SELECT id FROM files WHERE clinic_id = $1 AND id = ANY($2::text[])', [cid, wanted])).rows.map((r) => r.id)
     : []);
+  const pdfName = new Map(pdfFiles.map((a) => [String(a.id), a.file_name]));
   // A visit still in the vet's queue isn't finished: its prescriptions appear once the vet saves it.
   const visits = visitsAll.filter((v) => (v.stage ?? 'DONE') === 'DONE');
   const visitIds = visits.map((v) => String(v.id));
@@ -155,6 +160,7 @@ export async function ownerPageData(pool, owner) {
       .map((r) => ({
         id: String(r.id), pet_id: String(r.pet_id), pet_name: petName.get(String(r.pet_id)) ?? '', kind: r.kind, status: r.status, requested_at: r.requested_at,
         items: String(r.items ?? '').split(',').filter(Boolean), other: r.other ?? null, notes: r.notes ?? null,
+        pdf: r.pdf_id && onServer.has(String(r.pdf_id)) ? String(r.pdf_id) : null, pdf_name: r.pdf_id ? pdfName.get(String(r.pdf_id)) ?? null : null,
         by: r.requested_by ? vets.get(String(r.requested_by)) ?? null : null,
       })),
     xrays: xrayFiles
@@ -307,12 +313,14 @@ export async function handleOwnerPage(pool, req, res, url) {
   const d = await ownerPageData(pool, owner);
   // An X-ray image of one of this owner's pets (only those listed in their data), from the server's volume.
   if (sub.startsWith('/f/')) {
-    const x = d.xrays.find((f) => f.id === decodeURIComponent(m[4]));
+    const fid = decodeURIComponent(m[4]);
+    const x = d.xrays.find((f) => f.id === fid)
+      ?? (d.requests || []).filter((r) => r.pdf === fid).map((r) => ({ id: r.pdf, file_name: r.pdf_name || 'request.pdf' }))[0];
     const bytes = x ? fileBytes(owner.clinic_id, x.id) : null;
     if (!bytes) return notFound(res);
     const ext = (x.file_name.split('.').pop() || '').toLowerCase();
     const type = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', pdf: 'application/pdf' }[ext] ?? 'application/octet-stream';
-    res.writeHead(200, { ...baseHeaders, 'Content-Type': type, 'Content-Length': bytes.length, 'Cache-Control': 'private, max-age=3600', 'Content-Disposition': `inline; filename="${encodeURIComponent(x.file_name)}"` });
+    res.writeHead(200, { ...baseHeaders, 'Content-Type': type, 'Content-Length': bytes.length, 'Cache-Control': 'private, max-age=3600', 'Content-Disposition': `${url.searchParams.has('download') ? 'attachment' : 'inline'}; filename="${encodeURIComponent(x.file_name)}"` });
     res.end(req.method === 'HEAD' ? undefined : bytes);
     return true;
   }

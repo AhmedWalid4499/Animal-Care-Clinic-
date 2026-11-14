@@ -1148,6 +1148,30 @@ export function saveTestRequest(d: TestRequestInput, userId: string | null, id?:
     return insert('test_requests', { ...values, pet_id: d.pet_id, visit_id: d.visit_id ?? null, kind: d.kind, status: 'REQUESTED', requested_by: userId, requested_at: nowIso() });
   });
 }
+/** What a request's PDF shows that the vet can change: a new PDF is made when this differs from `pdf_key`. */
+export const requestPdfKey = (r: { items: string | null; other: string | null; notes: string | null }) => JSON.stringify([r.items ?? '', r.other ?? '', r.notes ?? '']);
+/**
+ * Keep the request's PDF (made by the device from the sheet on screen): a DOCUMENT attachment of the pet, so it syncs to
+ * the clinic server, where the owner's page offers it for download. An older PDF of the same request stays in the pet's
+ * Files; the request points at the newest.
+ */
+export function saveRequestPdf(requestId: string, bytes: Uint8Array, key: string, userId: string | null) {
+  const r = get<TestRequest>('SELECT * FROM test_requests WHERE id = ?', [requestId]);
+  if (!r) return null;
+  const day = r.requested_at.slice(0, 10);
+  const name = `${r.kind === 'LAB' ? 'Lab request' : 'X-ray request'} ${day}.pdf`;
+  if (bytes.length > MAX_ATTACHMENT_BYTES) return null;
+  return tx(() => {
+    const id = uuid();
+    insert('attachments', {
+      id, pet_id: r.pet_id, visit_id: r.visit_id, kind: 'DOCUMENT', file_url: `db://attachments/${id}`, file_name: name,
+      mime_type: 'application/pdf', size_bytes: bytes.length, uploaded_by: userId,
+    });
+    run('INSERT INTO attachment_blobs (attachment_id, data) VALUES (?, ?)', [id, bytes]);
+    update('test_requests', requestId, { pdf_id: id, pdf_key: key });
+    return id;
+  });
+}
 /** Done (results / images came back) or cancelled; never deleted. */
 export function setTestRequestStatus(id: string, status: RequestStatus) {
   tx(() => update('test_requests', id, { status }));
