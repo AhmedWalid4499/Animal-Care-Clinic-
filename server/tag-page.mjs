@@ -52,6 +52,8 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
 .muted { color: var(--ink-3); font-size: 14px; }
 .done { background: var(--ok-soft); border-color: transparent; text-align: center; }
 .done b { display: block; font-size: 18px; color: var(--ok); }
+.owner-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin: 0 0 12px; font-size: 17px; }
+.owner-phone { font-weight: 600; letter-spacing: .3px; }
 .err { color: var(--bad); font-size: 14px; margin-top: 8px; }
 .gone { text-align: center; padding: 80px 16px; }
 .ltr { direction: ltr; unicode-bidi: isolate; }
@@ -126,7 +128,8 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
       p.color ? [t('color'), p.color] : null,
       p.microchip_no ? [t('microchip'), p.microchip_no, true] : null,
     ].filter(Boolean);
-    app.replaceChildren(
+    // Sections that don't apply are null and left out (replaceChildren would print "null").
+    app.replaceChildren(...[
       h('header', { class: 'top' },
         d.clinic.logo ? h('img', { src: d.clinic.logo, alt: '' }) : null,
         h('b', null, clinicName()),
@@ -142,7 +145,7 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
       h('section', { class: 'card' }, h('ul', { class: 'chips' }, facts.map(([k, v, ltr]) => h('li', null, h('span', null, k), h('b', ltr ? { class: 'ltr' } : null, v))))),
       o ? h('section', { class: 'card' },
         h('h2', null, t('ownerTitle')),
-        h('p', { style: null }, h('b', null, o.name)),
+        h('p', { class: 'owner-line' }, h('b', null, o.name), o.phone ? h('span', { class: 'ltr owner-phone' }, o.phone) : null),
         h('div', { class: 'row2' },
           o.phone ? h('a', { class: 'btn primary', href: tel(o.phone) }, '📞 ', t('callOwner')) : null,
           wa ? h('a', { class: 'btn', href: 'https://wa.me/' + wa + '?text=' + waText, target: '_blank', rel: 'noopener noreferrer' }, '💬 ', t('whatsappOwner')) : null)) : null,
@@ -151,7 +154,8 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
         h('h2', null, t('clinicTitle')),
         h('p', { class: 'muted' }, clinicName() + (d.clinic.address ? ' · ' + d.clinic.address : '')),
         d.clinic.phone ? h('a', { class: 'btn', href: tel(d.clinic.phone) }, '📞 ', t('callClinic')) : null),
-      h('p', { class: 'muted', style: null }, t('privacy')));
+      h('p', { class: 'muted' }, t('privacy')),
+    ].filter(Boolean));
   }
 
   function alertSection() {
