@@ -415,25 +415,6 @@ export const petExams = (petId: string) =>
      ORDER BY v.visited_at`,
     [petId],
   );
-export interface ExamVisit extends ExamFields {
-  id: string; visited_at: string; pet_id: string; pet_name: string; species: Species; owner_name: string; temperature_c: number | null;
-}
-/**
- * Visits examined between two local dates (inclusive), for the clinic's exam dashboard; species optional.
- * Only visits with at least one examination finding count, so a visit with nothing examined doesn't lower the rates.
- */
-export function examVisits(from: string, to: string, species?: Species | '') {
-  const start = new Date(`${from}T00:00:00`).toISOString();
-  const end = new Date(`${addDays(to, 1)}T00:00:00`).toISOString();
-  return all<ExamVisit>(
-    `SELECT v.id, v.visited_at, v.pet_id, p.name pet_name, p.species, o.full_name owner_name, v.temperature_c, ${EXAM_KEYS.map((k) => `v.${k}`).join(', ')}
-     FROM visits v JOIN pets p ON p.id = v.pet_id JOIN owners o ON o.id = p.owner_id
-     WHERE v.visited_at >= ? AND v.visited_at < ? AND (? = '' OR p.species = ?)
-       AND (${EXAM_KEYS.filter((k) => k !== 'glands_note' && k !== 'bp_diastolic').map((k) => `v.${k} IS NOT NULL`).join(' OR ')})
-     ORDER BY v.visited_at DESC`,
-    [start, end, species ?? '', species ?? ''],
-  );
-}
 
 // ---------------------------------------------------------------- pre-diagnosis (Phase 5)
 export interface IntakeFields { urgency: Urgency; history: string; heart_rate: number | null; resp_rate: number | null; intake_notes: string }

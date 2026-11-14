@@ -315,9 +315,9 @@ check('S4-template', 'Spreadsheet template matches import/TEMPLATE.md', JSON.str
 }
 
 // ------------------------------------------------------------------ 6. A5 PDFs
-async function pdfOf(hash, name, size = 'A5') {
+async function pdfOf(hash, name, size = 'A5', sel) {
   await go(win, hash);
-  await win.waitForSelector(size === 'A4' ? '.sheet.a4' : '.sheet.a5');
+  await win.waitForSelector(sel ?? (size === 'A4' ? '.sheet.a4' : '.sheet.a5'));
   await sleep(400);
   const b64 = await app.evaluate(async ({ BrowserWindow }, pageSize) => {
     const w = BrowserWindow.getAllWindows()[0];
@@ -331,7 +331,8 @@ async function pdfOf(hash, name, size = 'A5') {
   const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
   const a5 = box && Math.abs(Number(box[1]) - 419.5) < 3 && Math.abs(Number(box[2]) - 595.3) < 3;
   const a4 = box && Math.abs(Number(box[1]) - 595.3) < 3 && Math.abs(Number(box[2]) - 841.9) < 3;
-  return { pages, a5, a4, size: box ? `${Math.round(box[1])}×${Math.round(box[2])} pt` : 'unknown' };
+  const a4land = box && Math.abs(Number(box[1]) - 841.9) < 3 && Math.abs(Number(box[2]) - 595.3) < 3;
+  return { pages, a5, a4, a4land, size: box ? `${Math.round(box[1])}×${Math.round(box[2])} pt` : 'unknown' };
 }
 {
   const db = openDbFile();
@@ -356,6 +357,11 @@ async function pdfOf(hash, name, size = 'A5') {
   }
   const x = await pdfOf(`#/pets/${pet}/xray-request`, 'xray-request-A5.pdf');
   check('xray-print', 'The X-ray request (every view in the menu) prints on one A5 page', x.pages === 1 && x.a5, `xray-request-A5.pdf: ${x.pages} page, ${x.size}`);
+  // The health record booklet (14 Nov 2026): one A4 sheet, landscape, both sides, to fold in three.
+  const hr = await pdfOf(`#/pets/${pet}/health-record`, 'health-record-A4.pdf', 'A4', '.hr-page');
+  const stickers = await win.locator('.hr-sticker').count();
+  check('health-record', 'The pet health record booklet prints on both sides of one A4 sheet (landscape) with a sticker box per vaccination',
+    hr.pages === 2 && hr.a4land && stickers >= 6, `health-record-A4.pdf: ${hr.pages} pages, ${hr.size}; ${stickers} sticker boxes`);
   const lr = await pdfOf(`#/pets/${pet}/lab-request`, 'lab-request-A4.pdf', 'A4');
   check('lab-request-print', 'The lab request (the clinic\'s whole test list) prints on one A4 page', lr.pages === 1 && lr.a4, `lab-request-A4.pdf: ${lr.pages} page, ${lr.size}`);
   const c = await pdfOf(`#/pets/${pet}/report`, 'case-report-A4.pdf', 'A4');
@@ -379,7 +385,7 @@ async function pdfOf(hash, name, size = 'A5') {
     ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
     ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`],
     ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`],
-    ['lost-found', '#/lost-found'], ['exam-dashboard', '#/exam'], ['pet-exam', `#/pets/${petId}?tab=exam`], ['pet-tag', `#/pets/${petId}/tag`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
+    ['lost-found', '#/lost-found'], ['pet-exam', `#/pets/${petId}?tab=exam`], ['pet-tag', `#/pets/${petId}/tag`], ['health-record', `#/pets/${petId}/health-record`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],

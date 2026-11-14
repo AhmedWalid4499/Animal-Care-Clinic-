@@ -61,18 +61,21 @@ await step('quick search', async () => {
 await win.getByRole('button', { name: 'English' }).click();
 await shot('dashboard-en');
 
-// The dashboard (redone 7 Nov 2026): greeting, quick actions, today at a glance.
-await step('dashboard: quick actions and today at a glance', async () => {
+// The dashboard (redone 14 Nov 2026): greeting, search, four big buttons, one "Needs attention" list, then the day.
+await step('dashboard: big buttons and what needs attention', async () => {
   await win.locator('.dash-hello h1', { hasText: 'Waleed' }).waitFor();
-  const quick = (await win.locator('.quick .quick-btn').allInnerTexts()).map((s) => s.replace(/\d+$/, '').trim());
-  for (const label of ['New visit', 'Pre-diagnosis', 'Book appointment', 'New owner', 'Reminders', 'New invoice']) {
+  const quick = (await win.locator('.quick .quick-btn').allInnerTexts()).map((s) => s.trim());
+  for (const label of ['New visit', 'Pre-diagnosis', 'Book appointment', 'New owner']) {
     if (!quick.some((q) => q.startsWith(label))) throw new Error(`quick action missing: ${label} (${quick.join(' | ')})`);
   }
-  const apptCard = win.locator('.glance-card', { hasText: "Today's appointments" });
-  if (!(await apptCard.locator('b').innerText()).match(/^\d+$/)) throw new Error('appointments card has no number');
-  await win.locator('.glance-card', { hasText: 'In-patients' }).locator('.g-sub', { hasText: 'overdue' }).waitFor(); // demo: Rocky's fluids
-  await win.locator('.glance-card', { hasText: 'Open invoices' }).waitFor();
-  await win.locator('.low-stock', { hasText: 'Amoxicillin' }).waitFor(); // demo drug count 2 ≤ 3
+  const attn = win.locator('.section.attention');
+  await attn.locator('.attn-ward', { hasText: 'overdue' }).waitFor(); // demo: Rocky's fluids
+  await attn.locator('.attn-reminders', { hasText: 'vaccination' }).waitFor();
+  await attn.locator('.attn-invoices', { hasText: 'unpaid' }).waitFor();
+  await attn.locator('.low-stock', { hasText: 'Amoxicillin' }).waitFor(); // demo drug count 2 ≤ 3
+  if (await win.locator('.glance-card').count()) throw new Error('the old counter cards are still on the dashboard');
+  await win.locator('.section.schedule li').first().waitFor();
+  await shot('dashboard-attention');
   // "Book appointment" opens a new booking straight away.
   await win.locator('.quick').getByRole('button', { name: 'Book appointment' }).click();
   await win.locator('.dialog input[type=datetime-local]').waitFor();
@@ -114,17 +117,12 @@ await step('pet record', async () => {
   await shot('pet-weight-chart');
 });
 
-// Physical examination analytics (schema v19): the pet's vitals and findings, and the clinic's exam dashboard.
+// Physical examination analytics (schema v19): the pet's vitals and findings in its Exam tab.
 await step('exam analytics', async () => {
   const back = await win.evaluate(() => location.hash);
   await win.getByRole('tab', { name: 'Exam' }).click();
   await win.waitForSelector('.exam-table');
   await shot('pet-exam');
-  await win.evaluate(() => { location.hash = '#/exam?period=365'; });
-  await win.waitForSelector('.exam-tiles');
-  await shot('exam-dashboard');
-  await win.locator('.exam-tiles [data-finding=fleas_ticks]').click();
-  await win.locator('.exam-flagged tbody tr').first().waitFor();
   await win.evaluate((h) => { location.hash = h; }, back);
   await win.waitForSelector('.tabs');
 });
@@ -261,9 +259,15 @@ await step('patient alerts, certificate, reminders', async () => {
   await win.locator('.cert-title', { hasText: 'شهادة تطعيم' }).waitFor();
   if ((await win.locator('.certificate tbody tr').count()) < 3) throw new Error('certificate is missing rows');
   await shot('vaccination-certificate');
+  // Health record booklet (14 Nov 2026): A4 landscape, both sides, a sticker box per vaccination.
+  await go(`${petHash.split('?')[0]}/health-record`);
+  await win.locator('.hr-page.hr-inside .hr-sticker').first().waitFor();
+  await shot('health-record');
+  await win.locator('.seg button', { hasText: 'Blank' }).click();
+  await shot('health-record-blank');
   // Reminders: tomorrow's appointments + this week's vaccinations, each with WhatsApp.
   await go('#/');
-  await win.locator('.quick').getByRole('button', { name: /Reminders/ }).click();
+  await win.locator('.attn-reminders').getByRole('button', { name: 'Send reminders' }).click();
   await win.locator('.reminders h2', { hasText: 'Vaccinations due this week' }).waitFor();
   if ((await win.locator('.reminders .btn.wa').count()) < 1) throw new Error('no WhatsApp buttons on the reminders list');
   await shot('reminders');
