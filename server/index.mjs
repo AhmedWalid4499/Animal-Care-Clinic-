@@ -14,6 +14,7 @@ import { sendPush, setupPush } from './notify.mjs';
 import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backup.mjs';
 import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
 import { handleOwnerPage, ownerPagesChanged } from './portal.mjs';
+import { handleTag } from './tags.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -370,6 +371,14 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     // An owner's page from their QR code (server/portal.mjs): public, the link itself is the key.
     if ((url.pathname.startsWith('/o/') || url.pathname.startsWith('/o-font/')) && (await handleOwnerPage(pool, req, res, url))) return;
+    // A pet's collar tag (server/tags.mjs): public; a finder's Alert becomes a found report everyone at the clinic sees.
+    if (url.pathname.startsWith('/t/') && (await handleTag(pool, req, res, url, {
+      afterReport: (clinicId, notifications) => {
+        broadcast(clinicId, { type: 'changed' }); // devices pull the report into Lost & found
+        ownerPagesChanged(clinicId); // the owner's open page shows the alert
+        deliver(clinicId, notifications); // bell, tray, phones
+      },
+    }))) return;
     return serveStatic(req, res, url);
   } catch (e) {
     console.error(req.method, url.pathname, e);

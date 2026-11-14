@@ -22,6 +22,7 @@ function assistantIntake(change, before, userId) {
   return before.stage === 'WAITING' && Object.keys(cols).every((c) => INTAKE_EDIT_COLS.has(c));
 }
 // Everyone may change these on their own user row: the bell's on/off switches, and their own password.
+const FOUND_COLS = new Set(['status', 'handled_by', 'handled_at', 'updated_at']);
 const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_password', 'updated_at']);
 
 /**
@@ -36,6 +37,15 @@ export function refuse(role, change, before, userId) {
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
   if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
+  // Lost & found: reports come only from a pet's collar tag page (the server writes them); anyone at the clinic may
+  // mark one handled, and nothing else about it changes.
+  if (tbl === 'found_reports') {
+    if (!before) return 'found reports come from the collar tag page';
+    if (!Object.keys(cols).every((c) => FOUND_COLS.has(c))) return 'only the handled status of a found report can change';
+    return null;
+  }
+  // Anyone may give a pet a collar tag; replacing or switching off a printed one is for admins (like the owner page).
+  if (tbl === 'pets' && 'tag_token' in cols && before?.tag_token && cols.tag_token !== before.tag_token && role !== 'ADMIN') return 'replacing a collar tag is for admins';
   // A customer ID is given once (by the server) and never changes, not even by an Admin: it is printed on documents.
   if (tbl === 'owners' && 'code' in cols && typeof before?.code === 'string' && /^AC-\d+$/.test(before.code) && cols.code !== before.code) return 'a customer ID never changes';
   // Stock movements are a log: never changed afterwards. Front desk and vets record sales on invoices; restocking

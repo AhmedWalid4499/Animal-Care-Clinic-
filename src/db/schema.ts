@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -112,6 +112,25 @@ const requestTables = `CREATE TABLE IF NOT EXISTS test_requests (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS test_requests_pet ON test_requests(pet_id, requested_at);`;
+// Schema v18 (14 Nov 2026): lost & found. Someone scans a pet's collar tag (pets.tag_token) and presses Alert: the
+// clinic server writes a report (with the finder's location if they allowed it); devices only mark it handled.
+const foundTables = `CREATE TABLE IF NOT EXISTS found_reports (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  owner_id TEXT REFERENCES owners(id),
+  reported_at TEXT NOT NULL,
+  lat REAL,
+  lng REAL,
+  accuracy_m REAL,
+  finder_name TEXT,
+  finder_phone TEXT,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'NEW' CHECK (status IN ('NEW','HANDLED')),
+  handled_by TEXT REFERENCES users(id),
+  handled_at TEXT,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS found_reports_status ON found_reports(status, reported_at);`;
 const wardTables = `CREATE TABLE IF NOT EXISTS admissions (
   id TEXT PRIMARY KEY,
   pet_id TEXT NOT NULL REFERENCES pets(id),
@@ -228,6 +247,7 @@ CREATE TABLE pets (
   alert_flags TEXT,
   alert_note TEXT,
   recall_sent_at TEXT,
+  tag_token TEXT,
   ${ts}
 );
 CREATE INDEX pets_owner ON pets(owner_id);
@@ -390,6 +410,7 @@ ${expensesTable}
 ${clinicalDocs}
 ${wardTables}
 ${requestTables}
+${foundTables}
 ${v13Cols}
 ${v14Cols}
 
@@ -488,12 +509,15 @@ export const MIGRATIONS: Record<number, string> = {
     CREATE INDEX IF NOT EXISTS owners_code ON owners(code);`,
   // v17 (14 Nov 2026): saved X-ray and lab requests.
   17: requestTables,
+  // v18 (14 Nov 2026): collar tags and lost & found.
+  18: `ALTER TABLE pets ADD COLUMN tag_token TEXT;
+    ${foundTables}`,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */

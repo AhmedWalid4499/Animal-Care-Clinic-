@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useQuery, type Theme } from '../lib/app';
-import { getSettings } from '../db/repo';
+import { getSettings, newFoundCount } from '../db/repo';
 import { userRoles } from '../db/types';
 import { Icon } from './ui';
 import { SideUpdateStatus, UpdateBanner, useUpdateState } from './Updates';
@@ -26,12 +26,15 @@ export function Layout() {
   const updateReady = useUpdateState()?.status === 'ready';
   // Sidebar groups (10 Nov 2026, "the UI is a bit confusing"): the day's work first, then the clinic's books and
   // supplies, then Settings. The phone's bottom bar shows the items without `sideOnly`.
-  type Item = { to: string; icon: string; label: string; end?: boolean; also?: string[]; sideOnly?: boolean; group: 'day' | 'clinic' | 'system'; dot?: boolean };
+  type Item = { to: string; icon: string; label: string; end?: boolean; also?: string[]; sideOnly?: boolean; group: 'day' | 'clinic' | 'system'; dot?: boolean; count?: number };
+  // Lost & found (schema v18): alerts from collar tags nobody has handled yet.
+  const foundNew = useQuery(newFoundCount);
   const items: Item[] = [
     { to: '/', icon: 'home', label: t('nav.dashboard'), end: true, group: 'day' },
     { to: '/owners', icon: 'users', label: t('nav.owners'), group: 'day' },
     { to: '/appointments', icon: 'calendar', label: t('nav.appointments'), group: 'day' },
     { to: '/ward', icon: 'stethoscope', label: t('ward.title'), sideOnly: true, group: 'day' },
+    { to: '/lost-found', icon: 'paw', label: t('lostFound.title'), sideOnly: true, group: 'day', count: foundNew },
     // Invoices, Reports and the Price list (the tabs on top of each move between them).
     { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices'], group: 'clinic' },
     { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true, group: 'clinic' },
@@ -68,6 +71,7 @@ export function Layout() {
                 {(n === 0 || items[n - 1].group !== i.group) && (i.group === 'system' ? <hr className="nav-sep" /> : <div className="nav-group">{t(`nav.group.${i.group}`)}</div>)}
                 <NavLink to={i.to} end={i.end} className={({ isActive }) => (isActive || inSection(i) ? 'active' : '')}>
                   <Icon name={i.icon} /> {i.label}{i.dot ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
+                  {i.count ? <span className="nav-count">{i.count}</span> : null}
                 </NavLink>
               </Fragment>
             ))}

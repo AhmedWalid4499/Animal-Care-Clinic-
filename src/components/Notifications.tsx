@@ -33,7 +33,7 @@ function ago(iso: string, t: T, locale: string) {
   return rtf.format(-Math.round(s / 86400), 'day');
 }
 
-const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard' };
+const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard', found: 'paw' };
 
 /** The bell: unread count, the list, and each person's on/off choices. */
 export function NotificationBell({ floating }: { floating?: boolean }) {

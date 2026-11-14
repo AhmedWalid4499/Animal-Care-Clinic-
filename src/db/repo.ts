@@ -4,7 +4,7 @@ import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 import { ROLES, highestRole, userRoles } from './types';
 
@@ -1062,6 +1062,43 @@ export function updateLabResult(id: string, r: LabInputRow) {
   const n = numOrNull(r.value);
   tx(() => update('lab_results', id, { analyte: r.analyte.trim(), value: n, value_text: n == null ? r.value.trim() || null : null, unit: blank(r.unit), ref_low: numOrNull(r.ref_low), ref_high: numOrNull(r.ref_high) }));
 }
+// ---------------------------------------------------------------- collar tags and lost & found (schema v18)
+/** Give the pet a collar tag (QR). Keeps an existing one, so a tag already on the collar keeps working. */
+export function createPetTag(petId: string): string {
+  return tx(() => {
+    const cur = get<{ tag_token: string | null }>('SELECT tag_token FROM pets WHERE id = ?', [petId]);
+    if (cur?.tag_token) return cur.tag_token;
+    const token = newPortalToken();
+    update('pets', petId, { tag_token: token });
+    return token;
+  });
+}
+/** Admin: a lost or stolen tag. The old QR stops working at once; print the new one. */
+export function replacePetTag(petId: string): string {
+  const token = newPortalToken();
+  tx(() => update('pets', petId, { tag_token: token }));
+  return token;
+}
+export function disablePetTag(petId: string) {
+  tx(() => update('pets', petId, { tag_token: null }));
+}
+export interface FoundReportRow extends FoundReport {
+  pet_name: string; species: string; photo_url: string | null; owner_name: string | null; owner_phone: string | null; owner_whatsapp: string | null;
+  owner_code: string | null; handled_by_name: string | null;
+}
+/** Newest first; new ones before handled ones. */
+export const foundReports = () =>
+  all<FoundReportRow>(
+    `SELECT f.*, p.name pet_name, p.species, p.photo_url, o.full_name owner_name, o.phone owner_phone, o.whatsapp owner_whatsapp, o.code owner_code,
+       u.name handled_by_name
+     FROM found_reports f JOIN pets p ON p.id = f.pet_id LEFT JOIN owners o ON o.id = COALESCE(f.owner_id, p.owner_id) LEFT JOIN users u ON u.id = f.handled_by
+     ORDER BY f.status = 'NEW' DESC, f.reported_at DESC LIMIT 300`,
+  );
+export const newFoundCount = () => get<{ n: number }>("SELECT COUNT(*) n FROM found_reports WHERE status = 'NEW'")?.n ?? 0;
+export function markFoundHandled(id: string, userId: string | null) {
+  tx(() => update('found_reports', id, { status: 'HANDLED', handled_by: userId, handled_at: nowIso() }));
+}
+
 // ---------------------------------------------------------------- X-ray and lab requests (schema v17)
 export interface TestRequestRow extends TestRequest { requested_by_name: string | null }
 export interface TestRequestInput { pet_id: string; kind: RequestKind; items: string[]; other: string; notes: string; visit_id?: string | null }

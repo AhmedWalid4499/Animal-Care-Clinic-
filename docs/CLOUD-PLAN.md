@@ -228,6 +228,14 @@ Decided (14 Nov): **Dr. Waleed approved the change request.** The owner sees pre
 | X-ray request, A5, with boxes to tick and space to write | Pet → Print & forms → X-ray request | Saved since the follow-up below |
 | Save X-ray requests in the pet's history; keep previous X-rays and show them to the owner under "Requests"; a printable lab request (the clinic's sheet) also shown to the owner | `test_requests` (schema v17) for X-ray and lab requests; pet record → Requests tab (requests + X-ray images, Upload X-ray); lab request A4 from `src/lib/lab-tests.json`; owner page → Requests tab | New synced table; Admin + Doctor write it; X-ray images reach the owner only once their bytes are on the server (`/o/<token>/f/<id>`, checked against the owner's pets) |
 
+### Collar tags and lost & found (14 Nov 2026)
+
+| Asked for | Built |
+|---|---|
+| Each pet has its own profile on the owner page | `#pet:<id>`: details, weight chart, appointments, vaccinations, labs, visits and diagnoses, prescriptions, requests, X-rays and lab files |
+| A printable QR for the collar that shows the pet's and the owner's data if the pet is lost | `pets.tag_token` (schema v18), `/t/<token>` (`server/tags.mjs`): pet, medical alerts, owner's name with Call / WhatsApp, clinic. No address, email or history. Printed from Pet → Print & forms → Collar tag (three sizes) |
+| An Alert button: the owner is told on their own page, everyone with the app is alerted, with the location; a Lost & found tab | `POST /t/<token>/alert` (location optional, asked by the browser; rate-limited), `found_reports` written by the server, notification kind `found` to everyone (bell, tray, Web Push), red alert on the owner's page until handled, **Lost & found** screen with map link, call / WhatsApp and Mark handled |
+
 ## Scope impact (SCOPE §10)
 
 These are outside SCOPE §4, so they are change requests, quoted at list price and waived at Dr. Waleed's discretion:

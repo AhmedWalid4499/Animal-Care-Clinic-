@@ -76,8 +76,15 @@ export async function ownerPageData(pool, owner) {
     forPets('visits', petIds), forPets('vaccinations', petIds), forPets('appointments', petIds), forPets('lab_results', petIds),
     forPets('test_requests', petIds), forPets('attachments', petIds),
   ]);
-  // X-ray images whose bytes are on the server's volume (an image still on the laptop that added it waits for its upload).
-  const xrayFiles = files.filter((a) => a.kind === 'XRAY');
+  // Lost & found (schema v18): someone scanned one of this owner's collar tags and pressed Alert; shown until the clinic
+  // marks it handled (and for 30 days at most).
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString();
+  const found = petIds.length
+    ? (await pool.query("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'found_reports' AND NOT deleted AND data->>'pet_id' = ANY($2::text[]) AND data->>'status' = 'NEW' AND data->>'reported_at' > $3", [cid, petIds, since])).rows.map((r) => r.data)
+    : [];
+  // X-ray images and lab result files whose bytes are on the server's volume (one still on the laptop that added it waits
+  // for its upload). Other files (documents, photos) stay with the clinic.
+  const xrayFiles = files.filter((a) => a.kind === 'XRAY' || a.kind === 'LAB');
   const onServer = new Set(xrayFiles.length
     ? (await pool.query('SELECT id FROM files WHERE clinic_id = $1 AND id = ANY($2::text[])', [cid, xrayFiles.map((a) => String(a.id))])).rows.map((r) => r.id)
     : []);
@@ -121,6 +128,8 @@ export async function ownerPageData(pool, owner) {
         weight: w ? { kg: Number(w.weight_kg), at: w.visited_at } : null,
         // Lab results by test day, newest first, flagged high / low against the range the clinic recorded.
         labs: labDays(labRows.filter((r) => String(r.pet_id) === String(p.id))),
+        tag: !!p.tag_token,
+        weights: visits.filter((v) => String(v.pet_id) === String(p.id) && v.weight_kg != null).sort(byText('visited_at')).map((v) => ({ at: v.visited_at, kg: Number(v.weight_kg) })),
         // Finished visits with what the vet found (diagnosis only: complaint and treatment notes stay with the clinic).
         visits: visits.filter((v) => String(v.pet_id) === String(p.id)).sort((a, b) => byText('visited_at')(b, a))
           .map((v) => ({ visited_at: v.visited_at, type: v.type, diagnosis: v.diagnosis ?? null, vet_name: v.vet_id ? vets.get(String(v.vet_id)) ?? null : null })),
@@ -133,6 +142,10 @@ export async function ownerPageData(pool, owner) {
       .filter((a) => a.status === 'SCHEDULED' && Date.parse(a.scheduled_at) + (Number(a.duration_min) || 20) * 60_000 > now)
       .sort(byText('scheduled_at'))
       .map((a) => ({ id: String(a.id), pet_id: String(a.pet_id), pet_name: petName.get(String(a.pet_id)) ?? '', scheduled_at: a.scheduled_at, duration_min: Number(a.duration_min) || 20, type: a.type })),
+    found: found.sort((a, b) => byText('reported_at')(b, a)).map((f) => ({
+      id: String(f.id), pet_id: String(f.pet_id), pet_name: petName.get(String(f.pet_id)) ?? '', at: f.reported_at,
+      lat: f.lat ?? null, lng: f.lng ?? null, accuracy_m: f.accuracy_m ?? null, finder_name: f.finder_name ?? null, finder_phone: f.finder_phone ?? null, message: f.message ?? null,
+    })),
     // X-ray and lab requests the vet gave (cancelled ones left out), newest first; items are keys the page labels.
     requests: requestRows
       .filter((r) => r.status !== 'CANCELLED')
@@ -146,7 +159,7 @@ export async function ownerPageData(pool, owner) {
       .filter((a) => onServer.has(String(a.id)))
       .sort((a, b) => byText('created_at')(b, a))
       .map((a) => ({
-        id: String(a.id), pet_id: String(a.pet_id), pet_name: petName.get(String(a.pet_id)) ?? '', at: a.created_at, file_name: a.file_name,
+        id: String(a.id), pet_id: String(a.pet_id), pet_name: petName.get(String(a.pet_id)) ?? '', at: a.created_at, file_name: a.file_name, kind: a.kind,
         image: /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(a.mime_type ?? '') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.file_name ?? ''),
       })),
     prescriptions: visits
