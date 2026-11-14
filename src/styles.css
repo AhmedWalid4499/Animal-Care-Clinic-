@@ -681,8 +681,9 @@ a.owner-code:hover { text-decoration: underline; }
 .xray-grid { column-count: 3; column-gap: 8px; margin-top: 4px; }
 .xray-grid fieldset { border: 1px solid #bbb; border-radius: 4px; padding: 1px 5px 3px; margin: 0 0 5px; break-inside: avoid; display: block; width: 100%; }
 .xray-grid legend { font-weight: 600; font-size: 8.5pt; padding: 0 3px; }
-.xbox { display: flex; align-items: center; gap: 4px; font-size: 8pt; line-height: 1.3; padding: 0.5px 0; cursor: pointer; }
-.xbox input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.xbox { position: relative; display: flex; align-items: center; gap: 4px; font-size: 8pt; line-height: 1.3; padding: 0.5px 0; cursor: pointer; }
+/* Hidden but focusable; anchored to its box (unanchored, the inputs escaped the sheet's scroll box and widened the page on phones). */
+.xbox input { position: absolute; inset-inline-start: 0; top: 0; opacity: 0; width: 1px; height: 1px; margin: 0; }
 .xbox .sq { width: 9px; height: 9px; border: 1.2px solid #111; display: inline-grid; place-items: center; font-size: 9px; line-height: 1; flex: none; }
 .xbox.on .sq { background: #111; color: #fff; }
 .xbox input:focus-visible + .sq { outline: 2px solid var(--accent); outline-offset: 1px; }

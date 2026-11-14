@@ -791,10 +791,10 @@ await step('phase6: owner page', async () => {
   const dxOnPets = (await phonePage.locator('main').innerText()).includes(DX);
   const labsInDb = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'lab_results' AND NOT deleted AND data->>'pet_id' = $1", [String(pet.id)])).rows[0].n);
   const labsOnPage = labsInDb ? (await phonePage.locator('details.labday').count()) > 0 && /Creatinine|BUN/.test(await phonePage.locator('main').innerText()) : true;
-  const idOnPage = !!owner.code && (await phonePage.locator('main').innerText().then((x) => x.includes(owner.code)).catch(() => false) || (await phonePage.locator('.hero').innerText().catch(() => '')).includes(owner.code));
   const privateShown = JSON.stringify(await (await fetch(`${url}/data`)).json()).includes(PRIVATE);
   await phonePage.screenshot({ path: path.join(out, 'owner-page-2-pets-ar.png'), fullPage: true });
   await tab('details');
+  const idOnPage = !!owner.code && (await phonePage.locator('main').innerText()).includes(owner.code);
   await phonePage.screenshot({ path: path.join(out, 'owner-page-5-details-ar.png'), fullPage: true });
   await tab('home');
   await phonePage.screenshot({ path: path.join(out, 'owner-page-1-home-ar.png'), fullPage: true });
