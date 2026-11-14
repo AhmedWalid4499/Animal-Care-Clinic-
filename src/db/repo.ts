@@ -4,7 +4,7 @@ import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, LabResult, Payment, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Admission, CareTask, CareTaskStatus, Consent, Drug, Expense, ExpenseCategory, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 import { ROLES, highestRole, userRoles } from './types';
 
@@ -1062,6 +1062,29 @@ export function updateLabResult(id: string, r: LabInputRow) {
   const n = numOrNull(r.value);
   tx(() => update('lab_results', id, { analyte: r.analyte.trim(), value: n, value_text: n == null ? r.value.trim() || null : null, unit: blank(r.unit), ref_low: numOrNull(r.ref_low), ref_high: numOrNull(r.ref_high) }));
 }
+// ---------------------------------------------------------------- X-ray and lab requests (schema v17)
+export interface TestRequestRow extends TestRequest { requested_by_name: string | null }
+export interface TestRequestInput { pet_id: string; kind: RequestKind; items: string[]; other: string; notes: string; visit_id?: string | null }
+const requestSql = 'SELECT r.*, u.name requested_by_name FROM test_requests r LEFT JOIN users u ON u.id = r.requested_by';
+/** Newest first. */
+export const petTestRequests = (petId: string) => all<TestRequestRow>(`${requestSql} WHERE r.pet_id = ? ORDER BY r.requested_at DESC`, [petId]);
+export const getTestRequest = (id: string) => get<TestRequestRow>(`${requestSql} WHERE r.id = ?`, [id]);
+/** Save a request (new, or the vet edits one); returns its id. Ticked items keep the order of the menu. */
+export function saveTestRequest(d: TestRequestInput, userId: string | null, id?: string): string {
+  const values = { items: d.items.length ? d.items.join(',') : null, other: blank(d.other), notes: blank(d.notes) };
+  return tx(() => {
+    if (id) {
+      update('test_requests', id, values);
+      return id;
+    }
+    return insert('test_requests', { ...values, pet_id: d.pet_id, visit_id: d.visit_id ?? null, kind: d.kind, status: 'REQUESTED', requested_by: userId, requested_at: nowIso() });
+  });
+}
+/** Done (results / images came back) or cancelled; never deleted. */
+export function setTestRequestStatus(id: string, status: RequestStatus) {
+  tx(() => update('test_requests', id, { status }));
+}
+
 export const petLabResults = (petId: string) =>
   all<LabResult>('SELECT * FROM lab_results WHERE pet_id = ? ORDER BY taken_at DESC, panel, created_at', [petId]);
 /** Analytes this clinic has recorded before, with the unit and range last used for this species (to fill a new row). */

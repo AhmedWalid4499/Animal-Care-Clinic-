@@ -2,15 +2,18 @@
 //  - Lab report (A5): one test day's results with the reference ranges and high / low flags.
 //  - Case report (A4): the owner, the patient, the whole case history (visits, diagnoses, treatment, prescriptions),
 //    vaccinations, lab results, and the attached X-rays and photos printed in the report. Admins and Doctors.
-//  - X-ray request (A5): the views to take, ticked from a menu, plus the vet's own notes. Printed, not stored.
+//  - X-ray request (A5) and lab request (A4, the clinic's own sheet): ticked from a menu, plus the vet's notes; saved in the
+//    pet's history (test_requests, schema v17) and shown on the owner page.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import {
-  getAttachmentBytes, getOwner, getPet, getSettings, lastWeight, petAttachments, petLabResults, petVaccinations, petVisits, shownCode,
+  getAttachmentBytes, getOwner, getPet, getSettings, getTestRequest, lastWeight, petAttachments, petLabResults, petVaccinations, petVisits,
+  petTestRequests, saveTestRequest, shownCode,
   type PetRow,
 } from '../db/repo';
-import type { Attachment, LabResult } from '../db/types';
+import type { Attachment, LabResult, RequestKind } from '../db/types';
+import labTests from '../lib/lab-tests.json';
 import { ageParts } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { downloadAttachment, serverUrl } from '../sync/engine';
@@ -21,7 +24,7 @@ const range = (r: Pick<LabResult, 'ref_low' | 'ref_high'>) =>
   r.ref_low != null && r.ref_high != null ? `${r.ref_low}–${r.ref_high}` : r.ref_low != null ? `≥ ${r.ref_low}` : r.ref_high != null ? `≤ ${r.ref_high}` : '';
 
 /** Back + Print above a sheet, and the sheet itself. */
-function PrintPage({ children, actions }: { children: ReactNode; actions?: ReactNode }) {
+function PrintPage({ children, actions, onPrint }: { children: ReactNode; actions?: ReactNode; onPrint?: () => void }) {
   const { t } = useApp();
   const nav = useNavigate();
   return (
@@ -30,7 +33,7 @@ function PrintPage({ children, actions }: { children: ReactNode; actions?: React
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <span className="spacer" />
         {actions}
-        <button className="btn primary print-btn" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <button className="btn primary print-btn" onClick={() => { onPrint?.(); setTimeout(() => platform.print(), onPrint ? 150 : 0); }}><Icon name="print" /> {t('common.print')}</button>
       </div>
       <div className="sheet-wrap">{children}</div>
     </div>
@@ -119,10 +122,10 @@ export function LabReportPrint() {
 }
 
 // ---------------------------------------------------------------- case report (A4)
-const isImage = (a: Attachment) => /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(a.mime_type ?? '') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.file_name);
+export const isImage = (a: Attachment) => /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(a.mime_type ?? '') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.file_name);
 
 /** Object URLs for the pet's image attachments; files only on the clinic server are fetched first. */
-function useImages(files: Attachment[], enabled: boolean) {
+export function useImages(files: Attachment[], enabled: boolean) {
   const [urls, setUrls] = useState<Record<string, string | null>>({});
   const key = files.map((f) => f.id).join(',');
   useEffect(() => {
@@ -164,6 +167,7 @@ export function CaseReport() {
   const vacc = useQuery(() => petVaccinations(id), [id]);
   const labs = useQuery(() => petLabResults(id), [id]);
   const files = useQuery(() => petAttachments(id), [id]);
+  const requests = useQuery(() => petTestRequests(id).filter((r) => r.status !== 'CANCELLED'), [id]);
   const weight = useQuery(() => lastWeight(id), [id]);
   const [from, setFrom] = useState(sp.get('from') ?? '');
   const [to, setTo] = useState(sp.get('to') ?? '');
@@ -302,6 +306,25 @@ export function CaseReport() {
           </>
         )}
 
+        {requests.filter((r) => inRange(r.requested_at)).length > 0 && (
+          <>
+            <h3>{t('petRecord.requests')}</h3>
+            <table>
+              <thead><tr><th>{t('common.date')}</th><th>{t('common.type')}</th><th>{t('docs.requested')}</th><th>{t('common.status')}</th></tr></thead>
+              <tbody>
+                {requests.filter((r) => inRange(r.requested_at)).map((r) => (
+                  <tr key={r.id}>
+                    <td>{fmt.date(r.requested_at)}</td>
+                    <td>{t(r.kind === 'XRAY' ? 'xray.title' : 'labReq.title')}</td>
+                    <td>{[...(r.items ?? '').split(',').filter(Boolean).map((k) => requestItemLabel(t, r.kind, k)), r.other].filter(Boolean).join(' · ')}</td>
+                    <td>{t(`requests.status.${r.status}`)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
         {shownFiles.length > 0 && (
           <>
             <h3>{t('docs.attachments')}</h3>
@@ -338,8 +361,8 @@ export function CaseReport() {
   );
 }
 
-// ---------------------------------------------------------------- X-ray request (A5)
-/** Regions and views on the request; limbs have a left / right box each. Labels in src/i18n (xray.*). */
+// ---------------------------------------------------------------- X-ray and lab requests (saved, schema v17)
+/** Regions and views on the X-ray request; limbs have a left / right box each. Labels in src/i18n (xray.*). */
 export const XRAY_MENU: { region: string; views: string[]; sides?: boolean }[] = [
   { region: 'thorax', views: ['latR', 'latL', 'vd', 'dv'] },
   { region: 'abdomen', views: ['lat', 'vd'] },
@@ -350,66 +373,135 @@ export const XRAY_MENU: { region: string; views: string[]; sides?: boolean }[] =
   { region: 'hindlimb', views: ['hip', 'femur', 'stifle', 'tibia', 'tarsus', 'paw'], sides: true },
   { region: 'other', views: ['wholeBody', 'contrast', 'comparison'] },
 ];
-const OPTIONS = ['sedation', 'urgent', 'repeat'];
+const XRAY_OPTIONS = ['sedation', 'urgent', 'repeat'];
+/** The lab tests, from the clinic's own request sheet (src/lib/lab-tests.json; test names stay in English). */
+export const LAB_GROUPS = labTests.groups;
+const LAB_LABEL = new Map(LAB_GROUPS.flatMap((g) => g.tests.map((x) => [x.key, x.label] as const)));
 
-/** /pets/:id/xray-request — tick on screen, or print the empty boxes and tick by pen. */
-export function XrayRequest() {
-  const { id = '' } = useParams();
-  const { t, fmt, user } = useApp();
-  const pet = useQuery(() => getPet(id), [id]);
-  const weight = useQuery(() => lastWeight(id), [id]);
+/** A ticked item as text: "Chest (thorax): Right lateral", "Front leg: Elbow (L)", "Creatinine". */
+export function requestItemLabel(t: (k: string) => string, kind: RequestKind, key: string): string {
+  if (kind === 'LAB') return LAB_LABEL.get(key) ?? key;
+  const [a, b, side] = key.split('.');
+  if (a === 'opt') return t(`xray.opt.${b}`);
+  return `${t(`xray.region.${a}`)}: ${t(`xray.view.${b}`)}${side ? ` (${t(side === 'L' ? 'xray.left' : 'xray.right')})` : ''}`;
+}
+
+/**
+ * /pets/:id/xray-request, /pets/:id/lab-request (new) and /requests/:rid (saved): tick on screen and save to the pet's
+ * history, or print the boxes and tick by pen. Printing saves first, so what the owner holds is what the clinic keeps.
+ */
+export function RequestForm({ kind: newKind }: { kind?: RequestKind }) {
+  const { id: petParam = '', rid = '' } = useParams();
+  const { t, fmt, user, toast, canVisit } = useApp();
+  const nav = useNavigate();
+  const saved = useQuery(() => (rid ? getTestRequest(rid) : undefined), [rid]);
+  const kind: RequestKind = saved?.kind ?? newKind ?? 'XRAY';
+  const petId = saved?.pet_id ?? petParam;
+  const pet = useQuery(() => getPet(petId), [petId]);
+  const weight = useQuery(() => lastWeight(petId), [petId]);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState('');
   const [other, setOther] = useState('');
-  if (!pet) return null;
-  const toggle = (k: string) => setTicked((s) => {
-    const n = new Set(s);
-    if (n.has(k)) n.delete(k);
-    else n.add(k);
-    return n;
-  });
+  const [dirty, setDirty] = useState(false);
+  const [loadedFor, setLoadedFor] = useState('');
+  if (saved && loadedFor !== saved.id) {
+    setLoadedFor(saved.id);
+    setTicked(new Set((saved.items ?? '').split(',').filter(Boolean)));
+    setNotes(saved.notes ?? '');
+    setOther(saved.other ?? '');
+    setDirty(false);
+  }
+  if (!pet || (rid && !saved)) return null;
+  const editable = canVisit && saved?.status !== 'CANCELLED';
+  const toggle = (k: string) => {
+    if (!editable) return;
+    setDirty(true);
+    setTicked((s) => {
+      const n = new Set(s);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  };
+  const order = kind === 'LAB'
+    ? LAB_GROUPS.flatMap((g) => g.tests.map((x) => x.key))
+    : [...XRAY_MENU.flatMap((g) => g.views.flatMap((v) => (g.sides ? [`${g.region}.${v}.L`, `${g.region}.${v}.R`] : [`${g.region}.${v}`]))), ...XRAY_OPTIONS.map((o) => `opt.${o}`)];
+  const save = (): string => {
+    const items = order.filter((k) => ticked.has(k));
+    const sid = saveTestRequest({ pet_id: pet.id, kind, items, other, notes }, user?.id ?? null, saved?.id);
+    setDirty(false);
+    if (!saved) nav(`/requests/${sid}`, { replace: true });
+    return sid;
+  };
   const Box = ({ k, label }: { k: string; label: string }) => (
     <label className={`xbox ${ticked.has(k) ? 'on' : ''}`}>
-      <input type="checkbox" checked={ticked.has(k)} onChange={() => toggle(k)} />
+      <input type="checkbox" checked={ticked.has(k)} disabled={!editable} onChange={() => toggle(k)} />
       <span className="sq" aria-hidden>{ticked.has(k) ? '✓' : ''}</span>
       <span>{label}</span>
     </label>
   );
+  const prefix = kind === 'LAB' ? 'labReq' : 'xray';
+  const when = saved?.requested_at ?? new Date().toISOString();
+  const by = saved ? saved.requested_by_name : user?.name;
   return (
-    <PrintPage actions={<button className="btn" onClick={() => { setTicked(new Set()); setNotes(''); setOther(''); }}>{t('xray.clear')}</button>}>
-      <div className="sheet a5 doc xray-sheet">
+    <PrintPage
+      onPrint={editable && (dirty || !saved) ? () => { save(); toast(t('app.saved')); } : undefined}
+      actions={
+        <>
+          {saved && <span className={`badge ${saved.status === 'DONE' ? 'ok' : saved.status === 'CANCELLED' ? '' : 'info'}`}>{t(`requests.status.${saved.status}`)}</span>}
+          {editable && <button className="btn" onClick={() => { setTicked(new Set()); setNotes(''); setOther(''); setDirty(true); }}>{t('xray.clear')}</button>}
+          {editable && <button className="btn save-request" disabled={!!saved && !dirty} onClick={() => { save(); toast(t('app.saved')); }}>{t('common.save')}</button>}
+        </>
+      }
+    >
+      <div className={`sheet ${kind === 'LAB' ? 'a4 lab-request' : 'a5 xray-sheet'} doc`}>
         <SheetHead />
-        <h2 className="doc-title">{t('xray.title')}</h2>
+        <h2 className="doc-title">{t(`${prefix}.title`)}</h2>
+        {kind === 'LAB' && by && <div className="doc-facts"><span>{t('labReq.referredBy')}: <b>{by}</b></span></div>}
         <Who pet={pet} weight={weight?.weight_kg ?? null} />
         <div className="doc-facts">
-          <span>{t('common.date')}: <b>{fmt.date(new Date().toISOString())}</b></span>
-          {user && <span>{t('xray.requestedBy')}: <b>{user.name}</b></span>}
+          <span>{t('common.date')}: <b>{fmt.date(when)}</b></span>
+          {kind === 'LAB' && pet.date_of_birth && <span>{t('pets.dob')}: <b>{fmt.date(pet.date_of_birth)}</b></span>}
+          {kind === 'XRAY' && by && <span>{t('xray.requestedBy')}: <b>{by}</b></span>}
         </div>
-        <div className="xray-grid">
-          {XRAY_MENU.map((g) => (
-            <fieldset key={g.region}>
-              <legend>{t(`xray.region.${g.region}`)}</legend>
-              {g.views.map((v) => (g.sides ? (
-                <div key={v} className="xside">
-                  <span className="xside-name">{t(`xray.view.${v}`)}</span>
-                  <Box k={`${g.region}.${v}.L`} label={t('xray.left')} />
-                  <Box k={`${g.region}.${v}.R`} label={t('xray.right')} />
-                </div>
-              ) : <Box key={v} k={`${g.region}.${v}`} label={t(`xray.view.${v}`)} />))}
-            </fieldset>
-          ))}
-        </div>
-        <div className="xray-opts">{OPTIONS.map((o) => <Box key={o} k={`opt.${o}`} label={t(`xray.opt.${o}`)} />)}</div>
+        {kind === 'XRAY' ? (
+          <>
+            <div className="xray-grid">
+              {XRAY_MENU.map((g) => (
+                <fieldset key={g.region}>
+                  <legend>{t(`xray.region.${g.region}`)}</legend>
+                  {g.views.map((v) => (g.sides ? (
+                    <div key={v} className="xside">
+                      <span className="xside-name">{t(`xray.view.${v}`)}</span>
+                      <Box k={`${g.region}.${v}.L`} label={t('xray.left')} />
+                      <Box k={`${g.region}.${v}.R`} label={t('xray.right')} />
+                    </div>
+                  ) : <Box key={v} k={`${g.region}.${v}`} label={t(`xray.view.${v}`)} />))}
+                </fieldset>
+              ))}
+            </div>
+            <div className="xray-opts">{XRAY_OPTIONS.map((o) => <Box key={o} k={`opt.${o}`} label={t(`xray.opt.${o}`)} />)}</div>
+          </>
+        ) : (
+          <div className="xray-grid lab-grid" dir="ltr">
+            {LAB_GROUPS.map((g) => (
+              <fieldset key={g.key}>
+                <legend dir="auto">{t(`labReq.group.${g.key}`)}</legend>
+                {g.tests.map((x) => <Box key={x.key} k={x.key} label={x.label} />)}
+              </fieldset>
+            ))}
+          </div>
+        )}
         <div className="xray-write">
-          <div className="xw-label">{t('xray.otherViews')}</div>
-          <textarea className="no-print" rows={1} value={other} onChange={(e) => setOther(e.target.value)} placeholder={t('xray.otherPh')} />
+          <div className="xw-label">{t(`${prefix}.otherViews`)}</div>
+          <textarea className="no-print" rows={1} value={other} readOnly={!editable} onChange={(e) => { setOther(e.target.value); setDirty(true); }} placeholder={t(`${prefix}.otherPh`)} />
           <div className="print-only lines">{other}</div>
           <div className="xw-label">{t('xray.notes')}</div>
-          <textarea className="no-print" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('xray.notesPh')} />
+          <textarea className="no-print" rows={3} value={notes} readOnly={!editable} onChange={(e) => { setNotes(e.target.value); setDirty(true); }} placeholder={t('xray.notesPh')} />
           <div className="print-only lines tall">{notes}</div>
         </div>
         <div className="doc-sign"><div className="line" />{t('certificate.signature')}</div>
-        <div className="foot">{t('xray.foot')}</div>
+        <div className="foot">{t(`${prefix}.foot`)}</div>
       </div>
     </PrintPage>
   );

@@ -225,7 +225,8 @@ Decided (14 Nov): **Dr. Waleed approved the change request.** The owner sees pre
 | A unique, searchable, clickable customer ID that appears on the prescription | `owners.code` `AC-00001` (schema v16), on every list, document and the owner page | Numbered by the server like invoices (`TMP-…` offline); existing owners back-filled by the server at start-up; refused if anyone tries to change it |
 | Lab results as a printable document (logo, owner name and ID, pet, age, sex, results), and on the owner page | Lab report A5 per test day; owner page → Pets → Lab results (high / low flagged) | `lab_results` read by `server/portal.mjs` (index `rows_by_pet_labs`) |
 | Case report for the doctors, A4, with history, diagnoses and attached X-rays / pictures, and the owner's data | Pet → Print & forms → Case report (A4) | Images not on the device yet are fetched from the server (`downloadAttachment`) |
-| X-ray request, A5, with boxes to tick and space to write | Pet → Print & forms → X-ray request | Printed only; nothing new is stored |
+| X-ray request, A5, with boxes to tick and space to write | Pet → Print & forms → X-ray request | Saved since the follow-up below |
+| Save X-ray requests in the pet's history; keep previous X-rays and show them to the owner under "Requests"; a printable lab request (the clinic's sheet) also shown to the owner | `test_requests` (schema v17) for X-ray and lab requests; pet record → Requests tab (requests + X-ray images, Upload X-ray); lab request A4 from `src/lib/lab-tests.json`; owner page → Requests tab | New synced table; Admin + Doctor write it; X-ray images reach the owner only once their bytes are on the server (`/o/<token>/f/<id>`, checked against the owner's pets) |
 
 ## Scope impact (SCOPE §10)
 

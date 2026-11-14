@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pageHtml } from './portal-page.mjs';
+import { fileBytes } from './files.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
@@ -20,8 +21,13 @@ const TZ = 'Africa/Cairo';
 
 // UI text lives in src/i18n (CLAUDE.md: never hard-code UI text); the page gets the parts it needs.
 function loadText() {
+  // Lab test names stay in English, as on the clinic's request sheet (src/lib/lab-tests.json).
+  const labTests = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(here, '..', 'src', 'lib', 'lab-tests.json'), 'utf8')).groups
+    .flatMap((g) => g.tests.map((x) => [x.key, x.label])));
   const pick = (d) => ({
     ...d.portal.page, species: d.species, sex: d.sex, visitType: d.visitType, petStatus: d.petStatus, ageValue: d.pets.ageValue,
+    xray: { region: d.xray.region, view: d.xray.view, opt: d.xray.opt, left: d.xray.left, right: d.xray.right, title: d.xray.title },
+    labReq: { title: d.labReq.title }, labTests,
   });
   const read = (l) => JSON.parse(fs.readFileSync(path.join(here, '..', 'src', 'i18n', `${l}.json`), 'utf8'));
   return { ar: pick(read('ar')), en: pick(read('en')) };
@@ -66,9 +72,15 @@ export async function ownerPageData(pool, owner) {
   const settings = (await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'clinic_settings' AND NOT deleted LIMIT 1", [cid]))[0] ?? {};
   const pets = await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'pets' AND data->>'owner_id' = $2 AND NOT deleted", [cid, String(owner.id)]);
   const petIds = pets.map((p) => String(p.id));
-  const [visitsAll, vaccinations, appointments, labRows] = await Promise.all([
+  const [visitsAll, vaccinations, appointments, labRows, requestRows, files] = await Promise.all([
     forPets('visits', petIds), forPets('vaccinations', petIds), forPets('appointments', petIds), forPets('lab_results', petIds),
+    forPets('test_requests', petIds), forPets('attachments', petIds),
   ]);
+  // X-ray images whose bytes are on the server's volume (an image still on the laptop that added it waits for its upload).
+  const xrayFiles = files.filter((a) => a.kind === 'XRAY');
+  const onServer = new Set(xrayFiles.length
+    ? (await pool.query('SELECT id FROM files WHERE clinic_id = $1 AND id = ANY($2::text[])', [cid, xrayFiles.map((a) => String(a.id))])).rows.map((r) => r.id)
+    : []);
   // A visit still in the vet's queue isn't finished: its prescriptions appear once the vet saves it.
   const visits = visitsAll.filter((v) => (v.stage ?? 'DONE') === 'DONE');
   const visitIds = visits.map((v) => String(v.id));
@@ -76,7 +88,7 @@ export async function ownerPageData(pool, owner) {
     ? await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'prescriptions' AND data->>'visit_id' = ANY($2::text[]) AND NOT deleted", [cid, visitIds])
     : [];
   const vaccineTypes = new Map((await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'vaccine_types' AND NOT deleted", [cid])).map((t) => [String(t.id), t.name]));
-  const vetIds = [...new Set(visits.map((v) => v.vet_id).filter(Boolean).map(String))];
+  const vetIds = [...new Set([...visits.map((v) => v.vet_id), ...requestRows.map((r) => r.requested_by)].filter(Boolean).map(String))];
   const vets = new Map(vetIds.length
     ? (await pool.query("SELECT id, data->>'name' AS name FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND id = ANY($2::text[])", [cid, vetIds])).rows.map((u) => [u.id, u.name])
     : []);
@@ -121,6 +133,22 @@ export async function ownerPageData(pool, owner) {
       .filter((a) => a.status === 'SCHEDULED' && Date.parse(a.scheduled_at) + (Number(a.duration_min) || 20) * 60_000 > now)
       .sort(byText('scheduled_at'))
       .map((a) => ({ id: String(a.id), pet_id: String(a.pet_id), pet_name: petName.get(String(a.pet_id)) ?? '', scheduled_at: a.scheduled_at, duration_min: Number(a.duration_min) || 20, type: a.type })),
+    // X-ray and lab requests the vet gave (cancelled ones left out), newest first; items are keys the page labels.
+    requests: requestRows
+      .filter((r) => r.status !== 'CANCELLED')
+      .sort((a, b) => byText('requested_at')(b, a))
+      .map((r) => ({
+        id: String(r.id), pet_id: String(r.pet_id), pet_name: petName.get(String(r.pet_id)) ?? '', kind: r.kind, status: r.status, requested_at: r.requested_at,
+        items: String(r.items ?? '').split(',').filter(Boolean), other: r.other ?? null, notes: r.notes ?? null,
+        by: r.requested_by ? vets.get(String(r.requested_by)) ?? null : null,
+      })),
+    xrays: xrayFiles
+      .filter((a) => onServer.has(String(a.id)))
+      .sort((a, b) => byText('created_at')(b, a))
+      .map((a) => ({
+        id: String(a.id), pet_id: String(a.pet_id), pet_name: petName.get(String(a.pet_id)) ?? '', at: a.created_at, file_name: a.file_name,
+        image: /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(a.mime_type ?? '') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.file_name ?? ''),
+      })),
     prescriptions: visits
       .map((v) => ({
         visit_id: String(v.id), pet_id: String(v.pet_id), pet_name: petName.get(String(v.pet_id)) ?? '', visited_at: v.visited_at, type: v.type, diagnosis: v.diagnosis ?? null,
@@ -238,7 +266,7 @@ export async function handleOwnerPage(pool, req, res, url) {
     fs.createReadStream(file).pipe(res);
     return true;
   }
-  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics)?\/?$/.exec(p);
+  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics|\/f\/([^/]+))?\/?$/.exec(p);
   if (!m) return false;
   if (req.method !== 'GET' && req.method !== 'HEAD') return notFound(res);
   const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
@@ -258,6 +286,17 @@ export async function handleOwnerPage(pool, req, res, url) {
   if (sub === '') return page(res, owner, 200, token);
   if (sub === '/live') return live(req, res, owner);
   const d = await ownerPageData(pool, owner);
+  // An X-ray image of one of this owner's pets (only those listed in their data), from the server's volume.
+  if (sub.startsWith('/f/')) {
+    const x = d.xrays.find((f) => f.id === decodeURIComponent(m[4]));
+    const bytes = x ? fileBytes(owner.clinic_id, x.id) : null;
+    if (!bytes) return notFound(res);
+    const ext = (x.file_name.split('.').pop() || '').toLowerCase();
+    const type = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', pdf: 'application/pdf' }[ext] ?? 'application/octet-stream';
+    res.writeHead(200, { ...baseHeaders, 'Content-Type': type, 'Content-Length': bytes.length, 'Cache-Control': 'private, max-age=3600', 'Content-Disposition': `inline; filename="${encodeURIComponent(x.file_name)}"` });
+    res.end(req.method === 'HEAD' ? undefined : bytes);
+    return true;
+  }
   if (sub === '/manifest.webmanifest') {
     const name = (d.clinic.locale === 'en' ? d.clinic.name_en : d.clinic.name_ar) || d.clinic.name_en || 'Animal Care Clinic';
     res.writeHead(200, { ...baseHeaders, 'Content-Type': 'application/manifest+json; charset=utf-8' });

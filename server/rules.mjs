@@ -6,7 +6,7 @@ import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 // drugs: the dose calculator's list (doses decide what the calculator says), so only the Admin edits it.
 // expenses: the clinic's own spending (rent, salaries…), Admin only like the reports that use it.
 const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'expenses']);
-const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates', 'lab_results', 'admissions', 'care_tasks']);
+const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates', 'lab_results', 'admissions', 'care_tasks', 'test_requests']);
 // In-patients: assistants tick a care task done or skipped (with a note), nothing else on the ward.
 const ASSISTANT_TASK_COLS = new Set(['status', 'done_at', 'done_by', 'note', 'updated_at']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.

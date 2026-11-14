@@ -14,8 +14,10 @@ import { PageHead } from '../components/Layout';
 import { LabsTab } from './Labs';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 import { RxArchive } from '../components/RxArchive';
+import { RequestsTab } from '../components/RequestsTab';
+import { mimeOf } from '../lib/mime';
 
-type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'labs' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'labs' | 'requests' | 'files';
 
 export function PetRecord() {
   const { id = '' } = useParams();
@@ -47,6 +49,7 @@ export function PetRecord() {
             ...(canVisit ? [
               { icon: 'file', label: t('docs.reportButton'), onClick: () => nav(`/pets/${id}/report`) },
               { icon: 'clipboard', label: t('xray.button'), onClick: () => nav(`/pets/${id}/xray-request`) },
+              { icon: 'clipboard', label: t('labReq.button'), onClick: () => nav(`/pets/${id}/lab-request`) },
             ] : []),
             ...(pet.status === 'ACTIVE' ? [{ icon: 'edit', label: t('consent.button'), onClick: () => nav(`/pets/${id}/consent/new`) }] : []),
           ]}
@@ -91,7 +94,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'labs', 'files'] as Tab[]).map((k) => (
+        {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'labs', 'requests', 'files'] as Tab[]).map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -103,6 +106,7 @@ export function PetRecord() {
         {tab === 'prescriptions' && <RxArchive petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
         {tab === 'labs' && <LabsTab petId={id} />}
+        {tab === 'requests' && <RequestsTab petId={id} active={pet.status === 'ACTIVE'} />}
         {tab === 'files' && <Files petId={id} />}
       </div>
     </div>
@@ -334,10 +338,6 @@ function Files({ petId }: { petId: string }) {
   );
 }
 
-function mimeOf(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return ({ pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', txt: 'text/plain', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dcm: 'application/dicom' } as Record<string, string>)[ext] ?? 'application/octet-stream';
-}
 
 /** Print / PDF summary of the pet record (A5, print CSS). */
 export function PetSummaryPrint() {

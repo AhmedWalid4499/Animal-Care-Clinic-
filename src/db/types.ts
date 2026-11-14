@@ -94,6 +94,13 @@ export interface StockMove {
   id: string; price_item_id: string; qty: number; reason: StockReason; invoice_id: string | null; note: string | null; user_id: string | null; at: string;
   batch_no: string | null; expires_at: string | null;
 }
+export type RequestKind = 'XRAY' | 'LAB';
+export type RequestStatus = 'REQUESTED' | 'DONE' | 'CANCELLED';
+/** An X-ray or lab request given to the owner (schema v17). items = ticked keys, comma-separated. */
+export interface TestRequest {
+  id: string; pet_id: string; visit_id: string | null; kind: RequestKind; items: string | null; other: string | null; notes: string | null;
+  status: RequestStatus; requested_by: string | null; requested_at: string; created_at: string;
+}
 export interface LabResult {
   id: string; pet_id: string; visit_id: string | null; taken_at: string; panel: string | null; analyte: string; value: number | null; value_text: string | null;
   unit: string | null; ref_low: number | null; ref_high: number | null; note: string | null; user_id: string | null; created_at: string;

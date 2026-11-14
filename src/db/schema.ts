@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -95,6 +95,23 @@ CREATE TABLE IF NOT EXISTS consents (
 CREATE INDEX IF NOT EXISTS consents_pet ON consents(pet_id);`;
 // Schema v12 (7 Nov 2026): the in-patient board. An admission is a pet staying in the clinic; its care tasks are
 // timed treatments (a repeating one is stored as one row per time) that anyone ticks off; the vet admits and discharges.
+// Schema v17 (14 Nov 2026): X-ray and lab requests the vet gives the owner, kept in the pet's history. items = the
+// ticked keys, comma-separated (X-ray: XRAY_MENU in src/screens/Documents.tsx; lab: src/lib/lab-tests.json). Never
+// deleted: CANCELLED instead. Admin + Doctor write them (server/rules.mjs); the owner page shows them.
+const requestTables = `CREATE TABLE IF NOT EXISTS test_requests (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  kind TEXT NOT NULL CHECK (kind IN ('XRAY','LAB')),
+  items TEXT,
+  other TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'REQUESTED' CHECK (status IN ('REQUESTED','DONE','CANCELLED')),
+  requested_by TEXT REFERENCES users(id),
+  requested_at TEXT NOT NULL,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS test_requests_pet ON test_requests(pet_id, requested_at);`;
 const wardTables = `CREATE TABLE IF NOT EXISTS admissions (
   id TEXT PRIMARY KEY,
   pet_id TEXT NOT NULL REFERENCES pets(id),
@@ -372,6 +389,7 @@ ${stockBatchCols}
 ${expensesTable}
 ${clinicalDocs}
 ${wardTables}
+${requestTables}
 ${v13Cols}
 ${v14Cols}
 
@@ -468,12 +486,14 @@ export const MIGRATIONS: Record<number, string> = {
   // linked (TMP-… until synced, like invoice numbers), by this device otherwise (src/db/core.ts ownerCode).
   16: `ALTER TABLE owners ADD COLUMN code TEXT;
     CREATE INDEX IF NOT EXISTS owners_code ON owners(code);`,
+  // v17 (14 Nov 2026): saved X-ray and lab requests.
+  17: requestTables,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */
