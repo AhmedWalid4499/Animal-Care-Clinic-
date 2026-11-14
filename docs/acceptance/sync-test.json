@@ -3,13 +3,13 @@
     "id": "tables",
     "criterion": "Server and devices sync the same tables",
     "pass": true,
-    "evidence": "15 tables"
+    "evidence": "25 tables"
   },
   {
     "id": "bootstrap",
     "criterion": "The first laptop (Admin) uploads its records to an empty clinic",
     "pass": true,
-    "evidence": "server now holds 5 owners, 7 pets; default demo logins left active on the server: 0"
+    "evidence": "server now holds 5 owners, 8 pets; default demo logins left active on the server: 0"
   },
   {
     "id": "join",
@@ -21,13 +21,13 @@
     "id": "live-ab",
     "criterion": "A change on one laptop appears on the other within 2 s",
     "pass": true,
-    "evidence": "new owner visible on laptop B after 591 ms"
+    "evidence": "new owner visible on laptop B after 597 ms"
   },
   {
     "id": "live-ba",
     "criterion": "And back the other way",
     "pass": true,
-    "evidence": "visible on laptop A after 570 ms"
+    "evidence": "visible on laptop A after 587 ms"
   },
   {
     "id": "users",
@@ -48,6 +48,12 @@
     "evidence": "invite text has email, temporary password and server: true; keeping the temporary password refused: true; new password works on the server: true, temporary one no longer: true"
   },
   {
+    "id": "admin-promote",
+    "criterion": "The Admin can make anyone an Admin: their screens and rights change at once, without signing out",
+    "pass": true,
+    "evidence": "doctor's laptop shows Admin Settings: true (told: true; shown as Admin and Doctor: true); server accepts an Admin-only change from them: true; back to Doctor on their laptop: true"
+  },
+  {
     "id": "roles-server",
     "criterion": "The server refuses what an Assistant may not do, and allows the WhatsApp reminder",
     "pass": true,
@@ -63,19 +69,19 @@
     "id": "notify-live",
     "criterion": "An assistant books an appointment: the doctor and the admin are notified at once, the assistant is not",
     "pass": true,
-    "evidence": "doctor's bell after 113 ms: \"Reception حجز موعداً لـ Kiwi (Omar Farouk) يوم الأحد، 15 نوفمبر 7:00 م\"; admin's bell: yes; assistant notified about own booking: 0"
+    "evidence": "doctor's bell after 178 ms: \"Reception حجز موعداً لـ مشمش (سارة محمود) يوم الأحد، 15 نوفمبر 8:00 ص\"; admin's bell: yes; assistant notified about own booking: 0"
   },
   {
     "id": "notify-push",
     "criterion": "The same booking is pushed to the doctor’s phone even with the app closed (encrypted, signed); dead phones are forgotten",
     "pass": true,
-    "evidence": "push decrypted on the \"phone\": موعد — \"Reception حجز موعداً لـ Kiwi (Omar Farouk) يوم الأحد، 15 نوفمبر، 9:00 م\" → /#/appointments?view=day&date=2026-11-15&open=29fff0cc-2423-43a5-a818-18d4113c20f4; signed: true; uninstalled phone removed: yes"
+    "evidence": "push decrypted on the \"phone\": موعد — \"Reception حجز موعداً لـ مشمش (سارة محمود) يوم الأحد، 15 نوفمبر، 10:00 ص\" → /#/appointments?view=day&date=2026-11-15&open=f3b30c93-8517-4798-931d-341f16e8f46a; signed: true; uninstalled phone removed: yes"
   },
   {
     "id": "notify-tray",
     "criterion": "Closing the window keeps the app in the tray; a change still raises a system notification that opens the appointment",
     "pass": true,
-    "evidence": "after X: 1 window, visible=false; system notification: موعد — \"Reception غيّر موعد Kiwi إلى الأحد، 15 نوفمبر 8:00 م\"; clicked → window visible=true, #/appointments?view=day&date=2026-11-15, appointment open: true"
+    "evidence": "after X: 1 window, visible=false; system notification: موعد — \"Reception غيّر موعد مشمش إلى الأحد، 15 نوفمبر 9:00 ص\"; clicked → window visible=true, #/appointments?view=day&date=2026-11-15, appointment open: true"
   },
   {
     "id": "notify-conflict",
@@ -93,7 +99,7 @@
     "id": "notify-visit",
     "criterion": "A visit recorded for a pet booked today tells the front desk; other visits do not",
     "pass": true,
-    "evidence": "assistant notified about visits for: بندق (booked today: بندق, walk-in: Bella)"
+    "evidence": "assistant notified about visits for: Max (booked today: Max, walk-in: بندق)"
   },
   {
     "id": "notify-read",
@@ -108,28 +114,124 @@
     "evidence": "vet's notification: emergency; in the vet's queue as emergency: true; doctor's laptop shows \"with the vet\": true; visit form shows complaint \"Vomiting since this morning\", heart rate 132; saved as one visit (1), stage DONE, vet = admin: true, intake by the doctor: true, temperature corrected to 39.4; invoice offered: true; queue empty after: true; \"visit recorded\" sent at intake: 0"
   },
   {
+    "id": "assistant-intake",
+    "criterion": "An Assistant records the pre-diagnosis for a new patient; the doctor and the admin are notified and see it in the queue; diagnosis and prescriptions stay with the vets",
+    "pass": true,
+    "evidence": "new patient + pre-diagnosis accepted: true; doctor notified: waiting, admin: waiting, assistant about own patient: 0; in the doctor's queue: true (\"قريباً 🐈 Simba Hoda Sami · Not eating for two days وصل الآن · التشخيص المبدئي: Reception استلام الحالة\"); correction while waiting accepted: true; diagnosis refused: doctors and admins only; prescription refused: doctors and admins only; edit after the doctor took it refused: doctors and admins only"
+  },
+  {
+    "id": "pet-alert-sync",
+    "criterion": "A patient alert set at the front desk shows in the vet's queue on another computer",
+    "pass": true,
+    "evidence": "alert accepted from the assistant: true; shown in the doctor's queue: true"
+  },
+  {
+    "id": "calc-tables-rules",
+    "criterion": "Only the Admin edits the drug list; Admins and Doctors save treatment templates; Assistants neither",
+    "pass": true,
+    "evidence": "assistant drug: admins only; assistant template: doctors and admins only; doctor drug: admins only; doctor template: accepted; admin drug: accepted"
+  },
+  {
+    "id": "stock-rules",
+    "criterion": "Invoices take stock out from any desk; only the Admin restocks or corrects counts; a recorded move is never changed",
+    "pass": true,
+    "evidence": "assistant invoice move: accepted; assistant move without invoice: restocking and corrections are for admins; assistant restock: restocking and corrections are for admins; doctor correction: restocking and corrections are for admins; admin restock: accepted; admin edits it later: stock movements are append-only"
+  },
+  {
+    "id": "labs-consent-rules",
+    "criterion": "Doctors record lab results, assistants cannot; anyone records a signed consent form, nobody changes it afterwards",
+    "pass": true,
+    "evidence": "assistant lab result: doctors and admins only; doctor lab result: accepted; assistant consent: accepted; admin edits the signed form: signed consent forms cannot be changed"
+  },
+  {
+    "id": "ward-rules",
+    "criterion": "Doctors admit and plan treatments; an assistant can only tick a treatment as given",
+    "pass": true,
+    "evidence": "assistant admits: doctors and admins only; doctor admits: accepted; assistant adds a treatment: doctors and admins only; assistant ticks it given: accepted; assistant renames it: doctors and admins only"
+  },
+  {
+    "id": "expenses-rules",
+    "criterion": "Only the Admin records the clinic's expenses",
+    "pass": true,
+    "evidence": "assistant: admins only; doctor: admins only; admin: accepted"
+  },
+  {
+    "id": "customer-id",
+    "criterion": "Every owner has a unique customer ID; a new one gets its number from the server, finds the owner on any laptop, and never changes",
+    "pass": true,
+    "evidence": "new owner on laptop A → AC-00009 from the server, shown on laptop A: true; laptop B finds it by searching the ID: true; owners on the server 9, different IDs 9, without an AC-number 0; changing it (even as Admin): a customer ID never changes"
+  },
+  {
+    "id": "requests",
+    "criterion": "X-ray and lab requests are kept in the pet's history and appear, with the X-ray images, on the owner's page",
+    "pass": true,
+    "evidence": "X-ray + lab request saved on laptop B, on the open phone page after 2001 ms: true; X-ray image uploaded from the Requests tab shown on the page: true, same bytes from the server: true; another file id → 404; an Assistant's request: doctors and admins only"
+  },
+  {
+    "id": "owner-documents",
+    "criterion": "On the owner's page each request and prescription opens the document as the clinic prints it (logo, customer ID, address), to save as a PDF; only their own",
+    "pass": true,
+    "evidence": "Document button on the request card: true; lab request sheet with logo, customer ID and address: true, 2 boxes ticked, other tests shown: true; prescription sheet → 200, logo/ID/address: true, drug shown: true; someone else's visit → 404; X-ray request PDF made on laptop B and on the owner's page: true, downloads as a PDF: true (1 page, A5: true, 167042 bytes), Download PDF button: true; clinic QR on the documents: true; /clinic page (head, address, InstaPay): true"
+  },
+  {
+    "id": "owner-page",
+    "criterion": "An owner gets a QR code to a private page with their details, pets, upcoming appointments and prescriptions",
+    "pass": true,
+    "evidence": "QR made on the doctor's laptop, on the server: true; page 200 (no-store, no-referrer, CSP with nonce); shows 2 pet(s) of Mona Hassan; staff-only fields in the data: none; replace button for a Doctor: hidden"
+  },
+  {
+    "id": "owner-page-live",
+    "criterion": "The owner page updates by itself: a booking and a prescription appear on the open phone page within seconds",
+    "pass": true,
+    "evidence": "booking on laptop A visible on the phone after 920 ms (2 → 3 appointments); prescription and its diagnosis saved on laptop B visible after 948 ms (no reload); diagnosis in the pet's visit history: true; lab results (4 in the clinic) on the pet: true; customer ID AC-00001 on the page: true; treatment notes sent to the owner: false; live indicator: on; English switch: \"Good evening, Mona\"; add to home screen opens /o/…: true"
+  },
+  {
+    "id": "owner-page-calendar",
+    "criterion": "Appointments can be added to the phone’s calendar: one at a time, or a feed that keeps itself up to date",
+    "pass": true,
+    "evidence": "feed 7 event(s), lines ≤ 75 bytes; one appointment .ics → 200; Google Calendar link on the page: true"
+  },
+  {
+    "id": "rx-archive",
+    "criterion": "Every prescription of an owner is in one archive: searchable, per pet, and reprintable",
+    "pass": true,
+    "evidence": "on the owner screen: true; search with no match shows none: true; search \"amoxiclav\" finds it: true; A5 prescription shows the drug and Luna: true; pet's Prescriptions tab: true"
+  },
+  {
+    "id": "owner-page-replace",
+    "criterion": "A lost card: only the Admin can replace the code; the old link stops at once and the open page says so",
+    "pass": true,
+    "evidence": "Doctor's replace refused by the server: replacing the owner page code is for admins; old link → 404: true; the open phone page shows \"not active\": true; new link → 200; made-up link → 404"
+  },
+  {
+    "id": "lost-found",
+    "criterion": "A collar tag shows the pet and how to reach the owner; Alert tells everyone at the clinic and the owner, with the location, and lands in Lost & found",
+    "pass": true,
+    "evidence": "tag made on laptop B: true; finder sees the pet and the owner's phone: true, not the address or email: true; alert sent: true with location 30.0444, 31.2357; laptop A's bell: true; in Lost & found with a map button: true; owner's page shows the alert: true; pet profile on the owner page: true; a device inventing a report: found reports come from the collar tag page; changing a report's location: only the handled status of a found report can change; marked handled: true, gone from the owner's page: true"
+  },
+  {
     "id": "password-reset",
     "criterion": "The Admin resets a password: the old one stops working, the person is signed out everywhere and must choose a new one",
     "pass": true,
-    "evidence": "temporary password wsw2-78kq; old session signed out: true; old password → 401; temporary password → 200, must choose a new one: 1"
+    "evidence": "temporary password bfa5-94ab; old session signed out: true; old password → 401; temporary password → 200, must choose a new one: 1"
   },
   {
     "id": "devices-10",
     "criterion": "Ten more devices sync the same records at once, and all appear in Settings → Devices",
     "pass": true,
-    "evidence": "each of the 10 devices sees 10/10/10/10/10/10/10/10/10/10 of the 10 new owners (115 ms for all pushes and pulls); laptop A shows them: true; devices listed: 16"
+    "evidence": "each of the 10 devices sees 10/10/10/10/10/10/10/10/10/10 of the 10 new owners (162 ms for all pushes and pulls); laptop A shows them: true; devices listed: 17"
   },
   {
     "id": "device-revoke",
     "criterion": "The Admin signs out a lost laptop: it goes back to the sign-in screen at once and needs the password again",
     "pass": true,
-    "evidence": "laptop B back at sign-in after 228 ms with \"سجّل المدير خروج هذا الجهاز. سجّل الدخول مرة أخرى.\"; signed in again with the password: true"
+    "evidence": "laptop B back at sign-in after 217 ms with \"سجّل المدير خروج هذا الجهاز. سجّل الدخول مرة أخرى.\"; signed in again with the password: true"
   },
   {
     "id": "offline-both",
     "criterion": "Both laptops work with no internet; after reconnecting they end with the same data (Phase 2 \"done when\")",
     "pass": true,
-    "evidence": "laptops A and B identical in all 13 tables after 3 s; owner X: phone from A + address from B (both kept); owner Y notes: \"Note from laptop B (later)\" (the later edit); offline invoices TMP-e3a8-MWGS9I13 / TMP-07f7-MWGS9ID3 got real numbers, none left temporary, no duplicates"
+    "evidence": "laptops A and B identical in all 13 tables after 3 s; owner X: phone from A + address from B (both kept); owner Y notes: \"Note from laptop B (later)\" (the later edit); offline invoices TMP-4b10-MWGTD3B3 / TMP-7e04-MWGTD3N2 got real numbers, none left temporary, no duplicates"
   },
   {
     "id": "offline-author",
@@ -153,13 +255,13 @@
     "id": "clock",
     "criterion": "A device clock set in the future cannot win every edit; devices are told the server time to correct their own",
     "pass": true,
-    "evidence": "stored edit time capped (2026-11-14T19:14:03), so the later edit won: \"a normal later edit\"; server time sent to devices: 2026-11-14T19:13:03.363Z"
+    "evidence": "stored edit time capped (2026-11-14T19:44:50), so the later edit won: \"a normal later edit\"; server time sent to devices: 2026-11-14T19:43:50.893Z"
   },
   {
     "id": "web-offline",
     "criterion": "The phone / browser app opens without a connection and shows the clinic’s records",
     "pass": true,
-    "evidence": "with the server unreachable the app reopened in 1298 ms, signed in, 19 owners listed"
+    "evidence": "with the server unreachable the app reopened in 1604 ms, signed in, 21 owners listed"
   },
   {
     "id": "files",
@@ -171,13 +273,13 @@
     "id": "backup",
     "criterion": "The nightly backup copies every record off-site (and the files once), keeps one on the volume, and the Admin can download one",
     "pass": true,
-    "evidence": "backup of 2026-11-14: 202 of 202 records in the off-site bucket (signed requests), the X-ray copied too: true; volume copies: db-2026-11-14.json.gz; Admin download holds 202 records; an Assistant asking for a backup → 403"
+    "evidence": "backup of 2026-11-14: 281 of 281 records in the off-site bucket (signed requests), the X-ray copied too: true; volume copies: db-2026-11-14.json.gz; Admin download holds 281 records; an Assistant asking for a backup → 403"
   },
   {
     "id": "restore",
     "criterion": "Restore tested (SCOPE §7.7): a new server is rebuilt from the off-site backup; laptops give back the work done since, and stay signed in",
     "pass": true,
-    "evidence": "database and volume replaced by empty ones; server rebuilt from the bucket with 202 records (backup had 202; 204 before the disaster) in 2 s; the owner added after the backup came back from laptop A: true; the X-ray restored from the bucket: true; laptops identical again: true; Admin sign-in → 200; laptops still signed in: 2/2"
+    "evidence": "database and volume replaced by empty ones; server rebuilt from the bucket with 281 records (backup had 281; 283 before the disaster) in 2 s; the owner added after the backup came back from laptop A: true; the X-ray restored from the bucket: true; laptops identical again: true; Admin sign-in → 200; laptops still signed in: 2/2"
   },
   {
     "id": "install",
@@ -225,7 +327,13 @@
     "id": "restart",
     "criterion": "After restarting, the laptop is still signed in to its clinic server and keeps everyone’s records",
     "pass": true,
-    "evidence": "signed in again automatically as Admin, synced; owners: 23; after Sign out the sign-in screen shows server 127.0.0.1:8788"
+    "evidence": "signed in again automatically as Admin, synced; owners: 25; after Sign out the sign-in screen shows server 127.0.0.1:8788"
+  },
+  {
+    "id": "server-behind",
+    "criterion": "A server older than the app does not make new records vanish: they wait on the laptop and go up once the server is updated",
+    "pass": true,
+    "evidence": "badge on the old server: \"تحديث\"; drug still on the laptop: true; reached the updated server: true"
   },
   {
     "id": "admin-recovery",
