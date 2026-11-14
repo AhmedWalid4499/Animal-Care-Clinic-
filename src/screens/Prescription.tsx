@@ -139,7 +139,7 @@ export function TemplatePrint() {
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
       </div>
       <div className="no-print tpl-patient">
-        <Field label={t('templates.forPatient')} optional hint={t('templates.forPatientHint')}><PetPicker value={picked} onChange={setPicked} /></Field>
+        <Field label={t('templates.forPatient')} optional hint={t('templates.forPatientHint')} group><PetPicker value={picked} onChange={setPicked} /></Field>
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5 rx-sheet" dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang}>

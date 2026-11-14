@@ -122,7 +122,7 @@ function AdmitDialog({ onClose }: { onClose: () => void }) {
       footer={<><button className="btn" onClick={onClose}>{t('common.cancel')}</button>
         <button className="btn primary" disabled={!pet || !!already} onClick={() => { admitPet({ pet_id: pet!.id, ...f, vet_id: f.vet_id || null }, user?.id ?? null); toast(t('app.saved')); onClose(); }}>{t('ward.admit')}</button></>}
     >
-      <Field label={t('ward.pet')}><PetPicker value={pet} onChange={setPet} autoFocus /></Field>
+      <Field label={t('ward.pet')} group><PetPicker value={pet} onChange={setPet} autoFocus /></Field>
       {already && <p className="note warn">{t('ward.alreadyIn')}</p>}
       <div className="grid g2">
         <Field label={t('ward.cage')} optional><input type="text" value={f.cage} onChange={(e) => setF({ ...f, cage: e.target.value })} /></Field>
