@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   openLoginItemsSettings: () => ipcRenderer.invoke('app:openLoginItemsSettings'),
   print: () => ipcRenderer.invoke('app:print'),
   pdf: (pageSize) => ipcRenderer.invoke('app:pdf', pageSize),
+  probe: (url) => ipcRenderer.invoke('app:probe', url),
   // Automatic updates (electron/updater.cjs)
   updateGet: () => ipcRenderer.invoke('update:get'),
   updateCheck: () => ipcRenderer.invoke('update:check'),

@@ -4,6 +4,7 @@ import { useApp, useQuery } from '../lib/app';
 import { auditLogin, getSettings, login } from '../db/repo';
 import { DEFAULT_LOGINS } from '../db/seed';
 import { Icon } from '../components/ui';
+import { platform } from '../lib/platform';
 import { checkServer, normaliseUrl, onlineLogin, rememberedUser, resumeSync, serverFixed, serverUrl, setServerUrl, takeRevokedNotice } from '../sync/engine';
 
 const LAST_EMAIL = 'login:lastEmail';
@@ -152,6 +153,21 @@ export function Login({ firstRun }: { firstRun: boolean }) {
       }
     }, 30);
   };
+  // Why Connect failed, in words the person can act on (14 Nov 2026: a Windows 7 PC only said "can't reach").
+  const whyUnreachable = async (url: string): Promise<string> => {
+    const p = await platform.probe(url).catch(() => null);
+    if (!p) return t('login.serverUnreachable');
+    const code = p.code ?? '';
+    if (/CERT_NOT_YET_VALID|CERT_HAS_EXPIRED/.test(code)) {
+      return t('login.serverClock', { date: new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG-u-nu-latn' : 'en-GB', { dateStyle: 'long', timeStyle: 'short' }).format(new Date()) });
+    }
+    if (/ENOTFOUND|EAI_AGAIN|BAD_URL/.test(code)) return t('login.serverNotFound');
+    if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH/.test(code)) return t('login.serverNoAnswer');
+    if (/SELF_SIGNED|UNABLE_TO_GET_ISSUER|UNABLE_TO_VERIFY|CERT_/.test(code)) return t('login.serverCertBlocked', { code });
+    if (p.status && !p.ok) return t('login.serverNotClinic', { status: p.status });
+    if (p.ok) return t('login.serverWindowsBlocked');
+    return `${t('login.serverUnreachable')} (${code || '?'})`;
+  };
   const connectServer = async () => {
     const url = normaliseUrl(serverInput);
     setServerMsg('…');
@@ -160,7 +176,7 @@ export function Login({ firstRun }: { firstRun: boolean }) {
       setServer(url);
       setEditServer(false);
       setServerMsg(t('login.serverSaved'));
-    } else setServerMsg(t('login.serverUnreachable'));
+    } else setServerMsg(await whyUnreachable(url));
   };
   const capsCheck = (e: React.KeyboardEvent) => setCaps(e.getModifierState?.('CapsLock') ?? false);
 

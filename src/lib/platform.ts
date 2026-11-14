@@ -15,6 +15,9 @@ export interface UpdateState {
   appPath?: string | null;
 }
 
+/** What the desktop app found when it asked a server address directly (electron/certs.cjs). */
+export interface ServerProbe { ok: boolean; status?: number; code?: string }
+
 interface DesktopBridge {
   config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; exportDir: string; version: string; platform: string; deviceName?: string }>;
   backupNow(label: string): Promise<string | null>;
@@ -35,6 +38,7 @@ interface DesktopBridge {
   showDataFolder(): Promise<void>;
   print(): Promise<void>;
   pdf(pageSize: 'A4' | 'A5'): Promise<Uint8Array | null>;
+  probe(url: string): Promise<ServerProbe>;
   updateGet(): Promise<UpdateState>;
   updateCheck(): Promise<UpdateState>;
   updateInstall(): Promise<boolean>;
@@ -198,6 +202,10 @@ export const platform = {
   print() {
     if (desktop) desktop.print();
     else window.print();
+  },
+  /** Desktop: why a server address doesn't answer (see electron/certs.cjs probe). Browser: null. */
+  async probe(url: string): Promise<ServerProbe | null> {
+    return desktop?.probe ? desktop.probe(url) : null;
   },
   /** Desktop: the page on screen as a PDF, laid out as Print does. Browser: not available (null). */
   canPdf: !!desktop,
