@@ -452,7 +452,8 @@ await step('notify: preferences', async () => {
   const sneaky = (await api('/api/sync/push', { changes: [{ tbl: 'users', id: deskId, op: 'upsert', at: nowIso(), cols: { role: 'ADMIN' } }] }, tokens.desk)).body;
   // The doctor switches visit notifications off in the bell on laptop B.
   await B.win.locator('.side-foot .bell').click();
-  const visitBox = B.win.locator('.bell-panel .kinds label').nth(2).locator('input'); // queue, appointments, visits…
+  // By its label, not its position: the list grows as kinds are added (Lost & found came first on 14 Nov).
+  const visitBox = B.win.locator('.bell-panel .kinds label', { hasText: /^\s*(Visits|الزيارات)\s*$/ }).locator('input');
   await visitBox.uncheck();
   await B.win.keyboard.press('Escape');
   const docOff = await until(async () => (await pool.query("SELECT data->>'notify_off' v FROM rows WHERE tbl = 'users' AND data->>'email' = 'doctor@test.local'")).rows[0].v === 'visit', 10_000);
