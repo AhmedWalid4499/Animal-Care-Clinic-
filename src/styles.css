@@ -792,11 +792,67 @@ a.owner-code:hover { text-decoration: underline; }
 .exam-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 22px; }
 .exam-chart h3 { font-size: 14px; margin: 8px 0 0; }
 .chart.small-chart { height: 210px; margin-top: 6px; }
-.exam-table td.flag, .exam-flagged td .flag { color: var(--warn); font-weight: 600; }
+.exam-table td.flag { color: var(--warn); font-weight: 600; }
 .exam-table td, .exam-table th { white-space: nowrap; }
 .exam-table td:nth-child(6), .exam-table td:nth-child(7) { white-space: normal; min-width: 10em; }
-.exam-tiles { margin-bottom: 14px; }
-.exam-tiles .glance-card.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-soft); }
-.exam-dash .filters select { width: auto; }
 @media (max-width: 640px) { .exam-charts { grid-template-columns: 1fr; } }
 .nowrap { white-space: nowrap; }
+
+/* Dashboard (14 Nov 2026 redo): greeting, search, four big buttons, one "Needs attention" list, then the day. */
+.dash .quick { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.dash .quick-btn { padding: 16px; font-size: 15px; }
+.dash .section.attention { margin-top: 22px; }
+.attn .attn-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px 12px; border-inline-start: 4px solid var(--rule-2); }
+.attn .attn-row + .attn-row { border-top: 1px solid var(--rule); }
+.attn .attn-row.bad { border-inline-start-color: var(--bad); background: var(--bad-soft); }
+.attn .attn-row.warn { border-inline-start-color: var(--warn); }
+.attn .attn-row.info { border-inline-start-color: var(--accent); }
+.attn .attn-ic { font-size: 20px; line-height: 1; }
+.attn .attn-row .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attn .all-clear { color: var(--ok); font-weight: 600; padding: 14px 4px; }
+.dash .dash-cols { align-items: start; }
+@media (max-width: 760px) {
+  .dash .quick { grid-template-columns: 1fr 1fr; }
+  .attn .attn-row { grid-template-columns: auto 1fr; }
+  .attn .attn-row .btn { grid-column: 2; justify-self: start; }
+  .attn .attn-row .sub { white-space: normal; }
+}
+
+/* Pet health record booklet (14 Nov 2026): A4 landscape, both sides, folded in three (99 mm panels). */
+.hr-wrap { display: grid; gap: 18px; justify-items: center; }
+.sheet.hr-page { width: 297mm; height: 210mm; padding: 0; display: grid; grid-template-columns: repeat(3, 99mm); box-shadow: 0 2px 12px rgba(0,0,0,.12); font-size: 8.5pt; line-height: 1.3; overflow: hidden; }
+.hr-page .ar { color: #555; }
+.hr-panel { padding: 7mm; border-inline-end: 1px dashed #bbb; display: flex; flex-direction: column; gap: 3.5mm; min-width: 0; }
+.hr-panel:last-child { border-inline-end: 0; }
+.hr-box h3, .hr-vbox h3 { font-size: 9pt; margin: 0 0 1.5mm; padding: 1mm 2mm; background: #2e6f73; color: #fff; border-radius: 2px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.hr-box h3 .ar, .hr-vbox h3 .ar { color: #d7ecec; }
+.hr-field { display: flex; gap: 2mm; align-items: flex-end; min-height: 6mm; border-bottom: 0.6px solid #999; }
+.hr-label { font-size: 7pt; color: #333; white-space: nowrap; }
+.hr-line { flex: 1; font-size: 9pt; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.hr-table th { font-size: 6.5pt; font-weight: 600; text-align: start; border-bottom: 0.8px solid #111; padding: 0.8mm 1mm; }
+.hr-table td { height: 5.6mm; border-bottom: 0.6px solid #aaa; font-size: 7.5pt; padding: 0 1mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hr-table td + td, .hr-table th + th { border-inline-start: 0.6px solid #ddd; }
+.hr-write { min-height: 17mm; background-image: repeating-linear-gradient(transparent 0 5.4mm, #aaa 5.4mm 5.6mm); font-size: 8.5pt; line-height: 5.6mm; }
+.hr-write.tall { min-height: 42mm; }
+.hr-cover { gap: 3mm; }
+.hr-logo { max-width: 62mm; max-height: 24mm; align-self: center; object-fit: contain; }
+.hr-cover h1 { text-align: center; font-size: 17pt; margin: 0; color: #2e6f73; display: flex; flex-direction: column; line-height: 1.25; }
+.hr-cover h1 .ar { color: #2e6f73; font-size: 15pt; }
+.hr-keep { text-align: center; font-size: 7.5pt; margin: 0; color: #444; display: flex; flex-direction: column; }
+.hr-clinic { margin-top: auto; text-align: center; font-size: 7.5pt; color: #333; border-top: 1px solid #ccc; padding-top: 2mm; }
+.hr-vaccines { grid-column: span 2; padding: 7mm; column-count: 2; column-gap: 14mm; column-rule: 1px dashed #bbb; column-fill: auto; height: 210mm; border-inline-end: 1px dashed #bbb; }
+.hr-vaccines h2 { font-size: 11pt; margin: 0 0 2mm; color: #2e6f73; }
+.hr-vaccines h2 .ar { color: #2e6f73; }
+.hr-vbox { break-inside: avoid; margin-bottom: 3mm; }
+.hr-slot { display: grid; grid-template-columns: 28mm 1fr; gap: 2.5mm; padding: 1mm 0; border-bottom: 0.6px solid #ccc; break-inside: avoid; }
+.hr-sticker { border: 1px dashed #888; border-radius: 2px; height: 14mm; display: grid; place-items: center; align-content: center; text-align: center; font-size: 6pt; color: #888; }
+.hr-sticker .ar { color: #999; }
+.hr-slot-lines .hr-field { min-height: 4.6mm; }
+.hr-blank { display: inline-block; min-width: 30mm; border-bottom: 1px solid #d7ecec; }
+@page hrbook { size: A4 landscape; margin: 0; }
+@media print {
+  .hr-wrap { display: block; }
+  .sheet.hr-page { page: hrbook; box-shadow: none; width: 297mm; height: 210mm; break-after: page; }
+  .sheet.hr-page:last-child { break-after: auto; }
+}

@@ -11,7 +11,7 @@ import en from '../i18n/en.json';
 type Dict = Record<string, unknown>;
 const pick = (m: Dict, key: string) => (key.split('.').reduce<unknown>((o, k) => (o as Dict | undefined)?.[k], m) as string | undefined) ?? key;
 /** "English · العربية" for a translation key. */
-function Bi({ k }: { k: string }) {
+export function Bi({ k }: { k: string }) {
   return (
     <>
       <span>{pick(en as Dict, k)}</span> <span className="ar" dir="rtl" lang="ar">{pick(ar as Dict, k)}</span>
@@ -21,7 +21,7 @@ function Bi({ k }: { k: string }) {
 /** A translated value: English, then the Arabic in grey (some Arabic values contain "/" themselves). */
 const both = (k: string) => <Bi k={k} />;
 // Unambiguous for travel papers abroad: 6 Nov 2026.
-const intlDate = (iso: string | null | undefined) =>
+export const intlDate = (iso: string | null | undefined) =>
   iso ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso.length === 10 ? `${iso}T12:00:00` : iso)) : '—';
 
 export function VaccinationCertificate() {

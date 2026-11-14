@@ -15,6 +15,7 @@ import { Settings } from './screens/Settings';
 import { MySettings } from './screens/MySettings';
 import { Reminders } from './screens/Reminders';
 import { VaccinationCertificate } from './screens/Certificate';
+import { HealthRecordPrint } from './screens/HealthRecord';
 import { Reports } from './screens/Reports';
 import { StockPage } from './screens/Stock';
 import { PrescriptionPrint, TemplatePrint } from './screens/Prescription';
@@ -25,7 +26,6 @@ import { useEffect, type ReactNode } from 'react';
 import { OwnerCardPrint } from './components/OwnerPage';
 import { CaseReport, LabReportPrint, RequestForm } from './screens/Documents';
 import { LostFound, PetTag } from './screens/LostFound';
-import { ExamDashboard } from './screens/ExamStats';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
 
@@ -70,6 +70,7 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="pets/:id/edit" element={<PetFormPage />} />
           <Route path="pets/:id/print" element={<PetSummaryPrint />} />
           <Route path="pets/:id/certificate" element={<VaccinationCertificate />} />
+          <Route path="pets/:id/health-record" element={<HealthRecordPrint />} />
           <Route path="pets/:id/tag" element={<PetTag />} />
           <Route path="lost-found" element={<LostFound />} />
           <Route path="pets/:id/labs/:date" element={<LabReportPrint />} />
@@ -99,7 +100,6 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="stock/vaccines" element={<AdminOnly><VaccinesPage /></AdminOnly>} />
           <Route path="stock/drugs" element={<AdminOnly><DrugsPage /></AdminOnly>} />
           <Route path="prices" element={<AdminOnly><PricesPage /></AdminOnly>} />
-          <Route path="exam" element={<ClinicalOnly><ExamDashboard /></ClinicalOnly>} />
           <Route path="templates" element={<ClinicalOnly><TemplatesPage /></ClinicalOnly>} />
           <Route path="templates/:id/print" element={<ClinicalOnly><TemplatePrint /></ClinicalOnly>} />
           <Route path="settings" element={<AdminOnly><Settings /></AdminOnly>} />

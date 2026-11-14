@@ -49,6 +49,7 @@ export function PetRecord() {
           items={[
             { icon: 'print', label: t('petRecord.printSummary'), onClick: () => nav(`/pets/${id}/print`) },
             { icon: 'print', label: t('certificate.button'), onClick: () => nav(`/pets/${id}/certificate`) },
+            { icon: 'print', label: t('healthRecord.button'), onClick: () => nav(`/pets/${id}/health-record`) },
             { icon: 'qr', label: t('tag.button'), onClick: () => nav(`/pets/${id}/tag`) },
             ...(canVisit ? [
               { icon: 'file', label: t('docs.reportButton'), onClick: () => nav(`/pets/${id}/report`) },

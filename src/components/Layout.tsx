@@ -39,7 +39,6 @@ export function Layout() {
     { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices'], group: 'clinic' },
     { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true, group: 'clinic' },
     ...(canVisit ? [{ to: '/templates', icon: 'clipboard', label: t('settings.templates'), sideOnly: true, group: 'clinic' as const }] : []),
-    ...(canVisit ? [{ to: '/exam', icon: 'chart', label: t('exam.navTitle'), sideOnly: true, group: 'clinic' as const }] : []),
     // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
     { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings'), group: 'system', dot: updateReady },
   ];
