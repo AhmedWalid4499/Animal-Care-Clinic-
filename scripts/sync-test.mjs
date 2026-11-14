@@ -1348,6 +1348,8 @@ await step('chromebook: installed app', async () => {
   // The web app on a Chromebook (docs/CHROMEBOOK.md): installable with shelf shortcuts, laptop layout,
   // named "Chromebook" in Settings → Devices, Ctrl+K search, one window at a time, and updates from the server.
   const { chromium } = require('playwright');
+  // isVisible() answers at once; this waits up to ms for the element to show.
+  const shown = (loc, ms) => loc.waitFor({ state: 'visible', timeout: ms }).then(() => true, () => false);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-chromebook-'));
   const ctx = await chromium.launchPersistentContext(dir, {
     viewport: { width: 1366, height: 768 },
@@ -1413,13 +1415,13 @@ await step('chromebook: installed app', async () => {
   await page.waitForURL(/#\/owners\/[0-9a-f-]{36}/, { timeout: 5000 });
   const tab = await ctx.newPage();
   await tab.goto(SERVER);
-  const blocked = await tab.locator('.open-elsewhere').isVisible({ timeout: 10_000 }).catch(() => false);
+  const blocked = await shown(tab.locator('.open-elsewhere'), 10_000);
   await tab.locator('.open-elsewhere .btn.primary').click();
   await tab.waitForSelector('.searchbox', { timeout: 15_000 });
-  const firstStepsAside = await page.locator('.open-elsewhere').isVisible({ timeout: 10_000 }).catch(() => false);
+  const firstStepsAside = await shown(page.locator('.open-elsewhere'), 10_000);
   await tab.evaluate(() => (location.hash = '#/owners'));
   await tab.locator('.main .searchbox input').fill(name.split(' ').pop());
-  const carried = await tab.getByText(name).first().isVisible({ timeout: 5000 }).catch(() => false);
+  const carried = await shown(tab.getByText(name).first(), 5000);
   const onServer = await until(async () => (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'owners' AND data->>'full_name' = $1", [name])).rows[0].n > 0, 20_000);
   await tab.screenshot({ path: path.join(out, 'chromebook-took-over.png') });
   await page.screenshot({ path: path.join(out, 'chromebook-open-elsewhere.png') });
@@ -1428,10 +1430,10 @@ await step('chromebook: installed app', async () => {
   await tab.route('**/version.json', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ build: 'next-deploy' }) }));
   await tab.evaluate(() => (location.hash = '#/settings?tab=data'));
   await tab.locator('.this-device button', { hasText: 'Check for updates now' }).click();
-  const offered = await tab.locator('.update-banner').isVisible({ timeout: 5000 }).catch(() => false);
+  const offered = await shown(tab.locator('.update-banner'), 5000);
   await tab.unroute('**/version.json');
-  await tab.locator('.update-banner .btn.primary').click();
-  await tab.waitForSelector('.searchbox', { timeout: 15_000 });
+  await Promise.all([tab.waitForEvent('load', { timeout: 15_000 }), tab.locator('.update-banner .btn.primary').click()]);
+  await tab.waitForSelector('.this-device', { timeout: 15_000 }); // reloaded, still signed in, on the same screen
   await sleep(800);
   const afterReload = (await tab.locator('.update-banner').count()) === 0;
   await tab.evaluate(() => (location.hash = '#/'));
