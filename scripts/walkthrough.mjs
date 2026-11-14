@@ -419,8 +419,8 @@ await step('treatment template printed for the owner', async () => {
 // In-patient board (7 Nov 2026). Demo: Rocky in cage A1 with an overdue fluids change.
 await step('in-patient board', async () => {
   await go('#/');
-  await win.locator('.glance-card', { hasText: 'In-patients' }).locator('.g-sub', { hasText: '1 treatment(s) overdue' }).waitFor();
-  await win.locator('.glance-card', { hasText: 'In-patients' }).click(); // the card opens the board
+  await win.locator('.attn-ward', { hasText: '1 in-patient treatment(s) overdue' }).waitFor();
+  await win.locator('.attn-ward').getByRole('button', { name: 'Open in-patients' }).click(); // the row opens the board
   const rocky = win.locator('.ward-card', { hasText: 'Rocky' });
   await rocky.locator('li.overdue', { hasText: 'IV fluids bag change' }).waitFor();
   await shot('ward');
