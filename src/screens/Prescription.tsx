@@ -7,7 +7,7 @@ import { useApp, useQuery } from '../lib/app';
 import { getPet, getSettings, getTemplate, getVisit, lastWeight, listDrugs, shownCode, templateRx, type PetOption } from '../db/repo';
 import { calcDose, doseText, findDrug } from '../lib/dose';
 import { platform } from '../lib/platform';
-import { Field, Icon, PetPicker, WaButton } from '../components/ui';
+import { Field, Icon, PetPicker, WaButton, SheetAddress } from '../components/ui';
 import ar from '../i18n/ar.json';
 import en from '../i18n/en.json';
 
@@ -59,7 +59,7 @@ export function PrescriptionPrint() {
           <div className="head">
             <div>
               <b style={{ fontSize: 15 }}>{clinic}</b>
-              <div style={{ fontSize: 10 }}>{settings.address} {settings.phone && <span className="ltr">· {settings.phone}</span>}</div>
+              <div style={{ fontSize: 10 }}>{settings.phone && <span className="ltr">{settings.phone}</span>}</div>
             </div>
             {settings.logo_url && <img src={settings.logo_url} alt="" />}
           </div>
@@ -94,6 +94,7 @@ export function PrescriptionPrint() {
           {visit.follow_up_at && <p className="rx-next">↻ {L('rxSheet.next', { date: dateIn(lang, visit.follow_up_at) })}</p>}
           <div className="rx-sign"><div className="line" />{L('certificate.signature')}</div>
           <div className="foot">{L('rxSheet.foot')}</div>
+          <SheetAddress address={settings.address} />
         </div>
       </div>
     </div>
@@ -145,7 +146,7 @@ export function TemplatePrint() {
           <div className="head">
             <div>
               <b style={{ fontSize: 15 }}>{clinic}</b>
-              <div style={{ fontSize: 10 }}>{settings.address} {settings.phone && <span className="ltr">· {settings.phone}</span>}</div>
+              <div style={{ fontSize: 10 }}>{settings.phone && <span className="ltr">{settings.phone}</span>}</div>
             </div>
             {settings.logo_url && <img src={settings.logo_url} alt="" />}
           </div>
@@ -173,6 +174,7 @@ export function TemplatePrint() {
           </table>
           <div className="rx-sign"><div className="line" />{L('certificate.signature')}</div>
           <div className="foot">{L('rxSheet.foot')}</div>
+          <SheetAddress address={settings.address} />
         </div>
       </div>
     </div>

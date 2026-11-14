@@ -771,3 +771,7 @@ a.owner-code:hover { text-decoration: underline; }
 .collar-tag.round .qr { width: 19mm; height: 19mm; }
 .collar-tag.round b { font-size: 7pt; }
 .collar-tag .tag-address { font-size: 6pt; line-height: 1.15; color: #333; }
+
+/* The clinic's address at the bottom of every document, under the other footer line if there is one. */
+.sheet .addr-foot { font-size: 8.5pt; }
+.sheet .foot + .addr-foot { border-top: 0; margin-top: 2px; padding-top: 0; }

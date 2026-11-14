@@ -253,3 +253,8 @@ export function MenuButton({ label, icon, items }: { label: string; icon?: strin
     </div>
   );
 }
+
+/** The clinic's address along the bottom of every printed document (14 Nov 2026, Ahmed: in the footer, not the header). */
+export function SheetAddress({ address }: { address: string | null | undefined }) {
+  return address ? <div className="foot addr-foot">{address}</div> : null;
+}

@@ -9,7 +9,7 @@ import { createOwnerPage, disableOwnerPage, getOwner, getSettings, ownerPets, re
 import type { Owner } from '../db/types';
 import { serverUrl } from '../sync/engine';
 import { platform } from '../lib/platform';
-import { Confirm, Icon, WaButton } from './ui';
+import { Confirm, Icon, WaButton, SheetAddress } from './ui';
 
 export const ownerPageUrl = (token: string, base = serverUrl()) => (base ? `${base}/o/${token}` : null);
 
@@ -135,7 +135,6 @@ export function OwnerCardPrint() {
               <div className="head">
                 <div>
                   <b style={{ fontSize: 15 }}>{clinic}</b>
-                  {s.address && <div style={{ fontSize: 10 }}>{s.address}</div>}
                   {s.phone && <div style={{ fontSize: 10 }} className="ltr">{s.phone}</div>}
                 </div>
                 {s.logo_url && <img src={s.logo_url} alt="" />}
@@ -150,6 +149,7 @@ export function OwnerCardPrint() {
                 </div>
               </div>
               <div className="foot">{t('portal.cardPrivate')}</div>
+              <SheetAddress address={s.address} />
             </div>
           </div>
         </div>
