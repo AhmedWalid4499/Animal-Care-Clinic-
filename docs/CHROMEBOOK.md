@@ -34,7 +34,7 @@ works on every Chromebook (Intel or ARM, personal or school/managed), with no Li
 | | |
 |---|---|
 | Layout | The laptop layout (sidebar, wide tables) from 900 px wide; the phone layout in a narrow window or in tablet mode portrait. No orientation lock. |
-| Offline | After the first sign-in the records live on the Chromebook; it opens and works with no connection and sends the work when it is back (same as phones, `docs/CLOUD-PLAN.md` Phase 2). Asks Chrome to keep the records for good (`navigator.storage.persist()`); Settings → Data & backup → **This device** shows whether it does. |
+| Offline | After the first sign-in the records live on the Chromebook; it opens and works with no connection and sends the work when it is back (same as phones, `docs/CLOUD-PLAN.md` Phase 2). Asks Chrome to keep the records for good (`navigator.storage.persist()`); Settings → **Updates** (or **Settings** for Doctors and Assistants) shows whether it does. |
 | One window | Only one window can have the records open: a second window or tab shows "open in another window" with **Use it here**, and the first one saves and steps aside. Opening the installed app again focuses its window. Stops two copies of the database overwriting each other. |
 | Shelf shortcuts | New visit, New owner, Appointments, Invoices (manifest `shortcuts`); they open in the window already open. |
 | Keyboard | **Ctrl+K** (or **/**) jumps to search from any screen. |
@@ -57,7 +57,7 @@ What it does **not** have, compared with the Windows/Mac app: the daily local `.
 | Install banner and sidebar link, per device wording | `src/components/InstallPrompt.tsx` (`useInstall`, `installKind`) |
 | One window at a time (Web Locks + BroadcastChannel; the old window stops saving first) | `src/lib/oneWindow.ts`, `stopPersisting()` in `src/db/core.ts`, `OpenElsewhere` in `src/main.tsx` |
 | Web updates: build id baked in and written to `version.json` | `vite.config.ts` (`cloudVersion`), `src/lib/webUpdate.ts`, `UpdateBanner` in `src/components/Updates.tsx` |
-| Settings → Data & backup → This device | `src/components/ThisDevice.tsx` |
+| Settings → Updates (Admin) and My settings (everyone): This device | `src/components/ThisDevice.tsx` |
 | Service worker: manifest fetched fresh, old caches dropped (`clinic-shell-v2`) | `public-cloud/sw.js` |
 | Test | `scripts/sync-test.mjs` step **chromebook: installed app** (Chromebook user agent at 1366×768 against the real server + Postgres) |
 

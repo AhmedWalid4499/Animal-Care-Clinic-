@@ -1,4 +1,4 @@
-// Settings → Data & backup → This device (web app: Chromebook, phone, browser). The web app's counterpart of
+// Settings → Updates (Admin) and My settings (everyone) → This device (web app: Chromebook, phone, browser). The web app's counterpart of
 // the desktop app's Updates section: which device this is, whether it runs as an installed app, whether the
 // browser keeps its records for good, and which version it runs (updates arrive from the clinic server).
 import { useEffect, useState } from 'react';

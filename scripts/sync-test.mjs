@@ -1357,102 +1357,104 @@ await step('chromebook: installed app', async () => {
   });
   const errors = [];
   ctx.on('weberror', (e) => errors.push(String(e.error())));
-  const page = ctx.pages()[0] ?? (await ctx.newPage());
-  await page.goto(SERVER);
-  await page.evaluate(() => navigator.serviceWorker.ready);
-  await page.reload();
-  await page.waitForSelector('form button.signin');
+  try {
+    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    await page.goto(SERVER);
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await page.waitForSelector('form button.signin');
 
-  // Installable, with the Chromebook parts of the manifest.
-  const cdp = await ctx.newCDPSession(page);
-  const manifest = await cdp.send('Page.getAppManifest');
-  const installErrors = (await cdp.send('Page.getInstallabilityErrors')).installabilityErrors.map((e) => e.errorId);
-  const m = JSON.parse(manifest.data);
-  const manifestOk = installErrors.length === 0 && manifest.errors.length === 0 && !m.orientation && m.shortcuts?.length === 4 &&
-    JSON.stringify(m.launch_handler).includes('focus-existing') && m.screenshots?.some((s) => s.form_factor === 'wide');
-  let wideShot = 0;
-  for (const s of m.screenshots ?? []) wideShot += (await page.request.get(`${SERVER}${s.src}`)).ok() ? 1 : 0;
+    // Installable, with the Chromebook parts of the manifest.
+    const cdp = await ctx.newCDPSession(page);
+    const manifest = await cdp.send('Page.getAppManifest');
+    const installErrors = (await cdp.send('Page.getInstallabilityErrors')).installabilityErrors.map((e) => e.errorId);
+    const m = JSON.parse(manifest.data);
+    const manifestOk = installErrors.length === 0 && manifest.errors.length === 0 && !m.orientation && m.shortcuts?.length === 4 &&
+      JSON.stringify(m.launch_handler).includes('focus-existing') && m.screenshots?.some((s) => s.form_factor === 'wide');
+    let wideShot = 0;
+    for (const s of m.screenshots ?? []) wideShot += (await page.request.get(`${SERVER}${s.src}`)).ok() ? 1 : 0;
 
-  // Sign in: laptop layout (sidebar, no phone bottom bar); the server lists it as a Chromebook.
-  await page.locator('input[type=email]').fill(ADMIN.email);
-  await page.locator('input[type=password]').fill(ADMIN.password);
-  await page.locator('form button.signin').click();
-  await page.waitForSelector('.searchbox', { timeout: 30_000 });
-  const layout = { side: await page.locator('aside.side').isVisible(), bottom: await page.locator('nav.bottom-nav').isVisible() };
-  const named = (await pool.query("SELECT COUNT(*) n FROM sessions WHERE device_name = 'Chromebook'")).rows[0].n > 0;
-  if (await page.locator('.side-foot button', { hasText: 'English' }).count()) await page.locator('.side-foot button', { hasText: 'English' }).click();
+    // Sign in: laptop layout (sidebar, no phone bottom bar); the server lists it as a Chromebook.
+    await page.locator('input[type=email]').fill(ADMIN.email);
+    await page.locator('input[type=password]').fill(ADMIN.password);
+    await page.locator('form button.signin').click();
+    await page.waitForSelector('.searchbox', { timeout: 30_000 });
+    const layout = { side: await page.locator('aside.side').isVisible(), bottom: await page.locator('nav.bottom-nav').isVisible() };
+    const named = (await pool.query("SELECT COUNT(*) n FROM sessions WHERE device_name = 'Chromebook'")).rows[0].n > 0;
+    if (await page.locator('.side-foot button', { hasText: 'English' }).count()) await page.locator('.side-foot button', { hasText: 'English' }).click();
 
-  // The install banner speaks of the Chromebook and uses Chrome's own install prompt.
-  await page.evaluate(() => {
-    const e = new Event('beforeinstallprompt');
-    e.prompt = async () => void (window.__prompted = true);
-    e.userChoice = Promise.resolve({ outcome: 'accepted' });
-    window.dispatchEvent(e);
-  });
-  const banner = await page.locator('.install-banner').innerText({ timeout: 3000 }).catch(() => '');
-  await page.locator('.install-banner .btn.primary').click().catch(() => {});
-  const prompted = await page.evaluate(() => window.__prompted === true);
-  const bannerGone = (await page.locator('.install-banner').count()) === 0;
+    // The install banner speaks of the Chromebook and uses Chrome's own install prompt.
+    await page.evaluate(() => {
+      const e = new Event('beforeinstallprompt');
+      e.prompt = async () => void (window.__prompted = true);
+      e.userChoice = Promise.resolve({ outcome: 'accepted' });
+      window.dispatchEvent(e);
+    });
+    const banner = await page.locator('.install-banner').innerText({ timeout: 3000 }).catch(() => '');
+    await page.locator('.install-banner .btn.primary').click().catch(() => {});
+    const prompted = await page.evaluate(() => window.__prompted === true);
+    const bannerGone = (await page.locator('.install-banner').count()) === 0;
 
-  // Ctrl+K from a screen without a search box jumps to the dashboard's search.
-  await page.evaluate(() => (location.hash = '#/appointments'));
-  await sleep(400);
-  await page.keyboard.press('Control+k');
-  await sleep(400);
-  const searchFocused = await page.evaluate(() => location.hash === '#/' && !!document.activeElement?.closest('.searchbox'));
+    // Ctrl+K from a screen without a search box jumps to the dashboard's search.
+    await page.evaluate(() => (location.hash = '#/appointments'));
+    await sleep(400);
+    await page.keyboard.press('Control+k');
+    await sleep(400);
+    const searchFocused = await page.evaluate(() => location.hash === '#/' && !!document.activeElement?.closest('.searchbox'));
 
-  // Settings → Data & backup → This device.
-  await page.evaluate(() => (location.hash = '#/settings?tab=data'));
-  const deviceText = await page.locator('.this-device').innerText({ timeout: 5000 }).catch(() => '');
-  await page.screenshot({ path: path.join(out, 'chromebook-settings-device.png') });
+    // Settings → Updates → This device (web app).
+    await page.evaluate(() => (location.hash = '#/settings?tab=updates'));
+    const deviceText = await page.locator('.this-device').innerText({ timeout: 5000 }).catch(() => '');
+    await page.screenshot({ path: path.join(out, 'chromebook-settings-device.png') });
 
-  // One window at a time: an owner saved in the app window, then a browser tab opened at once and "Use it here".
-  const name = `Chromebook Owner ${Date.now() % 100000}`;
-  await page.evaluate(() => (location.hash = '#/owners/new'));
-  await page.getByLabel('Full name').fill(name);
-  await page.getByLabel('Phone', { exact: true }).fill(`01${String(Date.now()).slice(-9)}`);
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await page.waitForURL(/#\/owners\/[0-9a-f-]{36}/, { timeout: 5000 });
-  const tab = await ctx.newPage();
-  await tab.goto(SERVER);
-  const blocked = await shown(tab.locator('.open-elsewhere'), 10_000);
-  await tab.locator('.open-elsewhere .btn.primary').click();
-  await tab.waitForSelector('.searchbox', { timeout: 15_000 });
-  const firstStepsAside = await shown(page.locator('.open-elsewhere'), 10_000);
-  await tab.evaluate(() => (location.hash = '#/owners'));
-  await tab.locator('.main .searchbox input').fill(name.split(' ').pop());
-  const carried = await shown(tab.getByText(name).first(), 5000);
-  const onServer = await until(async () => (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'owners' AND data->>'full_name' = $1", [name])).rows[0].n > 0, 20_000);
-  await tab.screenshot({ path: path.join(out, 'chromebook-took-over.png') });
-  await page.screenshot({ path: path.join(out, 'chromebook-open-elsewhere.png') });
+    // One window at a time: an owner saved in the app window, then a browser tab opened at once and "Use it here".
+    const name = `Chromebook Owner ${Date.now() % 100000}`;
+    await page.evaluate(() => (location.hash = '#/owners/new'));
+    await page.getByLabel('Full name').fill(name);
+    await page.getByLabel('Phone', { exact: true }).fill(`01${String(Date.now()).slice(-9)}`);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForURL(/#\/owners\/[0-9a-f-]{36}/, { timeout: 5000 });
+    const tab = await ctx.newPage();
+    await tab.goto(SERVER);
+    const blocked = await shown(tab.locator('.open-elsewhere'), 10_000);
+    await tab.locator('.open-elsewhere .btn.primary').click();
+    await tab.waitForSelector('.searchbox', { timeout: 15_000 });
+    const firstStepsAside = await shown(page.locator('.open-elsewhere'), 10_000);
+    await tab.evaluate(() => (location.hash = '#/owners'));
+    await tab.locator('.main .searchbox input').fill(name.split(' ').pop());
+    const carried = await shown(tab.getByText(name).first(), 5000);
+    const onServer = await until(async () => (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'owners' AND data->>'full_name' = $1", [name])).rows[0].n > 0, 20_000);
+    await tab.screenshot({ path: path.join(out, 'chromebook-took-over.png') });
+    await page.screenshot({ path: path.join(out, 'chromebook-open-elsewhere.png') });
 
-  // A new version deployed while the app is open: it offers to reload, and the reload brings it in.
-  await tab.route('**/version.json', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ build: 'next-deploy' }) }));
-  await tab.evaluate(() => (location.hash = '#/settings?tab=data'));
-  await tab.locator('.this-device button', { hasText: 'Check for updates now' }).click();
-  const offered = await shown(tab.locator('.update-banner'), 5000);
-  await tab.unroute('**/version.json');
-  await Promise.all([tab.waitForEvent('load', { timeout: 15_000 }), tab.locator('.update-banner .btn.primary').click()]);
-  await tab.waitForSelector('.this-device', { timeout: 15_000 }); // reloaded, still signed in, on the same screen
-  await sleep(800);
-  const afterReload = (await tab.locator('.update-banner').count()) === 0;
-  await tab.evaluate(() => (location.hash = '#/'));
-  await sleep(500);
-  await tab.screenshot({ path: path.join(out, 'chromebook-dashboard.png') });
-  await ctx.close();
-
-  check('chromebook-install', 'Chromebook: the web app installs as an app (own window, shelf shortcuts, one window, store pictures)',
-    manifestOk && wideShot === (m.screenshots?.length ?? -1),
-    `installability errors: ${installErrors.join(', ') || 'none'}; orientation lock: ${m.orientation ?? 'none'}; shortcuts: ${(m.shortcuts ?? []).map((s) => s.short_name).join(', ')}; launch: ${JSON.stringify(m.launch_handler)}; screenshots served: ${wideShot}/${m.screenshots?.length ?? 0}`);
-  check('chromebook-use', 'Chromebook: laptop layout, named as a Chromebook, install banner, Ctrl+K search, This device in Settings',
-    layout.side && !layout.bottom && named && /Chromebook/.test(banner) && prompted && bannerGone && searchFocused && /Chromebook/.test(deviceText),
-    `sidebar: ${layout.side}, phone bar: ${layout.bottom}; server device name Chromebook: ${named}; banner: "${banner.split('\n')[0]}", Chrome prompt shown: ${prompted}; Ctrl+K → search: ${searchFocused}; This device: "${deviceText.split('\n').slice(0, 3).join(' / ')}"`);
-  check('chromebook-one-window', 'Chromebook: a second window waits; "Use it here" moves the clinic over with nothing lost',
-    blocked && firstStepsAside && carried && !!onServer.v,
-    `second tab blocked: ${blocked}; first window stepped aside: ${firstStepsAside}; owner saved just before is in the new window: ${carried}; and on the server: ${!!onServer.v}`);
-  check('chromebook-update', 'Chromebook: a new deploy is offered while the app is open, and Reload brings it in',
-    offered && afterReload && errors.length === 0,
-    `update offered: ${offered}; banner gone after reload: ${afterReload}; page errors: ${errors.length ? errors.join(' | ') : 'none'}`);
+    // A new version deployed while the app is open: it offers to reload, and the reload brings it in.
+    await tab.route('**/version.json', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ build: 'next-deploy' }) }));
+    await tab.evaluate(() => (location.hash = '#/settings?tab=updates'));
+    await tab.locator('.this-device button', { hasText: 'Check for updates now' }).click();
+    const offered = await shown(tab.locator('.update-banner'), 5000);
+    await tab.unroute('**/version.json');
+    await Promise.all([tab.waitForEvent('load', { timeout: 15_000 }), tab.locator('.update-banner .btn.primary').click()]);
+    await tab.waitForSelector('.this-device', { timeout: 15_000 }); // reloaded, still signed in, on the same screen
+    await sleep(800);
+    const afterReload = (await tab.locator('.update-banner').count()) === 0;
+    await tab.evaluate(() => (location.hash = '#/'));
+    await sleep(500);
+    await tab.screenshot({ path: path.join(out, 'chromebook-dashboard.png') });
+    check('chromebook-install', 'Chromebook: the web app installs as an app (own window, shelf shortcuts, one window, store pictures)',
+      manifestOk && wideShot === (m.screenshots?.length ?? -1),
+      `installability errors: ${installErrors.join(', ') || 'none'}; orientation lock: ${m.orientation ?? 'none'}; shortcuts: ${(m.shortcuts ?? []).map((s) => s.short_name).join(', ')}; launch: ${JSON.stringify(m.launch_handler)}; screenshots served: ${wideShot}/${m.screenshots?.length ?? 0}`);
+    check('chromebook-use', 'Chromebook: laptop layout, named as a Chromebook, install banner, Ctrl+K search, This device in Settings',
+      layout.side && !layout.bottom && named && /Chromebook/.test(banner) && prompted && bannerGone && searchFocused && /Chromebook/.test(deviceText),
+      `sidebar: ${layout.side}, phone bar: ${layout.bottom}; server device name Chromebook: ${named}; banner: "${banner.split('\n')[0]}", Chrome prompt shown: ${prompted}; Ctrl+K → search: ${searchFocused}; This device: "${deviceText.split('\n').slice(0, 3).join(' / ')}"`);
+    check('chromebook-one-window', 'Chromebook: a second window waits; "Use it here" moves the clinic over with nothing lost',
+      blocked && firstStepsAside && carried && !!onServer.v,
+      `second tab blocked: ${blocked}; first window stepped aside: ${firstStepsAside}; owner saved just before is in the new window: ${carried}; and on the server: ${!!onServer.v}`);
+    check('chromebook-update', 'Chromebook: a new deploy is offered while the app is open, and Reload brings it in',
+      offered && afterReload && errors.length === 0,
+      `update offered: ${offered}; banner gone after reload: ${afterReload}; page errors: ${errors.length ? errors.join(' | ') : 'none'}`);
+  } finally {
+    await ctx.close(); // also when a step above fails, or the open browser keeps the test running
+  }
 });
 
 await step('phase2: sign in while offline', async () => {
