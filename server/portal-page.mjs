@@ -379,7 +379,7 @@ footer.site b { color: var(--ink-2); }
       text: t('eventTitle', { pet: a.pet_name, type: t('visitType.' + a.type), clinic: clinicName() }),
       dates: z(start) + '/' + z(end),
       details: [[d.clinic.phone, d.clinic.whatsapp].filter(Boolean).filter((v, i, xs) => xs.indexOf(v) === i).join(' · '),
-        d.clinic.address ? t('directionsIcs', { url: 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(d.clinic.address) }) : ''].filter(Boolean).join('\n'),
+        d.clinic.address ? t('directionsIcs', { url: 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(d.clinic.address) }) : ''].filter(Boolean).join('\\n'),
       location: [clinicName(), d.clinic.address].filter(Boolean).join(', '),
       ctz: TZ,
     });
