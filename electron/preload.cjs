@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   getBackground: () => ipcRenderer.invoke('app:getBackground'),
   setBackground: (on) => ipcRenderer.invoke('app:setBackground', !!on),
   print: () => ipcRenderer.invoke('app:print'),
+  savePdf: (name) => ipcRenderer.invoke('pdf:save', String(name)),
   // Automatic updates (electron/updater.cjs)
   updateGet: () => ipcRenderer.invoke('update:get'),
   updateCheck: () => ipcRenderer.invoke('update:check'),

@@ -32,6 +32,7 @@ interface DesktopBridge {
   openExternal(url: string): Promise<void>;
   showDataFolder(): Promise<void>;
   print(): Promise<void>;
+  savePdf(name: string): Promise<string | null>;
   updateGet(): Promise<UpdateState>;
   updateCheck(): Promise<UpdateState>;
   updateInstall(): Promise<boolean>;
@@ -189,7 +190,31 @@ export const platform = {
     if (desktop) desktop.print();
     else window.print();
   },
+  /**
+   * "Save As PDF" for a printable document (receipt, pet summary), named after the client and pet.
+   * Desktop: renders the page to an A5 PDF and opens a save dialog → saved path, or null if cancelled.
+   * Browser: opens the print dialog with the page title set to the name, which the "Save as PDF"
+   * destination uses as the file name → null (the browser does the saving).
+   */
+  async savePdf(name: string): Promise<string | null> {
+    if (desktop) return desktop.savePdf(name);
+    const title = document.title;
+    document.title = name;
+    const restore = () => {
+      document.title = title;
+      window.removeEventListener('afterprint', restore);
+    };
+    window.addEventListener('afterprint', restore);
+    window.print();
+    setTimeout(restore, 1000);
+    return null;
+  },
 };
+
+/** File name for a generated document: "<client> - <pet>" (just the client when there is no pet). */
+export function pdfName(owner: string | null | undefined, pet?: string | null) {
+  return [owner, pet].map((s) => (s ?? '').trim()).filter(Boolean).join(' - ') || 'document';
+}
 
 const WEB_UPDATE_STATE: UpdateState = {
   current: '0.1.0', auto: false, supported: false, reason: 'web', status: 'idle', version: null, progress: 0, error: null, releasesUrl: '',

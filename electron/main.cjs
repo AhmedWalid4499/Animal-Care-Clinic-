@@ -210,7 +210,7 @@ ipcMain.handle('file:export', (_e, { name, bytes }) => {
 });
 
 ipcMain.handle('shell:showItem', (_e, file) => {
-  if (typeof file === 'string' && file.startsWith(exportDir)) shell.showItemInFolder(file);
+  if (typeof file === 'string' && (file.startsWith(exportDir) || savedPdfs.has(file))) shell.showItemInFolder(file);
 });
 
 ipcMain.handle('file:pick', async (e, { filters }) => {
@@ -238,6 +238,32 @@ ipcMain.handle('shell:showData', () => shell.openPath(dataDir));
 ipcMain.handle('app:print', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   win.webContents.print({ printBackground: true });
+});
+
+// "Save As PDF" on the receipt / pet summary: render the page with its print CSS (A5) and ask where to save,
+// suggesting "<client> - <pet>.pdf" in Documents/Animal Care Clinic/PDFs. Returns the saved path or null.
+const pdfDir = process.env.CLINIC_PDF_DIR || path.join(app.getPath('documents'), 'Animal Care Clinic', 'PDFs');
+const savedPdfs = new Set();
+ipcMain.handle('pdf:save', async (e, name) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  let base = String(name || 'document')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')
+    .slice(0, 150);
+  if (!base) base = 'document';
+  const pdf = await e.sender.printToPDF({ pageSize: 'A5', printBackground: true, preferCSSPageSize: true });
+  fs.mkdirSync(pdfDir, { recursive: true });
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: path.join(pdfDir, `${base}.pdf`),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return null;
+  const file = /\.pdf$/i.test(filePath) ? filePath : `${filePath}.pdf`;
+  fs.writeFileSync(file, pdf);
+  savedPdfs.add(file);
+  return file;
 });
 
 // Minimal macOS menu: app (About/Hide/Quit), Edit (copy/paste/undo in text fields), Window. No reload/devtools.

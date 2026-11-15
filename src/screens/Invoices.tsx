@@ -7,7 +7,7 @@ import {
 } from '../db/repo';
 import { fromLocalInput, nowLocalInput } from '../lib/dates';
 import { platform } from '../lib/platform';
-import { Confirm, Dialog, Field, Icon, StatusBadge, WaButton } from '../components/ui';
+import { Confirm, Dialog, Field, Icon, SavePdfButton, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { PAYMENT_METHODS, type InvoiceStatus, type PaymentMethod } from '../db/types';
 
@@ -352,6 +352,7 @@ export function InvoicePrint() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={inv.owner_name} pet={inv.pet_name} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5">

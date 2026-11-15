@@ -10,7 +10,7 @@ import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Badge, Field, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Badge, Field, Icon, PetAvatar, SavePdfButton, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 
@@ -324,6 +324,7 @@ export function PetSummaryPrint() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={pet.owner_name} pet={pet.name} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5">

@@ -339,6 +339,37 @@ async function pdfOf(hash, name) {
   check('S7.5-receipt', 'A5 receipt prints on one A5 page', r.pages === 1 && r.a5, `receipt-A5.pdf: ${r.pages} page, ${r.size} (A5 = 420×595 pt)`);
   const s = await pdfOf(`#/pets/${pet}/print`, 'pet-summary-A5.pdf');
   check('S4-summary', 'Pet summary prints / saves as PDF', s.pages >= 1 && s.a5, `pet-summary-A5.pdf: ${s.pages} page(s), ${s.size}`);
+
+  // "Save As PDF" button: the save dialog suggests "<client> - <pet>.pdf" and the saved file is an A5 PDF.
+  const pdfOut = path.join(out, 'save-as-pdf');
+  fs.mkdirSync(pdfOut, { recursive: true });
+  await app.evaluate(({ dialog }, dir) => {
+    globalThis.__suggested = [];
+    dialog.showSaveDialog = async (_w, opts) => {
+      const name = String(opts.defaultPath).split(/[\\/]/).pop();
+      globalThis.__suggested.push(name);
+      return { canceled: false, filePath: `${dir}/${name}` };
+    };
+  }, pdfOut);
+  const one = (sql) => db.exec(sql)[0].values[0];
+  const [invOwner, invPet] = one(`SELECT o.full_name, p.name FROM invoices i JOIN owners o ON o.id = i.owner_id LEFT JOIN pets p ON p.id = i.pet_id WHERE i.id = '${inv}'`);
+  const [petName, petOwner] = one(`SELECT p.name, o.full_name FROM pets p JOIN owners o ON o.id = p.owner_id WHERE p.id = '${pet}'`);
+  for (const [hash, expectName, id] of [
+    [`#/invoices/${inv}/print`, `${[invOwner, invPet].filter(Boolean).join(' - ')}.pdf`, 'S7.5-save-pdf'],
+    [`#/pets/${pet}/print`, `${petOwner} - ${petName}.pdf`, 'S4-save-pdf'],
+  ]) {
+    await go(win, hash);
+    await win.waitForSelector('.sheet.a5');
+    await win.getByRole('button', { name: 'Save As PDF' }).click();
+    await win.getByRole('button', { name: 'Show in folder' }).waitFor({ timeout: 10000 });
+    const suggested = (await app.evaluate(() => globalThis.__suggested)).pop();
+    const file = path.join(pdfOut, suggested);
+    const text = fs.existsSync(file) ? fs.readFileSync(file).toString('latin1') : '';
+    const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
+    const a5 = box && Math.abs(Number(box[1]) - 419.5) < 3 && Math.abs(Number(box[2]) - 595.3) < 3;
+    check(id, '"Save As PDF" saves the document named after the client and pet', suggested === expectName && text.startsWith('%PDF') && a5,
+      `suggested "${suggested}" (expected "${expectName}"), ${text.length} bytes, ${box ? `${Math.round(box[1])}×${Math.round(box[2])} pt` : 'no page'}`);
+  }
 }
 
 // ------------------------------------------------------------------ 7. Arabic RTL pass

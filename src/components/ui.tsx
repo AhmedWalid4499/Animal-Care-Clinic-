@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useApp, useQuery } from '../lib/app';
 import { searchPets, type PetOption } from '../db/repo';
 import { openWhatsApp } from '../lib/whatsapp';
+import { isDesktop, pdfName, platform } from '../lib/platform';
 
 // ---------- icons (inline, stroke) ----------
 const paths: Record<string, string> = {
@@ -14,6 +15,7 @@ const paths: Record<string, string> = {
   search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM21 21l-5-5',
   phone: 'M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.5c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z',
   chat: 'M21 11.5a8.4 8.4 0 01-12.3 7.4L3 21l2.1-5.6A8.4 8.4 0 1121 11.5z',
+  pdf: 'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M12 11v7M9 15l3 3 3-3',
   print: 'M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z',
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
   x: 'M18 6L6 18M6 6l12 12',
@@ -108,6 +110,33 @@ export function StatusBadge({ ns, value }: { ns: string; value: string }) {
 }
 
 /** WhatsApp click-to-chat button. onSent runs after opening (sets reminder_sent_at). */
+/** "Save As PDF" on a printable document; the file is named "<client> - <pet>.pdf". */
+export function SavePdfButton({ owner, pet }: { owner: string | null | undefined; pet?: string | null }) {
+  const { t, toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const file = await platform.savePdf(pdfName(owner, pet));
+      if (file) {
+        setSaved(file);
+        toast(t('common.pdfSaved', { file: file.split(/[\\/]/).pop() ?? file }));
+      }
+    } catch {
+      toast(t('common.pdfFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button className="btn" disabled={busy} onClick={() => void save()}><Icon name="pdf" /> {t('common.savePdf')}</button>
+      {isDesktop && saved && <button className="btn sm" onClick={() => platform.showItem(saved)}>{t('settings.showInFolder')}</button>}
+    </>
+  );
+}
+
 export function WaButton({ phone, text, onSent, label, small }: { phone: string | null | undefined; text: string; onSent?: () => void; label?: string; small?: boolean }) {
   const { t } = useApp();
   return (
