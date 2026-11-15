@@ -1,13 +1,30 @@
 // Who may change what. The server checks every change it receives, so a device can't give itself rights.
 // Roles (docs/CLOUD-PLAN.md): ADMIN everything · DOCTOR clinical + front desk, no settings/users/archive/void ·
-// ASSISTANT front desk, read-only visits.
+// ASSISTANT front desk, read-only visits except the pre-diagnosis (they send the patient to the vet's queue).
 import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 
-const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types']);
-const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations']);
+// drugs: the dose calculator's list (doses decide what the calculator says), so only the Admin edits it.
+// expenses: the clinic's own spending (rent, salaries…), Admin only like the reports that use it.
+const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'expenses']);
+const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates', 'lab_results', 'admissions', 'care_tasks', 'test_requests']);
+// In-patients: assistants tick a care task done or skipped (with a note), nothing else on the ward.
+const ASSISTANT_TASK_COLS = new Set(['status', 'done_at', 'done_by', 'note', 'updated_at']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
+// Assistants record the pre-diagnosis: they may create a visit that only waits for the vet (no vet, diagnosis,
+// treatment, follow-up or invoice), recorded as theirs, and correct its intake fields while the patient still waits.
+// The physical examination (schema v19) is recorded with the weight and temperature, so it is part of the intake too.
+const EXAM_COLS = ['bp_systolic', 'bp_diastolic', 'mucous_membrane', 'eyes', 'skin_coat', 'glands', 'glands_note', 'anal_glands', 'nails', 'fleas_ticks'];
+const INTAKE_EDIT_COLS = new Set(['type', 'complaint', 'weight_kg', 'temperature_c', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', ...EXAM_COLS, 'updated_at']);
+const VET_ONLY_VISIT_COLS = ['vet_id', 'diagnosis', 'treatment_notes', 'follow_up_at', 'invoice_id'];
+function assistantIntake(change, before, userId) {
+  const { op, cols } = change;
+  if (op !== 'upsert') return false;
+  if (!before) return cols.stage === 'WAITING' && cols.intake_by === userId && VET_ONLY_VISIT_COLS.every((c) => cols[c] == null);
+  return before.stage === 'WAITING' && Object.keys(cols).every((c) => INTAKE_EDIT_COLS.has(c));
+}
 // Everyone may change these on their own user row: the bell's on/off switches, and their own password.
+const FOUND_COLS = new Set(['status', 'handled_by', 'handled_at', 'updated_at']);
 const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_password', 'updated_at']);
 
 /**
@@ -22,14 +39,35 @@ export function refuse(role, change, before, userId) {
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
   if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
+  // Lost & found: reports come only from a pet's collar tag page (the server writes them); anyone at the clinic may
+  // mark one handled, and nothing else about it changes.
+  if (tbl === 'found_reports') {
+    if (!before) return 'found reports come from the collar tag page';
+    if (!Object.keys(cols).every((c) => FOUND_COLS.has(c))) return 'only the handled status of a found report can change';
+    return null;
+  }
+  // Anyone may give a pet a collar tag; replacing or switching off a printed one is for admins (like the owner page).
+  if (tbl === 'pets' && 'tag_token' in cols && before?.tag_token && cols.tag_token !== before.tag_token && role !== 'ADMIN') return 'replacing a collar tag is for admins';
+  // A customer ID is given once (by the server) and never changes, not even by an Admin: it is printed on documents.
+  if (tbl === 'owners' && 'code' in cols && typeof before?.code === 'string' && /^AC-\d+$/.test(before.code) && cols.code !== before.code) return 'a customer ID never changes';
+  // Stock movements are a log: never changed afterwards. Front desk and vets record sales on invoices; restocking
+  // and count corrections are the Admin's.
+  if (tbl === 'stock_moves' && before) return 'stock movements are append-only';
+  // A signed consent form is a record of what the owner agreed to: it is never changed afterwards. Anyone may record one.
+  if (tbl === 'consents' && before) return 'signed consent forms cannot be changed';
+  if (tbl === 'stock_moves' && role !== 'ADMIN' && (cols.reason !== 'INVOICE' || !cols.invoice_id)) return 'restocking and corrections are for admins';
   if (role === 'ADMIN') return null;
   if (tbl === 'users' && before && change.id === userId && op === 'upsert' && Object.keys(cols).every((c) => OWN_USER_COLS.has(c))) return null;
   if (ADMIN_ONLY.has(tbl)) return 'admins only';
   if (CLINICAL.has(tbl) && role === 'ASSISTANT') {
     const onlyReminder = tbl === 'vaccinations' && before && op === 'upsert' && Object.keys(cols).every((c) => ASSISTANT_VACCINATION_COLS.has(c));
-    if (!onlyReminder) return 'doctors and admins only';
+    const intake = tbl === 'visits' && assistantIntake(change, before, userId);
+    const tick = tbl === 'care_tasks' && before && op === 'upsert' && Object.keys(cols).every((c) => ASSISTANT_TASK_COLS.has(c)) && (cols.done_by == null || cols.done_by === userId);
+    if (!onlyReminder && !intake && !tick) return 'doctors and admins only';
   }
   if (tbl === 'owners' && 'status' in cols && (cols.status === 'ARCHIVED' || before?.status === 'ARCHIVED')) return 'archiving is for admins';
+  // Anyone at the desk may give an owner their page (QR code); replacing or switching off a printed one is for admins.
+  if (tbl === 'owners' && 'portal_token' in cols && before?.portal_token && cols.portal_token !== before.portal_token) return 'replacing the owner page code is for admins';
   if (tbl === 'invoices' && 'status' in cols && (cols.status === 'VOID' || before?.status === 'VOID')) return 'voiding is for admins';
   return null;
 }

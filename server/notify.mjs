@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import webpush from 'web-push';
 
-export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue'];
+export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue', 'found'];
 
 // ---------------------------------------------------------------- what happened → notifications
 /**
@@ -89,6 +89,24 @@ export async function createNotifications(c, clinicId, actor, events, conflicts,
   return out;
 }
 
+/**
+ * Lost & found (schema v18): someone scanned a pet's collar tag and pressed Alert. Everyone at the clinic is told
+ * (each person can switch the kind off in the bell). Returns the stored notifications, to deliver like the others.
+ */
+export async function createFoundNotifications(c, clinicId, data) {
+  const users = (await c.query(
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
+    [clinicId],
+  )).rows;
+  const out = users
+    .filter((u) => !u.off.split(',').map((s) => s.trim()).includes('found'))
+    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'found', event: data.located ? 'located' : 'reported', data }));
+  for (const n of out) {
+    await c.query('INSERT INTO notifications (id, clinic_id, user_id, kind, event, data) VALUES ($1,$2,$3,$4,$5,$6)', [n.id, clinicId, n.user_id, n.kind, n.event, n.data]);
+  }
+  return out;
+}
+
 const stampUser = (s) => (s ? s.split('|')[2] || null : null);
 /** Scheduled appointments overlapping `a` that arrived after `seenSeq` (not from this same push). */
 async function unseenOverlaps(c, clinicId, id, a, seenSeq, firstSeq) {
@@ -121,7 +139,8 @@ async function nameOf(c, clinicId, userId) {
 // ---------------------------------------------------------------- push text (the app renders its own from i18n)
 const T = {
   en: {
-    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced', queue: 'Waiting for the vet' },
+    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced', queue: 'Waiting for the vet', found: '🐾 Lost & found' },
+    found: { reported: '{pet} ({owner}) was found: someone scanned the collar tag', located: '{pet} ({owner}) was found: someone scanned the collar tag and shared the location' },
     queue: { waiting: '{by} sent {pet} ({owner}) to the vet: {complaint}', emergency: '🚨 Emergency: {pet} ({owner}) is waiting for the vet: {complaint}' },
     appointment: {
       booked: '{by} booked {pet} ({owner}) for {at}',
@@ -137,7 +156,8 @@ const T = {
     conflict: { replaced: '{by} changed {label} after you; your edit was replaced', kept: 'Your change to {label} was not applied: {by} changed it later' },
   },
   ar: {
-    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل', queue: 'في انتظار الطبيب' },
+    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل', queue: 'في انتظار الطبيب', found: '🐾 المفقودات' },
+    found: { reported: 'تم العثور على {pet} ({owner}): شخص مسح بطاقة الطوق', located: 'تم العثور على {pet} ({owner}): شخص مسح بطاقة الطوق وشارك الموقع' },
     queue: { waiting: '{by} أرسل {pet} ({owner}) إلى الطبيب: {complaint}', emergency: '🚨 حالة طارئة: {pet} ({owner}) في انتظار الطبيب: {complaint}' },
     appointment: {
       booked: '{by} حجز موعداً لـ {pet} ({owner}) يوم {at}',
@@ -167,6 +187,7 @@ export function urlFor(n) {
   if (n.kind === 'visit') return `/#/pets/${d.pet_id}`;
   if (n.kind === 'payment') return `/#/invoices/${d.invoice_id}`;
   if (n.kind === 'queue') return '/#/';
+  if (n.kind === 'found') return `/#/lost-found?open=${d.report_id}`;
   if (n.kind === 'conflict') return d.tbl === 'appointments' ? `/#/appointments?open=${d.id}` : d.owner_id ? `/#/owners/${d.owner_id}` : d.pet_id ? `/#/pets/${d.pet_id}` : '/#/';
   return '/#/';
 }

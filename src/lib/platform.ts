@@ -15,6 +15,9 @@ export interface UpdateState {
   appPath?: string | null;
 }
 
+/** What the desktop app found when it asked a server address directly (electron/certs.cjs). */
+export interface ServerProbe { ok: boolean; status?: number; code?: string }
+
 interface DesktopBridge {
   config(): Promise<{ seedDemo: boolean; dataDir: string; dbPath: string; backupDir: string; exportDir: string; version: string; platform: string; deviceName?: string }>;
   backupNow(label: string): Promise<string | null>;
@@ -22,6 +25,8 @@ interface DesktopBridge {
   isForeground(): Promise<boolean>;
   getBackground(): Promise<boolean>;
   setBackground(on: boolean): Promise<boolean>;
+  loginItemStatus(): Promise<string | null>;
+  openLoginItemsSettings(): Promise<void>;
   exportFile(name: string, bytes: Uint8Array): Promise<string>;
   showItem(file: string): Promise<void>;
   loadDb(): Promise<Uint8Array | null>;
@@ -32,7 +37,9 @@ interface DesktopBridge {
   openExternal(url: string): Promise<void>;
   showDataFolder(): Promise<void>;
   print(): Promise<void>;
-  savePdf(name: string): Promise<string | null>;
+  savePdf(name: string, pageSize: 'A4' | 'A5'): Promise<string | null>;
+  pdf(pageSize: 'A4' | 'A5'): Promise<Uint8Array | null>;
+  probe(url: string): Promise<ServerProbe>;
   updateGet(): Promise<UpdateState>;
   updateCheck(): Promise<UpdateState>;
   updateInstall(): Promise<boolean>;
@@ -51,6 +58,29 @@ declare global {
 
 const desktop = typeof window !== 'undefined' ? window.clinicDesktop : undefined;
 export const isDesktop = !!desktop;
+
+// ---- which device the web app runs on (cloud build: phone, Chromebook, any browser) ----
+export type DeviceKind = 'desktop' | 'chromebook' | 'android' | 'iphone' | 'ipad' | 'browser';
+export function detectDevice(ua: string, uaPlatform?: string): Exclude<DeviceKind, 'desktop'> {
+  // Chromebooks say "CrOS" in the user agent (kept by Chrome's reduced user agent) and "Chrome OS" in userAgentData.
+  if (/\bCrOS\b/.test(ua) || /chrome ?os/i.test(uaPlatform ?? '')) return 'chromebook';
+  if (/Android/.test(ua)) return 'android';
+  if (/iPhone|iPod/.test(ua)) return 'iphone';
+  if (/iPad/.test(ua)) return 'ipad';
+  return 'browser';
+}
+export const deviceKind: DeviceKind =
+  desktop ? 'desktop'
+  : typeof navigator === 'undefined' ? 'browser'
+  : detectDevice(navigator.userAgent, (navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform);
+export const isChromebook = deviceKind === 'chromebook';
+/** A full-size screen with a keyboard: the desktop app, a Chromebook or a computer's browser (not a phone). */
+export const isLaptopLike = deviceKind === 'desktop' || deviceKind === 'chromebook' || deviceKind === 'browser';
+const DEVICE_NAMES: Record<DeviceKind, string> = { desktop: 'Desktop app', chromebook: 'Chromebook', android: 'Android phone', iphone: 'iPhone', ipad: 'iPad', browser: 'Browser' };
+/** Opened from its own icon (installed web app) rather than in a browser tab. */
+export const isInstalledApp = () =>
+  typeof window !== 'undefined' &&
+  (window.matchMedia?.('(display-mode: standalone)').matches || window.matchMedia?.('(display-mode: window-controls-overlay)').matches || (navigator as { standalone?: boolean }).standalone === true);
 
 // ---- browser fallback (prototype): IndexedDB holds the database bytes ----
 const IDB_NAME = 'animal-care-clinic';
@@ -118,7 +148,7 @@ function pickInBrowser(accept: string): Promise<{ name: string; bytes: Uint8Arra
 export const platform = {
   async config() {
     if (desktop) return desktop.config();
-    return { seedDemo: __WEB_DEMO__, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: '0.1.0', platform: 'web', deviceName: navigator.userAgent.includes('Android') ? 'Android phone' : navigator.userAgent.includes('iPhone') ? 'iPhone' : 'Browser' };
+    return { seedDemo: __WEB_DEMO__, dataDir: '', dbPath: '', backupDir: '', exportDir: '', version: __APP_VERSION__, platform: deviceKind === 'chromebook' ? 'chromeos' : 'web', deviceName: DEVICE_NAMES[deviceKind] };
   },
   async loadDb() {
     if (desktop) {
@@ -176,6 +206,13 @@ export const platform = {
   async getBackground() {
     return desktop ? desktop.getBackground() : false;
   },
+  /** macOS only: 'requires-approval' when the login item waits for the user in System Settings; null elsewhere. */
+  async loginItemStatus(): Promise<string | null> {
+    return desktop ? desktop.loginItemStatus() : null;
+  },
+  openLoginItemsSettings() {
+    void desktop?.openLoginItemsSettings();
+  },
   async setBackground(on: boolean) {
     return desktop ? desktop.setBackground(on) : false;
   },
@@ -191,13 +228,13 @@ export const platform = {
     else window.print();
   },
   /**
-   * "Save As PDF" for a printable document (receipt, pet summary), named after the client and pet.
-   * Desktop: renders the page to an A5 PDF and opens a save dialog → saved path, or null if cancelled.
+   * "Save As PDF" for a printed document, named after the client, pet and document (see pdfName).
+   * Desktop: renders the page as Print lays it out (A5 or A4) and opens a save dialog → saved path, or null if cancelled.
    * Browser: opens the print dialog with the page title set to the name, which the "Save as PDF"
    * destination uses as the file name → null (the browser does the saving).
    */
-  async savePdf(name: string): Promise<string | null> {
-    if (desktop) return desktop.savePdf(name);
+  async savePdf(name: string, pageSize: 'A4' | 'A5' = 'A5'): Promise<string | null> {
+    if (desktop) return desktop.savePdf(name, pageSize);
     const title = document.title;
     document.title = name;
     const restore = () => {
@@ -209,6 +246,17 @@ export const platform = {
     setTimeout(restore, 1000);
     return null;
   },
+  /** Desktop: why a server address doesn't answer (see electron/certs.cjs probe). Browser: null. */
+  async probe(url: string): Promise<ServerProbe | null> {
+    return desktop?.probe ? desktop.probe(url) : null;
+  },
+  /** Desktop: the page on screen as a PDF, laid out as Print does. Browser: not available (null). */
+  canPdf: !!desktop,
+  async pdf(pageSize: 'A4' | 'A5'): Promise<Uint8Array | null> {
+    if (!desktop?.pdf) return null;
+    const b = await desktop.pdf(pageSize);
+    return b ? new Uint8Array(b) : null;
+  },
 };
 
 /** File name for a generated document: "<client> - <pet> - <document>" (no pet part when there is no pet). */
@@ -217,7 +265,7 @@ export function pdfName(owner: string | null | undefined, pet: string | null | u
 }
 
 const WEB_UPDATE_STATE: UpdateState = {
-  current: '0.1.0', auto: false, supported: false, reason: 'web', status: 'idle', version: null, progress: 0, error: null, releasesUrl: '',
+  current: __APP_VERSION__, auto: false, supported: false, reason: 'web', status: 'idle', version: null, progress: 0, error: null, releasesUrl: '',
 };
 
 // Automatic updates — desktop only; the browser prototype reports "not supported".

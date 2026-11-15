@@ -1,4 +1,6 @@
 /* Clean, clinical: Plex Sans Arabic 400/600, 4px corners, rules not boxes, one accent colour. */
+/* Every color-mix() has a plain colour just before it: the Windows 7 / 32-bit build runs Chromium 108, which predates
+   color-mix() and would otherwise drop the rule (e.g. the sticky save bar turned see-through). */
 :root {
   --accent: #2e6f73; /* clinic teal, taken from the Animal Care Clinic logo */
   --accent-ink: #ffffff;
@@ -57,6 +59,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 /* ---------- shell ---------- */
 .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100%; }
 .side { border-inline-end: 1px solid var(--rule); padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; background: var(--bg); z-index: 5; }
+/* (14 Nov 2026) The sidebar is as tall as the window; on a short laptop screen (768 px) its foot (language, password,
+   Sign out) fell below the bottom edge with no way to reach it. It now scrolls on its own. */
+.side { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 18px; }
 .brand.with-logo { flex-direction: column; align-items: stretch; gap: 6px; }
 .brand.with-logo span { padding-inline-start: 2px; }
@@ -89,11 +94,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn:hover { background: var(--bg-2); text-decoration: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { filter: brightness(1.06); }
-.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--rule-2)); }
+.btn.danger { color: var(--bad); border-color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--rule-2)); }
 .btn.ghost { border-color: transparent; background: none; color: var(--accent); padding: 0 8px; }
 .btn.ghost:hover { background: var(--accent-soft); }
 .btn.sm { min-height: 28px; padding: 0 10px; font-size: 13px; }
-.btn.wa { color: #128c4a; border-color: color-mix(in srgb, #128c4a 35%, var(--rule-2)); }
+.btn.wa { color: #128c4a; border-color: #128c4a; border-color: color-mix(in srgb, #128c4a 35%, var(--rule-2)); }
 [data-theme='dark'] .btn.wa, :root:not([data-theme='light']) .btn.wa { color: inherit; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn svg { width: 16px; height: 16px; }
@@ -109,7 +114,7 @@ input[type='text'], input[type='email'], input[type='tel'], input[type='password
   width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg);
 }
 textarea { min-height: 72px; resize: vertical; }
-input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
+input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px solid var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; border-color: var(--accent); }
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; min-height: 38px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .grid { display: grid; gap: 14px 16px; }
@@ -150,6 +155,15 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .greyed { opacity: .5; }
 .tablewrap { overflow-x: auto; }
 
+.pill { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; text-align: center; line-height: 18px; }
+.reminders .list li.done { opacity: .6; }
+.pet-alerts { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 3px 0; }
+.pet-alerts.big { margin: 0 0 12px; }
+.alert-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--radius); font-size: 12px; font-weight: 600; border: 1px solid; white-space: nowrap; }
+.alert-chip.note { white-space: normal; font-weight: 400; }
+.alert-chip.danger { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); }
+.alert-chip.caution { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.pet-alerts.big .alert-chip { font-size: 14px; padding: 4px 10px; }
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--bg-2); color: var(--ink-2); white-space: nowrap; }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
@@ -165,6 +179,9 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 20px; margin-top: 12px; }
 .facts div span { display: block; font-size: 12px; color: var(--ink-3); }
 .facts div b { font-weight: 600; font-size: 14px; }
+/* Long values (an email, an address) wrap inside their own column instead of running into the next one. */
+.facts > div { min-width: 0; }
+.facts div b { display: block; overflow-wrap: anywhere; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin: 18px 0 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; font-weight: 600; color: var(--ink-2); cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
 .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
@@ -184,9 +201,9 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .form-section { padding: 18px 0; border-bottom: 1px solid var(--rule); }
 .form-section > h2 { margin-bottom: 12px; }
 .repeat { display: grid; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px dashed var(--rule); }
-.repeat.rx { grid-template-columns: 2fr 1fr 1.3fr 70px 2fr auto; }
+.repeat.rx { grid-template-columns: 2fr 1.5fr 1.2fr 64px 1.6fr auto; }
 .repeat.vx { grid-template-columns: 2fr 1.2fr 1.2fr 1fr auto; }
-.actionbar { position: sticky; bottom: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--rule); padding: 12px 0; display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; z-index: 5; }
+.actionbar { position: sticky; bottom: 0; background: var(--bg); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); border-top: 1px solid var(--rule); padding: 12px 0; display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; z-index: 5; }
 .note { padding: 10px 12px; border-inline-start: 3px solid var(--accent); background: var(--accent-soft); font-size: 13px; margin: 0 0 14px; border-radius: 0 var(--radius) var(--radius) 0; }
 .note.warn { border-color: var(--warn); background: var(--warn-soft); }
 .note.bad { border-color: var(--bad); background: var(--bad-soft); }
@@ -239,7 +256,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 /* login */
 .login { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
 .login .art { position: relative; overflow: hidden; background: var(--brand); color: var(--brand-ink); padding: 44px 48px 28px; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; }
-.login .art::after { content: ""; position: absolute; inset: auto -20% -45% auto; width: 70%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--brand-ink) 10%, transparent), transparent); pointer-events: none; }
+.login .art::after { content: ""; position: absolute; inset: auto -20% -45% auto; width: 70%; aspect-ratio: 1; border-radius: 50%; background: none; background: radial-gradient(closest-side, color-mix(in srgb, var(--brand-ink) 10%, transparent), transparent); pointer-events: none; }
 .login .art .logo-plate { max-width: 320px; padding: 14px 18px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 .login .art .logo-plate img { max-height: 130px; }
 .login .art h1 { font-size: 34px; max-width: 440px; margin-bottom: 18px; text-wrap: balance; }
@@ -251,7 +268,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .slide p { margin: 0; opacity: .88; line-height: 1.55; }
 .slide { animation: slide-in .5s ease both; }
 .dots { display: flex; gap: 8px; margin-top: 14px; }
-.dots button { width: 22px; height: 4px; border-radius: 2px; border: 0; padding: 0; cursor: pointer; background: color-mix(in srgb, var(--brand-ink) 35%, transparent); transition: width .25s ease, background-color .25s ease; }
+.dots button { width: 22px; height: 4px; border-radius: 2px; border: 0; padding: 0; cursor: pointer; background: rgba(255, 255, 255, .35); background: color-mix(in srgb, var(--brand-ink) 35%, transparent); transition: width .25s ease, background-color .25s ease; }
 .dots button.on { width: 40px; background: var(--brand-ink); }
 .dots button:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 3px; }
 .paw-trail { width: 100%; max-width: 560px; height: auto; fill: var(--brand-ink); }
@@ -268,8 +285,10 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .float input { min-height: 54px; padding: 22px 12px 6px; font-size: 15px; transition: border-color .15s ease, box-shadow .15s ease; }
 .float > span { position: absolute; inset-inline-start: 13px; top: 17px; color: var(--ink-3); font-size: 15px; pointer-events: none; transition: top .15s ease, font-size .15s ease, color .15s ease; }
 .float input:focus + span, .float input:not(:placeholder-shown) + span { top: 7px; font-size: 11.5px; font-weight: 600; color: var(--accent); }
-.float input:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); outline: none; }
-.has-eye input { padding-left: 46px; padding-right: 46px; }
+.float input:focus { box-shadow: 0 0 0 3px var(--accent-soft); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); outline: none; }
+/* Room for the eye button on its side only, so the password starts where its label does (the input itself is ltr). */
+.has-eye input { padding-left: 12px; padding-right: 46px; }
+[dir='rtl'] .has-eye input { padding-left: 46px; padding-right: 12px; }
 .eye { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none; width: 36px; height: 36px; border-radius: var(--radius); color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
 .eye:hover { background: var(--bg-2); color: var(--ink); }
 .eye svg { width: 18px; height: 18px; }
@@ -279,7 +298,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .fields.shake { animation: shake .42s cubic-bezier(.36, .07, .19, .97) both; }
 .btn.signin { min-height: 48px; font-size: 15px; position: relative; transition: filter .15s ease, transform .1s ease; }
 .btn.signin.busy { cursor: progress; opacity: .92; }
-.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent-ink) 35%, transparent); border-top-color: var(--accent-ink); animation: spin .7s linear infinite; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid transparent; border: 2px solid color-mix(in srgb, var(--accent-ink) 35%, transparent); border-top-color: var(--accent-ink); animation: spin .7s linear infinite; }
 .creds { font-size: 12px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 14px; }
 .role-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .chip-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: start; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); padding: 8px 10px; cursor: pointer; transition: border-color .15s ease, background-color .15s ease; min-width: 0; }
@@ -300,17 +319,21 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 
 /* ---------- notifications bell ---------- */
 .bell-wrap { position: relative; }
-.bell { position: relative; width: 34px; height: 34px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); color: var(--ink-2); display: grid; place-items: center; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
-.bell:hover { background: var(--bg-2); color: var(--ink); }
+/* A plain icon (no box), like the links under it; the red count says when there's something new. */
+.bell { position: relative; width: 30px; height: 30px; border: 0; border-radius: var(--radius); background: none; color: var(--ink-3); display: grid; place-items: center; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.bell:hover, .bell[aria-expanded='true'] { background: var(--bg-2); color: var(--ink); }
 .bell svg { width: 18px; height: 18px; }
-.bell.has-unread { color: var(--accent); border-color: var(--accent); }
-.bell .count { position: absolute; top: -6px; inset-inline-end: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
+.bell.has-unread { color: var(--ink-2); }
+.bell .count { position: absolute; top: -3px; inset-inline-end: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; }
 .bell-panel { position: absolute; bottom: 42px; inset-inline-start: 0; width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 12px 36px rgba(0, 0, 0, .18); z-index: 40; animation: dialog-in .16s cubic-bezier(.2, .7, .2, 1) both; }
+/* (14 Nov 2026) The sidebar scrolls on short screens, which clips anything sticking out of it: the panel opens
+   beside the sidebar instead, pinned to the bottom of the window. */
+.side .bell-panel { position: fixed; bottom: 16px; inset-inline-start: 240px; }
 .bell-panel header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
 .bell-panel ul { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
 .bell-panel li button { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: start; width: 100%; text-align: start; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 12px; cursor: pointer; font-size: 13px; color: var(--ink-2); }
 .bell-panel li button:hover { background: var(--bg-2); }
-.bell-panel li button.unread { color: var(--ink); background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.bell-panel li button.unread { color: var(--ink); background: var(--accent-soft); background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
 .bell-panel li button.unread .text { font-weight: 600; }
 .bell-panel .kind { color: var(--accent); }
 .bell-panel .kind svg { width: 16px; height: 16px; }
@@ -354,6 +377,7 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
   .shell { grid-template-columns: 1fr; }
   .side { display: none; }
   .mobile-bell { display: block; position: fixed; top: max(10px, env(safe-area-inset-top, 0px)); inset-inline-end: 12px; z-index: 30; }
+  .mobile-bell .bell { width: 34px; height: 34px; background: var(--bg); box-shadow: 0 1px 4px rgba(0, 0, 0, .12); } /* floats over the page, so it needs its own background */
   .mobile-bell .bell-panel { bottom: auto; top: 42px; inset-inline-start: auto; inset-inline-end: 0; }
   .shell:has(.mobile-bell .bell-wrap) .page { padding-top: 54px; }
   .page { padding: 16px 16px 110px; }
@@ -387,7 +411,9 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .print-only { display: none; }
 .sheet { background: #fff; color: #111; }
 @media print {
-  @page { size: A5; margin: 10mm; }
+  /* (10 Nov 2026, customer request) The printer's own paper (usually A4), not A5: an A5 page printed on A4 came out
+     small in the middle of the sheet. Sheets stretch to the full page width (see the .sheet rules below). */
+  @page { size: auto; margin: 10mm; }
   body { background: #fff; color: #111; font-size: 11pt; }
   .side, .bottom-nav, .no-print, .toasts, .demo-banner, .update-banner, .actionbar { display: none !important; }
   .shell { display: block; }
@@ -397,6 +423,13 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
   a { color: inherit; }
   :root { --ink: #111; --ink-2: #444; --ink-3: #666; --rule: #ccc; --bg: #fff; --bg-2: #f3f3f3; }
 }
+.certificate .cert-title { text-align: center; font-size: 15pt; margin: 4px 0 10px; }
+.certificate .ar { font-family: inherit; }
+.certificate th .ar, .certificate td .ar, .certificate h3 .ar, .certificate .foot .ar { color: #555; }
+.certificate .facts-table td:first-child { width: 42%; color: #333; }
+.certificate .cert-sign { display: flex; justify-content: space-between; gap: 16px; margin-top: 22px; font-size: 9pt; }
+.certificate .cert-sign .line { border-bottom: 1px solid #111; width: 55mm; height: 14mm; margin-bottom: 3px; }
+.certificate .cert-sign .stamp { border: 1px dashed #777; width: 32mm; height: 24mm; margin-bottom: 3px; border-radius: 50%; }
 .sheet-wrap { background: var(--bg-2); padding: 24px; display: grid; place-items: center; border-radius: var(--radius); overflow-x: auto; }
 .sheet.a5 { width: 148mm; min-height: 210mm; padding: 10mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
 .sheet .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 10px; }
@@ -407,8 +440,15 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .sheet .r { text-align: end; }
 .sheet .foot { margin-top: 14px; font-size: 9pt; color: #555; text-align: center; border-top: 1px solid #ccc; padding-top: 6px; }
 @media print {
-  .sheet-wrap { background: none; padding: 0; display: block; }
-  .sheet.a5 { width: auto; min-height: 0; padding: 0; box-shadow: none; }
+  /* The on-screen preview centres the sheet (place-items: center); Chromium now applies that to block layout too, so
+     without resetting it a printed sheet shrank to its content in the middle of the paper (10 Nov 2026). */
+  .sheet-wrap { background: none; padding: 0; display: block; place-items: normal; justify-items: normal; }
+  .sheet.a5 { width: 100%; justify-self: stretch; min-height: 0; padding: 0; box-shadow: none; }
+}
+/* The sheets are laid out for A5. On A4 (or any paper wider than A5) they are scaled up, so the print fills the page
+   instead of looking like a small A5 in the top half. */
+@media print and (min-width: 160mm) {
+  .sheet.a5 { zoom: 1.35; }
 }
 
 /* ---- pre-diagnosis & the vet's queue (Phase 5) ---- */
@@ -417,8 +457,8 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 [dir="rtl"] .section.queue li.urgency-EMERGENCY { box-shadow: inset -3px 0 0 var(--bad); }
 .section.queue li.urgency-SOON { box-shadow: inset 3px 0 0 var(--warn); }
 [dir="rtl"] .section.queue li.urgency-SOON { box-shadow: inset -3px 0 0 var(--warn); }
-.seg.urgency button.on.u-EMERGENCY { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
-.seg.urgency button.on.u-SOON { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--ink); }
+.seg.urgency button.on.u-EMERGENCY { background: var(--bad-soft); background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.seg.urgency button.on.u-SOON { background: var(--warn-soft); background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--ink); }
 .seg.urgency button { padding: 9px 16px; }
 .intake-box { border-inline-start: 3px solid var(--accent); padding-inline-start: 14px; }
 
@@ -434,3 +474,414 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 /* ---- phone install (Phase 4) ---- */
 .install-banner { display: flex; align-items: center; gap: 10px; margin: 12px 16px 0; padding: 10px 12px; border: 1px solid var(--rule-2); border-radius: var(--radius); background: var(--bg); }
 .install-banner img { border-radius: 8px; flex: none; }
+
+/* Reports (6 Nov 2026) */
+.reports .stepper { gap: 8px; margin-bottom: 14px; }
+.reports .stepper input { min-height: 32px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.tile { border: 1px solid var(--rule); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.tile span { font-size: 12px; color: var(--ink-2); font-weight: 600; }
+.tile b { font-size: 18px; color: var(--ink); }
+.tile.main { border-color: var(--accent); background: var(--accent-soft); }
+.tile.main b { font-size: 22px; }
+.tile small { font-size: 12px; color: var(--ink-3); }
+table.t tfoot td { border-top: 2px solid var(--ink); border-bottom: 0; }
+table.t.compact td, table.t.compact th { padding: 5px 8px; }
+table.t tr.on td { background: var(--accent-soft); font-weight: 600; }
+.chart-box { margin: 10px 0 6px; }
+@media print {
+  .reports .tiles { grid-template-columns: repeat(5, 1fr); }
+  .reports .chart-box { height: 200px !important; }
+}
+
+/* Dose calculator + treatment templates (6 Nov 2026) */
+.dose-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: -4px 0 10px; padding: 6px 10px; font-size: 13px; background: var(--accent-soft); border-inline-start: 3px solid var(--accent); border-radius: 0 var(--radius) var(--radius) 0; }
+.dose-hint.warn { background: var(--warn-soft); border-color: var(--warn); }
+.dose-hint.bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); font-weight: 600; }
+.dose-hint .btn { margin-inline-start: auto; }
+.tpl-bar { gap: 8px; }
+.tpl-list { max-height: 50vh; overflow-y: auto; }
+
+/* Stock (6 Nov 2026) */
+.low-stock { margin: 14px 0 0; }
+table.t td.neg { color: var(--bad); }
+table.t td.pos { color: var(--ok); }
+
+/* Prescription sheet for the owner (7 Nov 2026) */
+.rx-sheet .rx-title { text-align: center; font-size: 15pt; margin: 4px 0 8px; }
+.rx-sheet .rx-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 10pt; margin-bottom: 8px; }
+.rx-sheet .rx-next { margin-top: 12px; font-weight: 600; }
+.rx-sheet .rx-sign { margin-top: 26px; font-size: 9pt; width: 60mm; margin-inline-start: auto; text-align: center; }
+.rx-sheet .rx-sign .line { border-bottom: 1px solid #111; height: 14mm; margin-bottom: 3px; }
+/* Reminders tabs, activity log */
+.reminder-tabs { padding: 18px 28px 0; margin-bottom: -10px; }
+.activity-filters { margin-bottom: 12px; }
+table.t td.nowrap { white-space: nowrap; }
+table.t td.wrap { word-break: break-word; }
+@media (max-width: 760px) { .reminder-tabs { padding: 12px 16px 0; } }
+
+/* Expenses / profit (7 Nov 2026) */
+.tile.neg b { color: var(--bad); }
+
+/* Sections with several screens: Pricing (Invoices · Reports · Price list), Stock (Stock · Vaccines · Drugs). */
+.section-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: -6px 0 16px; padding: 3px; background: var(--bg-2); border-radius: calc(var(--radius) + 2px); width: fit-content; max-width: 100%; }
+.section-tabs a { padding: 6px 14px; border-radius: var(--radius); font-weight: 600; font-size: 13.5px; color: var(--ink-2); text-decoration: none; }
+.section-tabs a:hover { color: var(--ink); text-decoration: none; }
+.section-tabs a.active { background: var(--bg); color: var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+
+/* Lab results, consent forms (7 Nov 2026) */
+.lab-group { margin-top: 16px; }
+table.labs tr.flag td b { color: var(--bad); }
+.repeat.lab-row { grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto; }
+@media (max-width: 760px) { .repeat.lab-row { grid-template-columns: 1fr 1fr; } }
+.lab-trend { margin: 6px 0 14px; }
+.consent-text { margin: 14px 0; padding: 12px 14px; border-inline-start: 3px solid var(--rule-2); background: var(--bg-2); border-radius: var(--radius); font-size: 14px; }
+.consent-text p { margin: 0 0 6px; }
+.consent-text p.ar { margin-bottom: 12px; }
+.sigpad { position: relative; margin: 6px 0 80px; }
+.sigpad canvas { width: 100%; height: 160px; border: 1px dashed var(--rule-2); border-radius: var(--radius); background: #fff; touch-action: none; cursor: crosshair; display: block; }
+.sigpad .btn { position: absolute; top: 6px; inset-inline-end: 6px; }
+.consent-sheet .consent-title { text-align: center; font-size: 14pt; margin: 4px 0 10px; }
+.consent-sheet .facts-table td:first-child { width: 40%; color: #333; }
+.consent-sheet .consent-text { background: none; border: 0; padding: 0; font-size: 9.5pt; }
+.consent-sheet .consent-sign { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 10px; font-size: 9pt; }
+.consent-sheet .consent-sign img { max-height: 22mm; max-width: 65mm; display: block; }
+.consent-sheet .consent-sign .line { border-bottom: 1px solid #111; width: 65mm; margin-bottom: 3px; }
+
+/* In-patient board (7 Nov 2026) */
+.ward-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.ward-card { border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; }
+.ward-card.late { border-color: var(--bad); box-shadow: inset 3px 0 0 var(--bad); }
+.ward-card header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.ward-card header .badge { margin-inline-start: 8px; }
+.ward-card .tasks { list-style: none; margin: 8px 0 0; padding: 0; }
+.ward-card .tasks li { display: grid; grid-template-columns: 76px 1fr auto auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--rule); font-size: 14px; }
+.ward-card .tasks.done li { grid-template-columns: 52px 1fr auto auto; color: var(--ink-2); font-size: 13px; }
+.ward-card .tasks li.overdue .time, .ward-card .tasks li.overdue .what { color: var(--bad); font-weight: 600; }
+.ward-note { margin: 14px 0 0; }
+b.neg { color: var(--bad); }
+@media (max-width: 760px) { .ward-grid { grid-template-columns: 1fr; } }
+
+/* Treatment template printed for the owner (7 Nov 2026) */
+.rx-sheet .blank { display: inline-block; min-width: 34mm; border-bottom: 1px dotted #777; height: 1em; vertical-align: bottom; }
+.tpl-patient { max-width: 520px; margin-bottom: 12px; }
+
+/* Dashboard, redone 7 Nov 2026: greeting, big search, quick actions, today at a glance */
+.dash .dash-hello { margin-bottom: 14px; }
+.dash .dash-hello h1 { margin: 2px 0 2px; font-size: 26px; }
+.dash .dash-hello p { margin: 0; }
+.dash .dash-date { color: var(--accent); font-weight: 600; font-size: 13px; }
+.searchbox.big input { min-height: 52px; font-size: 16px; border-radius: 10px; }
+.dash .search-results { margin-top: 4px; }
+.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0 8px; }
+.quick-btn { position: relative; display: flex; align-items: center; gap: 10px; padding: 14px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; font-weight: 600; font-size: 14.5px; cursor: pointer; text-align: start; transition: background-color .15s ease, border-color .15s ease, transform .1s ease; }
+.quick-btn:hover { background: var(--bg-2); border-color: var(--rule-2); }
+.quick-btn:active { transform: scale(.98); }
+.quick-btn .ic { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.quick-btn .ic svg { width: 18px; height: 18px; }
+.quick-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #fff); }
+.quick-btn.primary .ic { background: rgba(255, 255, 255, .18); color: inherit; }
+.quick-btn.primary:hover { filter: brightness(1.06); }
+.quick-btn .pill { margin-inline-start: auto; }
+.dash-h { font-size: 15px; margin: 18px 0 8px; color: var(--ink-2); }
+.glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.glance-card { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; text-align: start; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.glance-card:hover { background: var(--bg-2); border-color: var(--rule-2); }
+.glance-card .g-top { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.glance-card b { font-size: 26px; line-height: 1.2; }
+.glance-card .g-sub { font-size: 12.5px; color: var(--ink-3); }
+.glance-card.warn { border-color: var(--warn); box-shadow: inset 3px 0 0 var(--warn); }
+.glance-card.bad { border-color: var(--bad); box-shadow: inset 3px 0 0 var(--bad); }
+.glance-card.bad .g-sub { color: var(--bad); font-weight: 600; }
+.dash .attention:empty { display: none; }
+.dash .attention > * { margin-top: 12px; }
+.dash .dash-cols { margin-top: 22px; }
+.dash .section.queue { margin-top: 0; }
+.dash .section.schedule { margin-top: 22px; }
+.dash .section.queue + .section.schedule { margin-top: 22px; }
+.dash .schedule li.next { background: var(--accent-soft); border-radius: var(--radius); }
+@media (max-width: 760px) {
+  .quick { grid-template-columns: 1fr 1fr; }
+  .glance { grid-template-columns: 1fr 1fr; }
+  .dash .dash-hello h1 { font-size: 22px; }
+}
+.dash .dash-cols > .section { margin-top: 0; }
+
+/* Updates you can't miss (10 Nov 2026): sidebar status line, strong banner when ready, dot on Settings / the tab. */
+.side-update { display: block; width: 100%; text-align: start; border: 0; background: none; padding: 6px 8px; margin: 6px 0 2px; border-radius: var(--radius); font: inherit; font-size: 12.5px; cursor: pointer; color: var(--ink-3); }
+.side-update.quiet:hover { background: var(--bg-2); color: var(--ink-2); }
+.side-update.busy { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.side-update.ready { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; font-size: 13px; padding: 9px 10px; animation: update-pulse 2.4s ease-in-out 3; }
+.side-update.ready:hover { filter: brightness(1.07); }
+@keyframes update-pulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px var(--accent-soft); } }
+.update-banner.ready { background: var(--accent); color: var(--accent-ink, #fff); border-bottom: 0; font-size: 14px; padding: 9px 16px; }
+.update-banner.ready .btn.primary { background: var(--bg); color: var(--accent); border-color: var(--bg); }
+.update-banner.ready .btn.ghost { color: inherit; }
+.dot-badge { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-inline-start: 6px; vertical-align: middle; }
+.nav-group { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); padding: 12px 10px 4px; }
+.nav-group:first-child { padding-top: 2px; }
+.nav-sep { border: 0; border-top: 1px solid var(--rule); margin: 10px 4px; }
+
+/* Menu button (pet record → Print & forms) */
+.menu-wrap { position: relative; display: inline-block; }
+.menu-wrap .caret { font-size: 11px; margin-inline-start: 2px; color: var(--ink-3); }
+.menu { position: absolute; top: calc(100% + 4px); inset-inline-start: 0; min-width: 220px; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .14); padding: 4px; z-index: 30; animation: dialog-in .12s ease-out both; }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 10px; border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink); text-align: start; border-radius: var(--radius); cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--bg-2); }
+.menu button svg { width: 16px; height: 16px; color: var(--ink-3); }
+
+/* Owner page (Phase 6): QR code section on Owner detail, and the printable QR card */
+.owner-page-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 14px; }
+.owner-page-empty { margin-top: 10px; }
+.owner-page-empty p { margin: 0 0 12px; max-width: 60ch; }
+.qr { display: block; border: 1px solid var(--rule); border-radius: var(--radius); background: #fff; }
+.owner-page-link { display: block; font-size: 13px; overflow-wrap: anywhere; margin: 4px 0 0; }
+@media (max-width: 640px) {
+  .owner-page-body { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+}
+.owner-card { border: 1px dashed #999; padding: 6mm; }
+.owner-card-body { display: grid; grid-template-columns: auto 1fr; gap: 6mm; align-items: center; }
+.owner-card-body h2 { font-size: 14pt; margin: 0 0 4px; }
+.owner-card-body p { margin: 0 0 6px; font-size: 10.5pt; }
+.owner-card .qr { border: 0; width: 46mm; height: 46mm; }
+
+/* Prescription archive */
+.rx-archive .seg { flex-wrap: wrap; }
+.rx-archive .tl > li { padding: 12px 0; }
+
+/* Customer ID (schema v16): a chip that opens the customer */
+.owner-code { display: inline-block; font-size: 12px; font-weight: 600; line-height: 1.6; padding: 0 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); text-decoration: none; white-space: nowrap; vertical-align: middle; }
+a.owner-code:hover { text-decoration: underline; }
+.owner-code.pending { background: var(--bg-2); color: var(--ink-3); font-weight: 400; }
+/* Inside the owner screen's facts the labels are block spans; the chip stays a chip. */
+.facts div .owner-code { display: inline-block; width: auto; font-size: 12px; color: var(--accent); }
+.facts div .owner-code.pending { color: var(--ink-3); }
+
+/* Documents (14 Nov 2026): lab report A5, case report A4, X-ray request A5 */
+.sheet.a4 { width: 210mm; min-height: 297mm; padding: 14mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+.doc .doc-title { text-align: center; font-size: 15pt; margin: 4px 0 10px; }
+.doc .doc-facts { display: flex; flex-wrap: wrap; gap: 3px 16px; font-size: 10pt; margin-bottom: 8px; }
+.doc h3 { font-size: 11.5pt; margin: 14px 0 4px; padding-bottom: 2px; border-bottom: 1.5px solid #111; }
+.doc .doc-block h3 { border-bottom: 0; margin: 10px 0 2px; font-size: 10.5pt; }
+.doc tr.flag td { font-weight: 600; }
+.doc tr.flag td b { text-decoration: underline; }
+.doc .doc-sign { margin-top: 24px; font-size: 9pt; width: 60mm; margin-inline-start: auto; text-align: center; }
+.doc .doc-sign .line { border-bottom: 1px solid #111; height: 14mm; margin-bottom: 3px; }
+.doc .doc-sign.wide { width: auto; display: flex; justify-content: space-between; align-items: flex-end; text-align: start; gap: 16px; }
+.doc .doc-sign.wide > div:last-child { width: 60mm; text-align: center; }
+.case-report { font-size: 10pt; }
+.case-report .kv-table td:nth-child(odd) { color: #555; width: 18%; }
+.case-report .doc-dx { font-weight: 600; margin: 2px 0 0; }
+.case-report .visit-block { border-bottom: 1px solid #ccc; padding: 6px 0 8px; break-inside: avoid; }
+.case-report .visit-head { font-size: 10.5pt; margin-bottom: 2px; }
+.case-report .visit-body p { margin: 2px 0; }
+.case-report .visit-body p > span:first-child { color: #555; }
+.case-report .visit-body table { margin-top: 4px; font-size: 9.5pt; }
+.case-report .doc-images { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin: 6px 0 10px; }
+.case-report figure { margin: 0; break-inside: avoid; text-align: center; }
+.case-report figure img { max-width: 100%; max-height: 110mm; object-fit: contain; border: 1px solid #ddd; background: #000; }
+.case-report figcaption { font-size: 8.5pt; color: #555; margin-top: 2px; }
+.case-report .img-missing { border: 1px dashed #999; padding: 20mm 4mm; font-size: 9pt; color: #555; }
+.report-options { gap: 10px; }
+.report-options label { display: inline-flex; align-items: center; gap: 6px; }
+.report-options input[type=date] { min-height: 36px; width: auto; }
+/* Three columns, filled top to bottom, so the whole menu fits one A5 page with room to write. */
+.xray-sheet { font-size: 9pt; }
+.xray-sheet .doc-facts { font-size: 9pt; margin-bottom: 4px; }
+.xray-sheet .doc-title { margin: 2px 0 6px; font-size: 13pt; }
+.xray-grid { column-count: 3; column-gap: 8px; margin-top: 4px; }
+.xray-grid fieldset { border: 1px solid #bbb; border-radius: 4px; padding: 1px 5px 3px; margin: 0 0 5px; break-inside: avoid; display: block; width: 100%; }
+.xray-grid legend { font-weight: 600; font-size: 8.5pt; padding: 0 3px; }
+.xbox { position: relative; display: flex; align-items: center; gap: 4px; font-size: 8pt; line-height: 1.3; padding: 0.5px 0; cursor: pointer; }
+/* Hidden but focusable; anchored to its box (unanchored, the inputs escaped the sheet's scroll box and widened the page on phones). */
+.xbox input { position: absolute; inset-inline-start: 0; top: 0; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.xbox .sq { width: 9px; height: 9px; border: 1.2px solid #111; display: inline-grid; place-items: center; font-size: 9px; line-height: 1; flex: none; }
+.xbox.on .sq { background: #111; color: #fff; }
+.xbox input:focus-visible + .sq { outline: 2px solid var(--accent); outline-offset: 1px; }
+.xside { display: flex; align-items: center; gap: 4px; font-size: 8pt; line-height: 1.3; }
+.xside-name { flex: 1; }
+.xray-opts { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 2px 0 2px; }
+.xray-opts .xbox { font-size: 9pt; }
+.xray-write .xw-label { font-weight: 600; font-size: 9pt; margin-top: 5px; }
+.xray-write textarea { width: 100%; font: inherit; font-size: 10pt; color: #111; background: #fff; border: 1px solid #bbb; border-radius: 4px; padding: 4px 6px; }
+.xray-write .lines { min-height: 8mm; border-bottom: 1px solid #999; white-space: pre-wrap; font-size: 10pt; background-image: repeating-linear-gradient(transparent 0 8.4mm, #bbb 8.4mm 8.6mm); }
+.xray-write .lines.tall { min-height: 17mm; }
+.xray-sheet .doc-sign { margin-top: 4px; }
+.xray-sheet .doc-sign .line { height: 8mm; }
+.xray-sheet .foot { margin-top: 6px; padding-top: 3px; }
+@media print {
+  .sheet.a4 { width: 100%; min-height: 0; padding: 0; box-shadow: none; zoom: 1; }
+  .xbox .sq { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+/* Phones only: on paper the page is narrower than 640 px too, and the menu must keep its three columns there. */
+@media screen and (max-width: 640px) {
+  .sheet-wrap { overflow-x: auto; }
+  .xray-grid { column-count: 2; }
+}
+
+/* Requests (schema v17): pet record tab and the A4 lab request */
+.request-list .req-kind { font-size: 22px; width: 32px; text-align: center; }
+.request-list .req-items { white-space: normal; }
+.xray-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+.xray-thumbs figure { margin: 0; }
+.xray-thumbs img, .xray-thumbs .thumb-file { width: 100%; aspect-ratio: 1; object-fit: contain; background: #000; border-radius: var(--radius); display: grid; place-items: center; color: var(--ink-3); }
+.xray-thumbs .thumb-file { background: var(--bg-2); }
+.xray-thumbs figcaption { font-size: 12px; color: var(--ink-3); margin-top: 4px; overflow-wrap: anywhere; }
+.lab-request { font-size: 9.5pt; }
+.lab-request .doc-facts { font-size: 10pt; margin-bottom: 4px; }
+.lab-request .xbox { font-size: 8.5pt; line-height: 1.25; }
+.lab-request .xray-grid legend { font-size: 9pt; }
+.lab-request .xray-write .lines.tall { min-height: 14mm; }
+.lab-request .doc-sign { margin-top: 6px; }
+.lab-request .doc-sign .line { height: 9mm; }
+.lab-request .foot { margin-top: 6px; padding-top: 3px; }
+
+/* Pet record → Files: document tiles side by side (like large icons in a file manager) */
+.file-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 12px; }
+.file-tile { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 8px; border: 1px solid transparent; border-radius: var(--radius); background: none; cursor: pointer; text-align: center; color: var(--ink); font: inherit; }
+.file-tile:hover, .file-tile:focus-visible { background: var(--accent-soft); border-color: var(--rule); }
+.file-thumb { position: relative; width: 84px; height: 96px; display: grid; place-items: center; margin-bottom: 4px; }
+.file-thumb img { max-width: 100%; max-height: 100%; object-fit: cover; border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.file-thumb .doc-icon { width: 64px; height: 80px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.12)); }
+.file-cloud { position: absolute; inset-inline-end: 0; bottom: 0; font-size: 14px; background: var(--bg); border-radius: 50%; padding: 1px 3px; }
+.file-busy { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; background: var(--bg); background: color-mix(in srgb, var(--bg) 60%, transparent); }
+.file-name { font-size: 13px; font-weight: 600; line-height: 1.3; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.file-sub { font-size: 11px; color: var(--ink-3); line-height: 1.3; }
+
+/* Lost & found (schema v18) */
+.nav-count { margin-inline-start: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--bad); color: #fff; font-size: 12px; font-weight: 600; line-height: 20px; text-align: center; }
+.found-list .found-item { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: start; padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.found-list .found-item.new { box-shadow: inset 3px 0 0 var(--bad); padding-inline-start: 12px; }
+[dir="rtl"] .found-list .found-item.new { box-shadow: inset -3px 0 0 var(--bad); }
+.found-list .found-item.open { background: var(--accent-soft); }
+.found-list .found-item.handled { opacity: .7; }
+.found-list .found-msg { margin: 6px 0 0; padding: 8px 10px; background: var(--bg-2); border-radius: var(--radius); }
+.found-banner { border-inline-start-color: var(--bad); background: var(--bad-soft); }
+/* Collar tags: printed small, cut out and put in a tag holder or laminated */
+.tag-sheet .tags { display: flex; flex-wrap: wrap; gap: 6mm; justify-content: center; margin-top: 6mm; }
+.collar-tag { border: 1px dashed #888; border-radius: 3mm; padding: 2mm; display: flex; flex-direction: column; align-items: center; gap: 1mm; text-align: center; break-inside: avoid; }
+.collar-tag .qr { border: 0; }
+.collar-tag b { font-size: 9pt; line-height: 1.1; }
+.collar-tag span { font-size: 6.5pt; line-height: 1.15; color: #333; }
+.collar-tag.lg { width: 46mm; }
+.collar-tag.lg .qr { width: 38mm; height: 38mm; }
+.collar-tag.lg b { font-size: 11pt; }
+.collar-tag.lg span { font-size: 7.5pt; }
+.collar-tag.sm { width: 30mm; }
+.collar-tag.sm .qr { width: 24mm; height: 24mm; }
+.collar-tag.round { width: 32mm; height: 32mm; border-radius: 50%; justify-content: center; padding: 3mm; }
+.collar-tag.round .qr { width: 19mm; height: 19mm; }
+.collar-tag.round b { font-size: 7pt; }
+.collar-tag .tag-address { font-size: 6pt; line-height: 1.15; color: #333; }
+
+/* The clinic's address at the bottom of every document, under the other footer line if there is one. */
+.sheet .addr-foot { font-size: 8.5pt; }
+.sheet .foot + .addr-foot { border-top: 0; margin-top: 2px; padding-top: 0; }
+
+/* Physical examination (schema v19) and its analytics */
+.exam-editor { margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--rule-2); }
+.exam-head { font-size: 15px; margin: 0 0 6px; }
+.exam-seg { flex-wrap: wrap; max-width: 100%; }
+.exam-seg button { min-height: 40px; }
+.exam-seg button.on.x-PALE, .exam-seg button.on.x-RED, .exam-seg button.on.x-CONGESTED, .exam-seg button.on.x-ENLARGED,
+.exam-seg button.on.x-FULL, .exam-seg button.on.x-NEEDS_TRIM, .exam-seg button.on.x-YES { background: var(--warn-soft); color: var(--warn); }
+.bp-pair { display: flex; align-items: center; gap: 6px; }
+.bp-pair input { width: 5.5em; min-width: 0; flex: 1 1 0; }
+.exam-summary { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; margin-top: 4px; }
+.exam-summary .flag { color: var(--warn); font-weight: 600; }
+.exam-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 22px; }
+.exam-chart h3 { font-size: 14px; margin: 8px 0 0; }
+.chart.small-chart { height: 210px; margin-top: 6px; }
+.exam-table td.flag { color: var(--warn); font-weight: 600; }
+.exam-table td, .exam-table th { white-space: nowrap; }
+.exam-table td:nth-child(6), .exam-table td:nth-child(7) { white-space: normal; min-width: 10em; }
+@media (max-width: 640px) { .exam-charts { grid-template-columns: 1fr; } }
+.nowrap { white-space: nowrap; }
+
+/* Dashboard (14 Nov 2026 redo): greeting, search, four big buttons, one "Needs attention" list, then the day. */
+.dash .quick { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.dash .quick-btn { padding: 16px; font-size: 15px; }
+.dash .section.attention { margin-top: 22px; }
+.attn .attn-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px 12px; border-inline-start: 4px solid var(--rule-2); }
+.attn .attn-row + .attn-row { border-top: 1px solid var(--rule); }
+.attn .attn-row.bad { border-inline-start-color: var(--bad); background: var(--bad-soft); }
+.attn .attn-row.warn { border-inline-start-color: var(--warn); }
+.attn .attn-row.info { border-inline-start-color: var(--accent); }
+.attn .attn-ic { font-size: 20px; line-height: 1; }
+.attn .attn-row .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attn .all-clear { color: var(--ok); font-weight: 600; padding: 14px 4px; }
+.dash .dash-cols { align-items: start; }
+@media (max-width: 760px) {
+  .dash .quick { grid-template-columns: 1fr 1fr; }
+  .attn .attn-row { grid-template-columns: auto 1fr; }
+  .attn .attn-row .btn { grid-column: 2; justify-self: start; }
+  .attn .attn-row .sub { white-space: normal; }
+}
+
+/* Pet health record booklet (14 Nov 2026): A4 landscape, both sides, folded in three (99 mm panels). */
+.hr-wrap { display: grid; gap: 18px; justify-items: center; }
+.sheet.hr-page { width: 297mm; height: 210mm; padding: 0; display: grid; grid-template-columns: repeat(3, 99mm); box-shadow: 0 2px 12px rgba(0,0,0,.12); font-size: 8.5pt; line-height: 1.3; overflow: hidden; }
+.hr-page .ar { color: #555; }
+.hr-panel { padding: 7mm; border-inline-end: 1px dashed #bbb; display: flex; flex-direction: column; gap: 3.5mm; min-width: 0; }
+.hr-panel:last-child { border-inline-end: 0; }
+.hr-box h3, .hr-vbox h3 { font-size: 9pt; margin: 0 0 1.5mm; padding: 1mm 2mm; background: #2e6f73; color: #fff; border-radius: 2px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.hr-box h3 .ar, .hr-vbox h3 .ar { color: #d7ecec; }
+.hr-field { display: flex; gap: 2mm; align-items: flex-end; min-height: 6mm; border-bottom: 0.6px solid #999; }
+.hr-label { font-size: 7pt; color: #333; white-space: nowrap; }
+.hr-line { flex: 1; font-size: 9pt; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.hr-table th { font-size: 6.5pt; font-weight: 600; text-align: start; border-bottom: 0.8px solid #111; padding: 0.8mm 1mm; }
+.hr-table td { height: 5.6mm; border-bottom: 0.6px solid #aaa; font-size: 7.5pt; padding: 0 1mm; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hr-table td + td, .hr-table th + th { border-inline-start: 0.6px solid #ddd; }
+.hr-write { min-height: 17mm; background-image: repeating-linear-gradient(transparent 0 5.4mm, #aaa 5.4mm 5.6mm); font-size: 8.5pt; line-height: 5.6mm; }
+.hr-write.tall { min-height: 42mm; }
+.hr-cover { gap: 3mm; }
+.hr-logo { max-width: 62mm; max-height: 24mm; align-self: center; object-fit: contain; }
+.hr-cover h1 { text-align: center; font-size: 17pt; margin: 0; color: #2e6f73; display: flex; flex-direction: column; line-height: 1.25; }
+.hr-cover h1 .ar { color: #2e6f73; font-size: 15pt; }
+.hr-keep { text-align: center; font-size: 7.5pt; margin: 0; color: #444; display: flex; flex-direction: column; }
+.hr-clinic { margin-top: auto; text-align: center; font-size: 7.5pt; color: #333; border-top: 1px solid #ccc; padding-top: 2mm; }
+.hr-vaccines { grid-column: span 2; padding: 7mm; column-count: 2; column-gap: 14mm; column-rule: 1px dashed #bbb; column-fill: auto; height: 210mm; border-inline-end: 1px dashed #bbb; }
+.hr-vaccines h2 { font-size: 11pt; margin: 0 0 2mm; color: #2e6f73; }
+.hr-vaccines h2 .ar { color: #2e6f73; }
+.hr-vbox { break-inside: avoid; margin-bottom: 3mm; }
+.hr-slot { display: grid; grid-template-columns: 28mm 1fr; gap: 2.5mm; padding: 1mm 0; border-bottom: 0.6px solid #ccc; break-inside: avoid; }
+.hr-sticker { border: 1px dashed #888; border-radius: 2px; height: 14mm; display: grid; place-items: center; align-content: center; text-align: center; font-size: 6pt; color: #888; }
+.hr-sticker .ar { color: #999; }
+.hr-slot-lines .hr-field { min-height: 4.6mm; }
+.hr-blank { display: inline-block; min-width: 30mm; border-bottom: 1px solid #d7ecec; }
+@page hrbook { size: A4 landscape; margin: 0; }
+@media print {
+  .hr-wrap { display: block; }
+  .sheet.hr-page { page: hrbook; box-shadow: none; width: 297mm; height: 210mm; break-after: page; }
+  .sheet.hr-page:last-child { break-after: auto; }
+}
+
+/* The X-ray request on one A5 page in Arabic too (longer labels), with the address footer (14 Nov 2026). */
+@media print {
+  .xray-sheet .head { padding-bottom: 5px; margin-bottom: 6px; }
+  .xray-sheet .xray-write .lines { min-height: 6mm; }
+  .xray-sheet .xray-write .lines.tall { min-height: 9mm; }
+  .xray-sheet .doc-sign .line { height: 5mm; }
+  .xray-sheet .foot + .addr-foot { min-height: 6mm; }
+  .xray-sheet .xray-grid fieldset { margin-bottom: 4px; }
+}
+
+/* Clinic QR at the bottom left of every printed document (14 Nov 2026): anchored to the address line, reaching up
+   beside the footer text (kept clear of it by the side padding), so it adds almost no height to the sheet. */
+.sheet .foot, .sheet .addr-foot { padding-left: 16mm; padding-right: 16mm; }
+.sheet .addr-foot { position: relative; min-height: 4mm; }
+.sheet .foot + .addr-foot { min-height: 7mm; }
+.sheet :not(.foot) + .addr-foot { min-height: 12mm; }
+.sheet .addr-foot .sheet-qr { position: absolute; left: 0; bottom: 0; width: 12mm; height: 12mm; background: #fff; line-height: 0; }
+.sheet .addr-foot .sheet-qr svg { width: 100%; height: 100%; display: block; }
+.sheet .addr-foot.no-qr { padding-left: 0; padding-right: 0; min-height: 0; }
+.hr-clinic { display: flex; align-items: center; gap: 3mm; text-align: start; }
+.hr-clinic .hr-qr { width: 14mm; height: 14mm; flex: none; line-height: 0; }
+.hr-clinic .hr-qr svg { width: 100%; height: 100%; }
+
+/* ---- web app: the clinic is already open in another window (lib/oneWindow.ts) ---- */
+.open-elsewhere { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 18px; padding: 24px; text-align: center; max-width: 520px; margin: 0 auto; }
+.open-elsewhere h1 { font-size: 20px; margin: 0 0 6px; }
+.open-elsewhere p { margin: 0; color: var(--ink-2); }
+.open-elsewhere .btn { min-height: 44px; padding-inline: 22px; }

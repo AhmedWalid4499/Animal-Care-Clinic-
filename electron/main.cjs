@@ -1,11 +1,13 @@
 // Electron main process — Animal Care Clinic desktop app (Windows and macOS, same code).
 // Owns the disk: the SQLite database file, daily backups, file save/open dialogs.
 // The renderer (React) never touches Node; it talks to this file through electron/preload.cjs.
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, Notification, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { execFileSync } = require('node:child_process');
 const updater = require('./updater.cjs');
+const certs = require('./certs.cjs');
 
 const isSmoke = process.argv.includes('--smoke');
 const isMac = process.platform === 'darwin';
@@ -68,7 +70,10 @@ let background = false; // set when the app is ready (needs userData)
 let quitting = false;
 let tray = null;
 let mainWin = null;
-const startHidden = process.argv.includes('--hidden');
+// Started by the OS at login → open hidden, straight to the tray / menu bar. Windows passes --hidden (login item args);
+// macOS ignores login-item args, so there we ask the OS whether this launch was a login launch.
+const startHidden = () =>
+  process.argv.includes('--hidden') || (isMac && app.isPackaged && app.getLoginItemSettings().wasOpenedAtLogin === true);
 app.on('before-quit', () => {
   quitting = true;
 });
@@ -79,9 +84,50 @@ function showMain() {
   mainWin.focus();
 }
 function applyLoginItem() {
-  // Start with Windows / macOS (hidden, straight to the tray). Only for the installed app.
+  // Start with Windows / macOS (hidden, straight to the tray / menu bar). Only for the installed app.
   if (!app.isPackaged || process.platform === 'linux' || process.env.PORTABLE_EXECUTABLE_DIR) return;
-  app.setLoginItemSettings({ openAtLogin: background, openAsHidden: true, args: ['--hidden'] });
+  try {
+    if (isMac) {
+      // macOS 13+: SMAppService; hidden start via wasOpenedAtLogin. Only change it when it differs: removing an item
+      // that was never added fails with "Operation not permitted".
+      if (app.getLoginItemSettings().openAtLogin !== background) app.setLoginItemSettings({ openAtLogin: background });
+    }
+    else app.setLoginItemSettings({ openAtLogin: background, args: ['--hidden'] });
+  } catch (e) {
+    console.error('login item', e);
+  }
+}
+// macOS can hold a new login item for the user's approval (System Settings → General → Login Items).
+// Returns 'requires-approval' etc. on macOS, null elsewhere.
+function loginItemStatus() {
+  if (!isMac || !app.isPackaged) return null;
+  try {
+    return app.getLoginItemSettings().status ?? null;
+  } catch {
+    return null;
+  }
+}
+// Menu-bar icon on macOS: 18 pt with a 2× version so it is sharp on Retina; Windows tray: 16 px.
+function trayImage() {
+  const src = nativeImage.createFromPath(ICON);
+  if (!isMac) return src.resize({ width: 16, height: 16 });
+  const img = src.resize({ width: 18, height: 18, quality: 'best' });
+  img.addRepresentation({ scaleFactor: 2, buffer: src.resize({ width: 36, height: 36, quality: 'best' }).toPNG() });
+  return img;
+}
+// The name shown under Settings → Devices: the Mac's own name ("Ahmed's MacBook Pro"), not "Ahmeds-MacBook-Pro.local".
+let cachedDeviceName = null;
+function deviceName() {
+  if (cachedDeviceName) return cachedDeviceName;
+  let name = os.hostname();
+  if (isMac) {
+    try {
+      name = execFileSync('/usr/sbin/scutil', ['--get', 'ComputerName'], { encoding: 'utf8', timeout: 2000 }).trim() || name;
+    } catch {
+      name = name.replace(/\.local$/, '');
+    }
+  }
+  return (cachedDeviceName = name);
 }
 function syncTray() {
   if (!background) {
@@ -90,19 +136,21 @@ function syncTray() {
     return;
   }
   if (tray) return;
-  tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
+  tray = new Tray(trayImage());
   tray.setToolTip('Animal Care Clinic');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open Animal Care Clinic · فتح', click: showMain },
     { type: 'separator' },
     { label: 'Quit · خروج', click: () => { quitting = true; app.quit(); } },
   ]));
-  tray.on('click', showMain);
+  // Windows: a click on the tray icon opens the window. macOS: a click opens the menu (its first item opens the window).
+  if (!isMac) tray.on('click', showMain);
 }
 function hideToTray(win) {
   win.hide();
   if (!readSettings().hideNoticeShown && Notification.isSupported()) {
-    new Notification({ title: 'Animal Care Clinic', body: 'Still running in the tray; notifications keep coming. · يعمل في الخلفية وتستمر الإشعارات.' }).show();
+    const where = isMac ? 'menu bar' : 'tray';
+    new Notification({ title: 'Animal Care Clinic', body: `Still running in the ${where}; notifications keep coming. · يعمل في الخلفية وتستمر الإشعارات.` }).show();
     writeSettings({ hideNoticeShown: true });
   }
 }
@@ -116,7 +164,7 @@ function createWindow() {
     title: 'Animal Care Clinic',
     backgroundColor: '#ffffff',
     autoHideMenuBar: true,
-    show: !isSmoke && !startHidden,
+    show: !isSmoke && !startHidden(),
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -159,7 +207,7 @@ ipcMain.handle('app:config', () => ({
   exportDir,
   version: app.getVersion(),
   platform: process.platform,
-  deviceName: os.hostname(),
+  deviceName: deviceName(),
 }));
 
 // A named copy of the database right now (e.g. before this laptop joins a clinic server and its local
@@ -176,6 +224,10 @@ ipcMain.handle('db:backupNow', (_e, label) => {
 ipcMain.handle('app:showWindow', () => showMain());
 ipcMain.handle('app:isForeground', () => !!mainWin && mainWin.isVisible() && !mainWin.isMinimized() && mainWin.isFocused());
 ipcMain.handle('app:getBackground', () => background);
+ipcMain.handle('app:loginItemStatus', () => loginItemStatus());
+ipcMain.handle('app:openLoginItemsSettings', () => {
+  if (isMac) shell.openExternal('x-apple.systempreferences:com.apple.LoginItems-Settings.extension');
+});
 ipcMain.handle('app:setBackground', (_e, on) => {
   background = !!on;
   writeSettings({ background });
@@ -239,12 +291,23 @@ ipcMain.handle('app:print', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   win.webContents.print({ printBackground: true });
 });
+// The page on screen as a PDF, exactly as Print lays it out (14 Nov 2026: a saved X-ray / lab request becomes a PDF the
+// owner downloads from their page). printToPDF exists the same way on Electron 22 (32-bit Windows 7) and current.
+// Why a clinic server address doesn't answer (wrong clock, no internet, not found…), for the sign-in screen.
+ipcMain.handle('app:probe', (_e, url) => certs.probe(url));
+ipcMain.handle('app:pdf', async (e, pageSize) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return null;
+  const size = pageSize === 'A4' ? 'A4' : 'A5';
+  return win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, pageSize: size });
+});
 
-// "Save As PDF" on the receipt / pet summary: render the page with its print CSS (A5) and ask where to save,
-// suggesting "<client> - <pet>.pdf" in Documents/Animal Care Clinic/PDFs. Returns the saved path or null.
+// "Save As PDF" on every printed document: render the page as Print lays it out (A5 or A4; a named @page such as the
+// health record's A4 landscape wins) and ask where to save, suggesting "<client> - <pet> - <document>.pdf" in
+// Documents/Animal Care Clinic/PDFs. Returns the saved path, or null if cancelled.
 const pdfDir = process.env.CLINIC_PDF_DIR || path.join(app.getPath('documents'), 'Animal Care Clinic', 'PDFs');
 const savedPdfs = new Set();
-ipcMain.handle('pdf:save', async (e, name) => {
+ipcMain.handle('pdf:save', async (e, { name, pageSize } = {}) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   let base = String(name || 'document')
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
@@ -253,7 +316,7 @@ ipcMain.handle('pdf:save', async (e, name) => {
     .replace(/[. ]+$/, '')
     .slice(0, 150);
   if (!base) base = 'document';
-  const pdf = await e.sender.printToPDF({ pageSize: 'A5', printBackground: true, preferCSSPageSize: true });
+  const pdf = await e.sender.printToPDF({ pageSize: pageSize === 'A4' ? 'A4' : 'A5', printBackground: true, preferCSSPageSize: true });
   fs.mkdirSync(pdfDir, { recursive: true });
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     defaultPath: path.join(pdfDir, `${base}.pdf`),
@@ -292,6 +355,7 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    certs.installCertificateFallback(session.defaultSession); // old Windows without current root certificates
     ensureDirs();
     dailyBackup();
     updater.init({ dataDir, dbPath, backupDir, noAutoCheck: isSmoke });
@@ -303,6 +367,34 @@ if (!app.requestSingleInstanceLock() && !isSmoke) {
     mainWin = win;
     syncTray();
     applyLoginItem();
+    if (isSmoke && process.argv.includes('--smoke-desktop')) {
+      // CI check of the background features on the real OS (macOS / Windows runners): tray or menu-bar icon,
+      // login item, device name. Prints one JSON line, undoes the login item, exits 0 only if the icon was created.
+      background = true;
+      syncTray();
+      applyLoginItem();
+      const report = {
+        platform: process.platform,
+        tray: !!tray && !tray.isDestroyed(),
+        trayImageEmpty: trayImage().isEmpty(),
+        loginItem: (() => {
+          const s = app.getLoginItemSettings();
+          return { openAtLogin: s.openAtLogin, status: s.status ?? null, wasOpenedAtLogin: s.wasOpenedAtLogin ?? null };
+        })(),
+        startHidden: startHidden(),
+        deviceName: deviceName(),
+      };
+      // Turning background mode off must remove the login item again (else the app keeps starting at login).
+      background = false;
+      applyLoginItem();
+      syncTray();
+      report.loginItemAfterOff = app.isPackaged && process.platform !== 'linux' ? app.getLoginItemSettings().openAtLogin : null;
+      report.trayAfterOff = !!tray;
+      console.log(`SMOKE-DESKTOP ${JSON.stringify(report)}`);
+      const ok = report.tray && !report.trayImageEmpty && !report.startHidden && report.deviceName && !report.trayAfterOff && report.loginItemAfterOff !== true;
+      app.exit(ok ? 0 : 4);
+      return;
+    }
     if (isSmoke) {
       // CI check: load the UI, wait for the login screen, exit 0.
       win.webContents.once('did-finish-load', () => {

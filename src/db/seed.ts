@@ -10,7 +10,8 @@ export const CLINIC = {
   name_ar: 'عيادة رعاية الحيوان',
   phone: '01227007428',
   whatsapp: '01227007428', // assumed same as phone until Dr. Waleed confirms
-  address: 'Giza · الجيزة',
+  // The clinic's street address (Ahmed, 14 Nov 2026): on every document, the owner page, the collar tag and calendars.
+  address: '23 Montasser St, Al Huwaiteyah, Agouza, Giza Governorate 3753701',
   receipt_footer: 'Where pets are people · شكراً لثقتكم',
   logo_url: CLINIC_LOGO_DATA_URL,
 };
@@ -26,10 +27,34 @@ export const DEFAULT_LOGINS = [
  * overwritten, and records that it ran so a logo the vet later removes stays removed.
  * Returns true if it changed anything.
  */
+/** The placeholder address seeded before the clinic's street address was known. */
+export const OLD_ADDRESS = 'Giza · الجيزة';
+
+/**
+ * The clinic's street address (14 Nov 2026) replaces the old placeholder once. A laptop linked to the clinic server
+ * gets it from the server (server/index.mjs) instead, as clinic settings are the Admin's to change.
+ */
+function applyClinicAddress(): boolean {
+  const KEY = 'clinic_address_v2';
+  if (get('SELECT 1 FROM meta WHERE key = ?', [KEY])) return false;
+  const linked = get<{ value: string }>("SELECT value FROM sync_state WHERE key = 'enabled'")?.value === '1';
+  const s = get<{ address: string | null }>('SELECT address FROM clinic_settings WHERE id = 1');
+  const change = !linked && !!s && (s.address == null || s.address.trim() === '' || s.address === OLD_ADDRESS);
+  tx(() => {
+    if (change) {
+      run('UPDATE clinic_settings SET address = ?, updated_at = ? WHERE id = 1', [CLINIC.address, new Date().toISOString()]);
+      audit('clinic_settings', '1', 'UPDATE', { address: [s!.address, CLINIC.address], reason: 'upgrade: clinic address' });
+    }
+    run('INSERT INTO meta (key, value) VALUES (?, ?)', [KEY, new Date().toISOString()]);
+  });
+  return change;
+}
+
 export function applyClinicDetails(): boolean {
   const KEY = 'clinic_details_v1';
   const fixedLogo = repairBundledLogoLink();
-  if (get('SELECT 1 FROM meta WHERE key = ?', [KEY])) return fixedLogo;
+  const address = applyClinicAddress();
+  if (get('SELECT 1 FROM meta WHERE key = ?', [KEY])) return fixedLogo || address;
   const s = get<Record<string, string | null>>('SELECT * FROM clinic_settings WHERE id = 1');
   const changed: Record<string, string> = {};
   if (s) {
@@ -48,7 +73,7 @@ export function applyClinicDetails(): boolean {
     }
     run('INSERT INTO meta (key, value) VALUES (?, ?)', [KEY, new Date().toISOString()]);
   });
-  return fixedLogo || Object.keys(changed).length > 0;
+  return fixedLogo || address || Object.keys(changed).length > 0;
 }
 
 /**
@@ -127,6 +152,8 @@ export function seedDemo() {
     const mishmish = pet(o3, 'مشمش', 'CAT', { breed: 'بلدي', sex: 'MALE', date_of_birth: addDays(t, -400), dob_is_estimate: 1, color: 'برتقالي' });
     const kiwi = pet(o4, 'Kiwi', 'BIRD', { breed: 'Budgerigar', sex: 'UNKNOWN', color: 'Green' });
     const bondo = pet(o5, 'بندق', 'RABBIT', { sex: 'FEMALE', date_of_birth: addDays(t, -300) });
+    // Zeus: last seen 14 months ago, nothing booked → on the "not seen in a while" list.
+    const zeus = pet(o4, 'Zeus', 'DOG', { breed: 'Husky', sex: 'MALE', date_of_birth: addDays(t, -6 * 365), color: 'Grey' });
     pet(o2, 'Bella', 'DOG', { breed: 'Labrador', sex: 'FEMALE', status: 'DECEASED', deceased_at: addDays(t, -200) });
 
     const visit = (pet_id: string, daysAgo: number, type: string, extra: Record<string, unknown>) =>
@@ -135,26 +162,41 @@ export function seedDemo() {
       insert('vaccinations', { pet_id, visit_id, vaccine_type_id: vt[type], administered_at: addDays(t, -daysAgo), next_due_at: addDays(t, -daysAgo + interval), batch_no: `B-${1000 + daysAgo}` });
 
     // Luna: 4 visits for a weight chart; rabies due in 3 days.
-    visit(luna, 540, 'CHECKUP', { weight_kg: 3.1, temperature_c: 38.4, complaint: 'Annual check', diagnosis: 'Healthy' });
-    const lv2 = visit(luna, 362, 'VACCINATION', { weight_kg: 3.6, temperature_c: 38.6, diagnosis: 'Healthy, vaccinated' });
+    visit(luna, 540, 'CHECKUP', { weight_kg: 3.1, temperature_c: 38.4, complaint: 'Annual check', diagnosis: 'Healthy', heart_rate: 160, bp_systolic: 128, bp_diastolic: 80, mucous_membrane: 'PINK', eyes: 'Clear', skin_coat: 'Glossy coat', glands: 'NORMAL', nails: 'OK', fleas_ticks: 'NO' });
+    const lv2 = visit(luna, 362, 'VACCINATION', { weight_kg: 3.6, temperature_c: 38.6, diagnosis: 'Healthy, vaccinated', heart_rate: 172, bp_systolic: 135, bp_diastolic: 84, mucous_membrane: 'PINK', glands: 'NORMAL', nails: 'NEEDS_TRIM', fleas_ticks: 'YES', skin_coat: 'Flea dirt on the back' });
     vacc(luna, lv2, 'Rabies', 362, 365);
     vacc(luna, lv2, 'FVRCP', 362, 365);
-    const lv3 = visit(luna, 150, 'EMERGENCY', { weight_kg: 3.9, temperature_c: 39.8, complaint: 'Vomiting since yesterday', diagnosis: 'Gastritis', treatment_notes: 'IV fluids, antiemetic', follow_up_at: at(-147, 12) });
+    const lv3 = visit(luna, 150, 'EMERGENCY', { weight_kg: 3.9, temperature_c: 39.8, complaint: 'Vomiting since yesterday', diagnosis: 'Gastritis', treatment_notes: 'IV fluids, antiemetic', follow_up_at: at(-147, 12), heart_rate: 210, bp_systolic: 152, bp_diastolic: 96, mucous_membrane: 'PALE', eyes: 'Slightly sunken', skin_coat: 'Skin tent slow (dehydrated)', glands: 'ENLARGED', glands_note: 'Mandibular lymph nodes', fleas_ticks: 'NO' });
     insert('prescriptions', { visit_id: lv3, drug: 'Metoclopramide', dose: '0.5 ml', frequency: 'Twice daily', duration_days: 5, instructions: 'Before food' });
     insert('prescriptions', { visit_id: lv3, drug: 'Probiotic paste', dose: '1 g', frequency: 'Once daily', duration_days: 7 });
-    visit(luna, 30, 'CHECKUP', { weight_kg: 4.2, temperature_c: 38.5, complaint: 'Weight check', diagnosis: 'Good recovery' });
+    visit(luna, 30, 'CHECKUP', { weight_kg: 4.2, temperature_c: 38.5, complaint: 'Weight check', diagnosis: 'Good recovery', heart_rate: 168, bp_systolic: 132, bp_diastolic: 82, mucous_membrane: 'PINK', eyes: 'Clear', skin_coat: 'Normal', glands: 'NORMAL', anal_glands: 'EMPTY', nails: 'OK', fleas_ticks: 'NO' });
+    // Lab results (demo values and ranges, not clinical guidance): kidney panel at the emergency and a month ago.
+    const lab = (daysAgo: number, analyte: string, value: number, unit: string, lo: number, hi: number) =>
+      insert('lab_results', { pet_id: luna, visit_id: daysAgo === 150 ? lv3 : null, taken_at: addDays(t, -daysAgo), panel: 'Kidney panel (demo)', analyte, value, unit, ref_low: lo, ref_high: hi, user_id: vetId });
+    lab(150, 'Creatinine', 2.6, 'mg/dL', 0.8, 2.4);
+    lab(150, 'BUN', 38, 'mg/dL', 16, 36);
+    lab(30, 'Creatinine', 1.9, 'mg/dL', 0.8, 2.4);
+    lab(30, 'BUN', 30, 'mg/dL', 16, 36);
 
-    const mv = visit(max, 90, 'VACCINATION', { weight_kg: 31.5, temperature_c: 38.7 });
+    const mv = visit(max, 90, 'VACCINATION', { weight_kg: 31.5, temperature_c: 38.7, mucous_membrane: 'PINK', anal_glands: 'FULL', nails: 'NEEDS_TRIM', fleas_ticks: 'YES', skin_coat: 'Ticks behind the ears' });
     vacc(max, mv, 'Deworming', 88, 90); // due in 2 days
     vacc(max, mv, 'DHPP', 90, 365);
     visit(max, 400, 'CHECKUP', { weight_kg: 30.2 });
     visit(max, 200, 'FOLLOW_UP', { weight_kg: 32.0, diagnosis: 'Mild arthritis' });
 
-    const rv = visit(rocky, 33, 'VACCINATION', { weight_kg: 34, temperature_c: 38.3 });
+    const rv = visit(rocky, 33, 'VACCINATION', { weight_kg: 34, temperature_c: 38.3, bp_systolic: 165, mucous_membrane: 'RED', glands: 'NORMAL', anal_glands: 'FULL', nails: 'OK', fleas_ticks: 'NO' });
     vacc(rocky, rv, 'Flea/tick', 33, 30); // overdue by 3 days
     const mm = visit(mishmish, 360, 'VACCINATION', { weight_kg: 4.5 });
     vacc(mishmish, mm, 'Rabies', 360, 365); // due in 5 days
-    visit(bondo, 20, 'CHECKUP', { weight_kg: 1.8, complaint: 'فحص دوري' });
+    visit(zeus, 430, 'CHECKUP', { weight_kg: 24.5, complaint: 'Annual check', diagnosis: 'Healthy' });
+    visit(bondo, 20, 'CHECKUP', { weight_kg: 1.8, complaint: 'فحص دوري', mucous_membrane: 'PINK', nails: 'NEEDS_TRIM', fleas_ticks: 'YES', skin_coat: 'براغيث' });
+
+    // In-patient (demo): Rocky, on fluids after a lump check; one treatment overdue, one given, one later today.
+    const adm = insert('admissions', { pet_id: rocky, admitted_at: at(0, 8, 0), reason: 'IV fluids, observation (demo)', cage: 'A1', vet_id: vetId, status: 'IN', user_id: vetId });
+    const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600_000).toISOString();
+    insert('care_tasks', { admission_id: adm, task: 'Check temperature', due_at: hoursFromNow(-4), status: 'DONE', done_at: hoursFromNow(-3.9), done_by: vetId });
+    insert('care_tasks', { admission_id: adm, task: 'IV fluids bag change', due_at: hoursFromNow(-1), status: 'DUE' });
+    insert('care_tasks', { admission_id: adm, task: 'Check temperature', due_at: hoursFromNow(3), status: 'DUE' });
 
     // Today's and this week's appointments.
     const appt = (pet_id: string, owner_id: string, scheduled_at: string, type: string, extra: Record<string, unknown> = {}) =>
@@ -182,5 +224,32 @@ export function seedDemo() {
     inv(1, o1, luna, lv3, [['Consultation', 1, 30000], ['IV fluids', 1, 25000], ['Medication', 2, 8500]], 72000, 150);
     inv(2, o2, rocky, rv, [['Consultation', 1, 30000], ['Flea/tick treatment', 1, 35000]], 30000, 33);
     inv(3, o3, mishmish, mm, [['Vaccine administration', 1, 45000]], 0, 10);
+
+    // Dose calculator and templates (demo only). These are EXAMPLES for trying the screens, marked "(demo)":
+    // the clinic enters its own drug list and doses in Settings → Drugs.
+    insert('drugs', { name: 'Meloxicam 1.5 mg/ml (demo)', dose_mg_kg: 0.1, concentration: 1.5, unit: 'ml', frequency: 'Once daily', duration_days: 3, species: 'DOG,CAT', stock_qty: 6, stock_unit: 'bottles', low_stock: 2 });
+    insert('drugs', { name: 'Amoxicillin 250 mg tablet (demo)', dose_mg_kg: 20, concentration: 250, unit: 'tablet', max_mg: 500, frequency: 'Every 12 h', duration_days: 7, species: 'DOG,CAT', stock_qty: 2, stock_unit: 'strips', low_stock: 3 });
+    insert('treatment_templates', {
+      name: 'Gastroenteritis, standard (demo)', diagnosis: 'Acute gastroenteritis', treatment_notes: 'Bland diet 3 days, fresh water, recheck if vomiting continues',
+      prescriptions: JSON.stringify([{ drug: 'Meloxicam 1.5 mg/ml (demo)', dose: '', frequency: 'Once daily', duration_days: '3', instructions: 'With food' }]), created_by: vetId,
+      owner_note: 'Small, bland meals for 3 days and plenty of fresh water. Call us if vomiting continues.',
+    });
+
+    // Stock (demo): vaccines tracked and comfortably stocked; deworming tracked and running low.
+    const item = (en: string) => get<{ id: string }>('SELECT id FROM price_items WHERE name_en = ?', [en])!.id;
+    run('UPDATE price_items SET track_stock = 1, low_stock = 5 WHERE name_en = ?', ['Vaccine administration']);
+    run('UPDATE price_items SET track_stock = 1, low_stock = 4 WHERE name_en = ?', ['Deworming']);
+    // Two vaccine deliveries: the older batch (8 doses) expires in 20 days, so it shows under "Expiring soon".
+    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 8, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-60, 10), batch_no: 'VX-2609', expires_at: addDays(t, 20) });
+    insert('stock_moves', { price_item_id: item('Vaccine administration'), qty: 16, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10), batch_no: 'VX-2611', expires_at: addDays(t, 300) });
+    // Expenses (demo): this month's rent and supplies, last month's too, so the monthly report shows profit.
+    const month0 = t.slice(0, 7);
+    const lastMonth = new Date(`${month0}-15T12:00:00`); lastMonth.setMonth(lastMonth.getMonth() - 1);
+    const month1 = lastMonth.toISOString().slice(0, 7);
+    for (const [m, extra] of [[month0, 0], [month1, 1]] as const) {
+      insert('expenses', { spent_at: `${m}-01`, category: 'RENT', amount: 800000, method: 'INSTAPAY', payee: 'Landlord (demo)', user_id: vetId, status: 'ACTIVE' });
+      insert('expenses', { spent_at: `${m}-0${3 + extra}`, category: 'SUPPLIES', amount: 125000 + extra * 30000, method: 'CASH', payee: 'Supplier (demo)', user_id: vetId, status: 'ACTIVE' });
+    }
+    insert('stock_moves', { price_item_id: item('Deworming'), qty: 3, reason: 'RESTOCK', note: 'Delivery', user_id: vetId, at: at(-20, 10) });
   });
 }

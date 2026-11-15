@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { findDuplicatePhone, getOwner, getSettings, saveOwner, searchOwners, type OwnerInput } from '../db/repo';
 import { telUrl } from '../lib/whatsapp';
-import { Dialog, Field, Icon, StatusBadge, WaButton } from '../components/ui';
+import { Dialog, Field, Icon, OwnerCode, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import type { Owner } from '../db/types';
 
@@ -53,7 +53,7 @@ export function OwnersList() {
             {rows.map((o) => (
               <tr key={o.id} className={`link ${o.status === 'ARCHIVED' ? 'greyed' : ''}`} onClick={() => nav(`/owners/${o.id}`)}>
                 <td>
-                  <b>{o.full_name}</b> {o.status === 'ARCHIVED' && <StatusBadge ns="owners" value="archived" />}
+                  <b>{o.full_name}</b> <OwnerCode code={o.code} ownerId={o.id} /> {o.status === 'ARCHIVED' && <StatusBadge ns="owners" value="archived" />}
                 </td>
                 <td className="ltr num">{o.phone}</td>
                 <td className="hide-sm muted">{o.pet_names ?? '—'}</td>

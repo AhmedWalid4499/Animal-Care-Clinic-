@@ -6,6 +6,7 @@ Status, 5 Nov 2026:
 - **Phase 5 built and tested locally** (devices, temporary passwords / reset / invite, pre-diagnosis queue): `scripts/sync-test.mjs` passes 23/23.
 - **Phase 2 (offline) built and tested locally:** `scripts/sync-test.mjs` passes 31/31, including two laptops working with the server unreachable and ending identical.
 - **Phase 4 built and tested locally:** files on the volume, nightly backup (volume + off-site bucket) with a tested restore, phone install, live check. `scripts/sync-test.mjs` passes 35/35. Ahmed's part: the R2 bucket and the live-check secrets (`docs/RAILWAY-SETUP.md`).
+- **Phase 6 built and tested locally** (14 Nov): the owner page (QR code) and the prescription archive; see **Phase 6** below.
 - Open points are at the end.
 
 ## What Ahmed asked for
@@ -162,6 +163,7 @@ How Phase 2 is built:
 | Windows / Mac desktop | Stays and is the main clinic PC client. Same screens, local SQLite, and now it syncs. Auto-update keeps working. |
 | Phone | New: the installable web app (PWA) from the Railway address. "Add to Home screen" on Android; works offline after the first login. |
 | Browser | The same web app, for the laptop or any PC without the desktop app. |
+| Chromebook | The same web app installed from Chrome (added 14 Nov 2026): own window, shelf shortcuts, laptop layout, one window at a time, offers to reload when a new version is deployed. See `docs/CHROMEBOOK.md`. |
 | Data already in a desktop app | On first sign-in to the cloud, the desktop app uploads its existing database once. Today that's only test data. |
 
 ## Work plan
@@ -187,7 +189,7 @@ Dates assume 10–15 hours a week, as in SCOPE §8.
 | **Admin creates users and assigns roles** | Already works: **Settings → Users** (name, email, role, temporary password); the server accepts user changes from Admins only | **Must change password at first sign-in**, **Reset password** by the Admin, and an **Invite** link sent by WhatsApp or email | A new user signs in with the temporary password and has to set their own |
 | **Pre-diagnosis by the assistant doctor** | Not built | A **pre-assessment** step before the vet. The assistant doctor records the intake (complaint, weight, temperature, first observations, urgency). The patient appears in a **Waiting for the vet** queue on the vet's dashboard, the vet opens it, sees the pre-diagnosis at the top of the visit, and continues the same visit. A notification goes to the vet | A visit started by a Doctor shows in the vet's queue with the pre-diagnosis; the vet completes it as one visit |
 
-Decided by Ahmed (5 Nov): the **Doctor** role records the pre-diagnosis (no new role); the patient waits for the Admin or another Doctor. Fields: complaint, history, weight, temperature, heart rate, breathing rate, first observations / provisional diagnosis. Urgency: Routine / Soon / Emergency (emergencies first in the queue, and the notification says so). The vet can correct the pre-diagnosis; the audit log keeps who wrote what.
+Decided by Ahmed (5 Nov): the **Doctor** role records the pre-diagnosis (no new role); the patient waits for the Admin or another Doctor. **Changed by Ahmed (6 Nov):** the **Assistant** role records it too, for new and existing patients (New patient on the start screen); Admins and Doctors are notified. Assistants still can't write the diagnosis, treatment or prescriptions, and can edit the pre-diagnosis only while the patient waits (enforced by `server/rules.mjs`). Fields: complaint, history, weight, temperature, heart rate, breathing rate, first observations / provisional diagnosis. Urgency: Routine / Soon / Emergency (emergencies first in the queue, and the notification says so). The vet can correct the pre-diagnosis; the audit log keeps who wrote what.
 
 How Phase 5 is built:
 
@@ -197,6 +199,43 @@ How Phase 5 is built:
 | Temporary passwords | `src/components/Account.tsx`, Settings → Users | A new user gets a generated temporary password; **Reset password** makes a new one. Either way the person must choose their own at the next sign-in (`must_change_password`), and the Admin gets the sign-in message (download link, server address, email, temporary password) to send by WhatsApp or email. A changed or reset password signs that person out on their other devices. Everyone can **Change my password** from the sidebar. |
 | Devices | `src/components/Devices.tsx`, `GET /api/devices`, `POST /api/devices/revoke` | Settings → Devices (Admin, when connected): every signed-in device with its user, last seen / online now. **Sign out** ends that session at once (live message) or at its next sync; the device needs the password again. No limit on the number of devices; tested with 12 at once. |
 | Sign-in brake | `server/index.mjs` | Now counts only wrong passwords (10 per 5 minutes per address): all the clinic's devices share one internet address, so counting every sign-in would have blocked a busy morning. |
+
+## Phase 6 — Owner page and prescription archive (Ahmed, 14 Nov 2026)
+
+| Ahmed asked for | Built |
+|---|---|
+| A code for each customer that opens a page with their data, their pets, upcoming appointments (add to calendar), prescriptions uploaded automatically, live updates | A **QR code** per owner (a 1-D barcode can't carry a web link a phone opens). It opens `https://<server>/o/<token>`: the owner's details, each pet (species, age, last weight, vaccinations with next due), upcoming appointments with **Google Calendar**, **iPhone / Outlook (.ics)** and **add all to my calendar** (a feed that updates itself, with vaccination due dates), and every prescription. The page is live: the server tells it "changed" (Server-Sent Events) after every push and it fetches again within a second. Arabic / English, phone first, prints. |
+| The doctor can't find a prescription again | **Prescriptions** on Owner detail (every prescription of every pet of that owner, newest first, search by drug / pet / diagnosis, filter by pet), a **Prescriptions** tab on the pet record, and **Print** for an A5 reprint of any past prescription. |
+
+| Piece | Where | Notes |
+|---|---|---|
+| The link | `owners.portal_token` (schema v15), `createOwnerPage` / `replaceOwnerPage` / `disableOwnerPage` in `repo.ts` | 128 random bits made on the device, synced like any owner edit. Anyone at the desk can create it; replacing or switching off a printed code is Admin-only, enforced in `server/rules.mjs`. An archived owner's page is off. |
+| Staff side | `src/components/OwnerPage.tsx` | Owner detail → **Owner page**: QR, link, **Print QR card** (`/owners/:id/card`), **Send by WhatsApp** (`wa.portal`), copy, open; Admin: **Replace QR code** (lost card) / **Turn off page**. Needs the device linked to the clinic server. |
+| The page | `server/portal.mjs` (routes, data, calendar, live), `server/portal-page.mjs` (the page) | Laid out like a members' portal: top bar (clinic, Live, language), welcome banner with Call / WhatsApp, and five views — **Home** (next appointment with countdown, summary tiles, vaccinations coming up, latest prescription, pets), **Pets**, **Appointments**, **Prescriptions**, **My details** — as a bottom tab bar on phones and top tabs on laptops. Each owner keeps the same QR for good; it changes only when an Admin replaces a lost one. A per-owner manifest lets them add the page to their home screen. Data from `/o/<token>/data`. Only owner-facing fields leave the server: diagnoses yes (Dr. Waleed, 14 Nov: a "Visits and diagnoses" history per pet and the diagnosis on each prescription); never staff notes, complaint, treatment notes, national ID or money. Visits still in the vet's queue are left out until saved. Headers: no-store, no-referrer, noindex, CSP with a nonce. Wrong links are braked per address (30 per 10 min). Postgres indexes for the lookups in `server/db.mjs`. Fonts: Plex Sans Arabic from `@fontsource`. |
+| Calendar | `/o/<token>/calendar.ics`, `/o/<token>/a/<id>.ics` | RFC 5545, lines folded at 75 bytes (Arabic), 2-hour reminder on appointments, vaccination due dates as all-day events in the feed. |
+| Service worker | `public-cloud/sw.js` | Leaves `/o/…` alone, so a staff phone with the web app installed still opens the owner page and keeps its own app shell. |
+| Prescription archive | `src/components/RxArchive.tsx`, `prescriptionArchive()` | Owner detail section, pet tab `?tab=prescriptions`; Print opens the existing prescription sheet `/visits/:id/prescription`. |
+| Tests | `scripts/sync-test.mjs` "phase6" | QR made on the doctor's laptop, page opened in a phone-sized browser, a booking on laptop A and a prescription on laptop B appear on the open page without reload, calendar files, archive search and reprint, Doctor's replace refused, Admin's replace kills the old link and the open page says so. `scripts/acceptance.mjs`: new screens in the Arabic RTL pass, prescription prints on one A5 page. |
+
+Decided (14 Nov): **Dr. Waleed approved the change request.** The owner sees prescriptions **and diagnoses**, not the vet's notes; the page needs no password (the QR is the key, like a house key: replace it when lost); each owner keeps the same QR for good; pets that died or moved stay on the page, greyed.
+
+## Change requests of 14 Nov 2026 (Ahmed)
+
+| Asked for | Built | Sync notes |
+|---|---|---|
+| A unique, searchable, clickable customer ID that appears on the prescription | `owners.code` `AC-00001` (schema v16), on every list, document and the owner page | Numbered by the server like invoices (`TMP-…` offline); existing owners back-filled by the server at start-up; refused if anyone tries to change it |
+| Lab results as a printable document (logo, owner name and ID, pet, age, sex, results), and on the owner page | Lab report A5 per test day; owner page → Pets → Lab results (high / low flagged) | `lab_results` read by `server/portal.mjs` (index `rows_by_pet_labs`) |
+| Case report for the doctors, A4, with history, diagnoses and attached X-rays / pictures, and the owner's data | Pet → Print & forms → Case report (A4) | Images not on the device yet are fetched from the server (`downloadAttachment`) |
+| X-ray request, A5, with boxes to tick and space to write | Pet → Print & forms → X-ray request | Saved since the follow-up below |
+| Save X-ray requests in the pet's history; keep previous X-rays and show them to the owner under "Requests"; a printable lab request (the clinic's sheet) also shown to the owner | `test_requests` (schema v17) for X-ray and lab requests; pet record → Requests tab (requests + X-ray images, Upload X-ray); lab request A4 from `src/lib/lab-tests.json`; owner page → Requests tab | New synced table; Admin + Doctor write it; X-ray images reach the owner only once their bytes are on the server (`/o/<token>/f/<id>`, checked against the owner's pets) |
+
+### Collar tags and lost & found (14 Nov 2026)
+
+| Asked for | Built |
+|---|---|
+| Each pet has its own profile on the owner page | `#pet:<id>`: details, weight chart, appointments, vaccinations, labs, visits and diagnoses, prescriptions, requests, X-rays and lab files |
+| A printable QR for the collar that shows the pet's and the owner's data if the pet is lost | `pets.tag_token` (schema v18), `/t/<token>` (`server/tags.mjs`): pet, medical alerts, owner's name with Call / WhatsApp, clinic. No address, email or history. Printed from Pet → Print & forms → Collar tag (three sizes) |
+| An Alert button: the owner is told on their own page, everyone with the app is alerted, with the location; a Lost & found tab | `POST /t/<token>/alert` (location optional, asked by the browser; rate-limited), `found_reports` written by the server, notification kind `found` to everyone (bell, tray, Web Push), red alert on the owner's page until handled, **Lost & found** screen with map link, call / WhatsApp and Mark handled |
 
 ## Scope impact (SCOPE §10)
 
@@ -208,6 +247,8 @@ These are outside SCOPE §4, so they are change requests, quoted at list price a
 - **Built for several clinics** (`clinic_id`, platform owner console): SCOPE §5 lists multi-clinic as v2.
 - **Phase 5:** the pre-assessment step (a new workflow), device management, and invite / password reset.
 - **Hosting under Ahmed's account** instead of Dr. Waleed's (§4 and §8).
+- **Phase 6:** the owner page is the "owner-facing portal" SCOPE §5 puts in v2 (read-only, no booking); the prescription archive is a new view of data already in scope.
+- **14 Nov:** customer ID, lab report, case report and X-ray request (one new column, three new documents).
 
 The rest moves the project back towards the scope: the phone install (§4, §7.8), Railway hosting in the EU (§8), and the nightly backup (§7.7).
 

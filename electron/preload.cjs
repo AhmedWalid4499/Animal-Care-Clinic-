@@ -17,8 +17,12 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   isForeground: () => ipcRenderer.invoke('app:isForeground'),
   getBackground: () => ipcRenderer.invoke('app:getBackground'),
   setBackground: (on) => ipcRenderer.invoke('app:setBackground', !!on),
+  loginItemStatus: () => ipcRenderer.invoke('app:loginItemStatus'),
+  openLoginItemsSettings: () => ipcRenderer.invoke('app:openLoginItemsSettings'),
   print: () => ipcRenderer.invoke('app:print'),
-  savePdf: (name) => ipcRenderer.invoke('pdf:save', String(name)),
+  savePdf: (name, pageSize) => ipcRenderer.invoke('pdf:save', { name: String(name), pageSize: pageSize === 'A4' ? 'A4' : 'A5' }),
+  pdf: (pageSize) => ipcRenderer.invoke('app:pdf', pageSize),
+  probe: (url) => ipcRenderer.invoke('app:probe', url),
   // Automatic updates (electron/updater.cjs)
   updateGet: () => ipcRenderer.invoke('update:get'),
   updateCheck: () => ipcRenderer.invoke('update:check'),
