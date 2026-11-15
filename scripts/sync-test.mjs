@@ -931,7 +931,13 @@ await step('phase6: owner page', async () => {
   const freeNext = slotsNow.days.flatMap((x) => x.slots).find((s) => s.free);
   const notMine = freeNext ? (await bookPost({ pet_id: 'not-this-owners-pet', at: freeNext.at, type: 'CHECKUP' })).status : 0;
   const nowBooked = online ? slotsNow.days.flatMap((x) => x.slots).some((s) => s.at === online.data.scheduled_at && !s.free) : false;
-  const onLaptop = online ? await until(async () => localState(A.dataDir, `SELECT COUNT(*) FROM appointments WHERE id = '${online.id}'`)[0][0] === 1, 15_000, 300) : { v: null };
+  // On laptop A's screen (its day view shows the notes); the file on disk can lag while the window is in the background.
+  let onLaptop = { v: null };
+  if (online) {
+    const day = await A.win.evaluate((at) => { const d = new Date(at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }, online.data.scheduled_at);
+    await go(A, `#/appointments?view=day&date=${day}`);
+    onLaptop = await until(async () => (await A.win.locator('main').innerText().catch(() => '')).includes('Limping since yesterday'), 15_000, 300);
+  }
   const told = online ? Number((await pool.query("SELECT COUNT(*) n FROM notifications WHERE event = 'online' AND data->>'appointment_id' = $1", [online.id])).rows[0].n) : 0;
   await phonePage.screenshot({ path: path.join(out, 'owner-page-12-booked.png'), fullPage: true });
   await phonePage.evaluate(() => { location.hash = '#home'; });
