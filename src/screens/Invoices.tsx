@@ -352,7 +352,7 @@ export function InvoicePrint() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
-        <SavePdfButton owner={inv.owner_name} pet={inv.pet_name} />
+        <SavePdfButton owner={inv.owner_name} pet={inv.pet_name} doc={`${t('invoices.receipt')} ${inv.number}`} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5">

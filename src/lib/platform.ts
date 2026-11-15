@@ -211,9 +211,9 @@ export const platform = {
   },
 };
 
-/** File name for a generated document: "<client> - <pet>" (just the client when there is no pet). */
-export function pdfName(owner: string | null | undefined, pet?: string | null) {
-  return [owner, pet].map((s) => (s ?? '').trim()).filter(Boolean).join(' - ') || 'document';
+/** File name for a generated document: "<client> - <pet> - <document>" (no pet part when there is no pet). */
+export function pdfName(owner: string | null | undefined, pet: string | null | undefined, doc: string) {
+  return [owner, pet, doc].map((s) => (s ?? '').trim()).filter(Boolean).join(' - ') || 'document';
 }
 
 const WEB_UPDATE_STATE: UpdateState = {

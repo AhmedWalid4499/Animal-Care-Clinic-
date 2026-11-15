@@ -110,15 +110,15 @@ export function StatusBadge({ ns, value }: { ns: string; value: string }) {
 }
 
 /** WhatsApp click-to-chat button. onSent runs after opening (sets reminder_sent_at). */
-/** "Save As PDF" on a printable document; the file is named "<client> - <pet>.pdf". */
-export function SavePdfButton({ owner, pet }: { owner: string | null | undefined; pet?: string | null }) {
+/** "Save As PDF" on a printable document; the file is named "<client> - <pet> - <document>.pdf". */
+export function SavePdfButton({ owner, pet, doc }: { owner: string | null | undefined; pet?: string | null; doc: string }) {
   const { t, toast } = useApp();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const save = async () => {
     setBusy(true);
     try {
-      const file = await platform.savePdf(pdfName(owner, pet));
+      const file = await platform.savePdf(pdfName(owner, pet, doc));
       if (file) {
         setSaved(file);
         toast(t('common.pdfSaved', { file: file.split(/[\\/]/).pop() ?? file }));

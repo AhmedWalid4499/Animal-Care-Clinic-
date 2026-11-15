@@ -324,7 +324,7 @@ export function PetSummaryPrint() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
-        <SavePdfButton owner={pet.owner_name} pet={pet.name} />
+        <SavePdfButton owner={pet.owner_name} pet={pet.name} doc={t('petRecord.summaryTitle')} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5">
