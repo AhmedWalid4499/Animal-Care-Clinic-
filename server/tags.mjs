@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inTx } from './db.mjs';
+import { inTx, numberingLock } from './db.mjs';
 import { clinicAddress } from './clinic.mjs';
 import { createFoundNotifications } from './notify.mjs';
 import { tagPageHtml } from './tag-page.mjs';
@@ -127,6 +127,7 @@ export async function handleTag(pool, req, res, url, hooks) {
       status: 'NEW', handled_by: null, handled_at: null, created_at: now, updated_at: now,
     };
     const notifications = await inTx(pool, async (c) => {
+      await numberingLock(c, pet.clinicId);
       const versions = Object.fromEntries(Object.keys(data).map((k) => [k, `${now}|server`]));
       await c.query("INSERT INTO rows (clinic_id, tbl, id, data, versions, deleted, seq) VALUES ($1, 'found_reports', $2, $3, $4, false, nextval('change_seq'))", [pet.clinicId, id, data, versions]);
       return createFoundNotifications(c, pet.clinicId, { report_id: id, pet_id: String(pet.id), pet: pet.data.name, owner: pet.owner?.data.full_name ?? '', located: data.lat != null });

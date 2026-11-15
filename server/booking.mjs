@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inTx } from './db.mjs';
+import { inTx, numberingLock } from './db.mjs';
 import { createOnlineBookingNotifications } from './notify.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -110,6 +110,7 @@ export async function bookSlot(pool, owner, input, now = Date.now()) {
   return inTx(pool, async (c) => {
     // One booking at a time per clinic, so the check below and the insert can't interleave with another owner's.
     await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`book:${owner.clinic_id}`]);
+    await numberingLock(c, owner.clinic_id);
     const upcoming = Number((await c.query(
       `SELECT COUNT(*) n FROM rows WHERE clinic_id = $1 AND tbl = 'appointments' AND NOT deleted AND data->>'owner_id' = $2
          AND data->>'status' = 'SCHEDULED' AND (data->>'scheduled_at')::timestamptz > now() AND data->>'notes' LIKE '🌐%'`,

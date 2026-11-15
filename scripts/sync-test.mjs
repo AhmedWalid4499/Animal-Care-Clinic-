@@ -939,6 +939,38 @@ await step('phase6: owner page', async () => {
     freeShown > 0 && !!bookedOk.v && !!online && online.data.notes.includes('Limping') && again === 409 && closed === 400 && notMine === 400 && nowBooked && !!onLaptop.v && told > 0,
     `free times shown: ${freeShown}, booked shown: ${bookedShownBefore}; booked from the page: ${!!bookedOk.v} (${online?.data.scheduled_at ?? 'none'}, note kept: ${online?.data.notes.includes('Limping')}); same time again → ${again}; closed time → ${closed}; another owner's pet → ${notMine}; now shown as booked: ${nowBooked}; on laptop A: ${!!onLaptop.v}; staff notified: ${told}`);
 
+  // A row numbered first but committed last (a slow booking while a laptop pushes) must still reach devices: a pull
+  // waits for writes in progress (numberingLock / pullLock in server/db.mjs). Checked on a throwaway clinic.
+  {
+    const { numberingLock } = await import('../server/db.mjs');
+    const { pullSince } = await import('../server/sync.mjs');
+    const gapClinic = crypto.randomUUID();
+    await pool.query("INSERT INTO clinics (id, name) VALUES ($1, 'pull order check')", [gapClinic]);
+    const numbered = (c, id) => c.query("INSERT INTO rows (clinic_id, tbl, id, data, versions, deleted, seq) VALUES ($1, 'appointments', $2, '{}', '{}', false, nextval('change_seq'))", [gapClinic, id]);
+    const slow = await pool.connect();
+    await slow.query('BEGIN');
+    await numberingLock(slow, gapClinic);
+    await numbered(slow, 'numbered-first');
+    const fast = await pool.connect();
+    await fast.query('BEGIN');
+    await numberingLock(fast, gapClinic);
+    await numbered(fast, 'numbered-second');
+    await fast.query('COMMIT');
+    fast.release();
+    let pulled = null;
+    const pulling = pullSince(pool, gapClinic, 0).then((r) => (pulled = r));
+    await new Promise((r) => setTimeout(r, 400));
+    const waited = pulled === null;
+    await slow.query('COMMIT');
+    slow.release();
+    await pulling;
+    const ids = pulled.rows.map((r) => r.id).join(',');
+    await pool.query('DELETE FROM rows WHERE clinic_id = $1', [gapClinic]);
+    await pool.query('DELETE FROM clinics WHERE id = $1', [gapClinic]);
+    check('pull-order', 'A change committed after a later-numbered one is still pulled (no device skips it)', waited && ids === 'numbered-first,numbered-second',
+      `pull waited for the open write: ${waited}; pulled: ${ids}`);
+  }
+
   // Only an Admin may replace a printed code; the server refuses it from a Doctor.
   const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);
   // The admin replaces the code (a lost card): the old link stops at once, and the open page says so.

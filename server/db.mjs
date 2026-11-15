@@ -81,6 +81,15 @@ export async function migrate(pool) {
   await pool.query(SCHEMA);
 }
 
+/**
+ * Change numbers (`rows.seq`) without gaps for devices (15 Nov 2026). Every transaction that numbers rows during a
+ * request (a push, an online booking, a found report, customer IDs) takes this per-clinic lock *shared* before its
+ * first nextval('change_seq'); a pull takes it *exclusive*. Writers still run side by side, but a pull only runs when
+ * no numbered row is uncommitted, so a row committed late (number N after N+1 was already pulled) can't be skipped.
+ */
+export const numberingLock = (c, clinicId) => c.query('SELECT pg_advisory_xact_lock_shared(hashtext($1))', [`seq:${clinicId}`]);
+export const pullLock = (c, clinicId) => c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`seq:${clinicId}`]);
+
 /** Run fn inside a transaction on one client. */
 export async function inTx(pool, fn) {
   const c = await pool.connect();
