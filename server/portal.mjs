@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { pageHtml } from './portal-page.mjs';
 import { fileBytes } from './files.mjs';
 import { clinicAddress } from './clinic.mjs';
+import { slotsFor, bookSlot } from './booking.mjs';
 import { docPageHtml, prescriptionSheet, requestSheet } from './doc-page.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -281,7 +282,7 @@ const FONTS = new Set(['arabic-400', 'arabic-600', 'latin-400', 'latin-600']);
 const baseHeaders = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow', 'X-Content-Type-Options': 'nosniff' };
 
 /** Handles /o/… and /o-font/…; returns false for anything else. */
-export async function handleOwnerPage(pool, req, res, url) {
+export async function handleOwnerPage(pool, req, res, url, hooks = {}) {
   const p = url.pathname;
   const font = /^\/o-font\/([a-z]+-\d00)\.woff2$/.exec(p);
   if (font && FONTS.has(font[1])) {
@@ -291,9 +292,10 @@ export async function handleOwnerPage(pool, req, res, url) {
     fs.createReadStream(file).pipe(res);
     return true;
   }
-  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics|\/f\/([^/]+)|\/doc\/(rx|req)\/([^/]+))?\/?$/.exec(p);
+  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics|\/f\/([^/]+)|\/doc\/(rx|req)\/([^/]+)|\/slots|\/book)?\/?$/.exec(p);
   if (!m) return false;
-  if (req.method !== 'GET' && req.method !== 'HEAD') return notFound(res);
+  const posting = req.method === 'POST' && m[2] === '/book';
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !posting) return notFound(res);
   const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
   if (tooManyMisses(ip)) {
     res.writeHead(429, { ...baseHeaders, 'Content-Type': 'text/plain; charset=utf-8', 'Retry-After': '600' });
@@ -310,6 +312,29 @@ export async function handleOwnerPage(pool, req, res, url) {
   }
   if (sub === '') return page(res, owner, 200, token);
   if (sub === '/live') return live(req, res, owner);
+  // Online booking (server/booking.mjs): the opening times as free / booked, and booking one.
+  if (sub === '/slots' && req.method === 'GET') {
+    res.writeHead(200, { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(await slotsFor(pool, owner.clinic_id)));
+    return true;
+  }
+  if (sub === '/book') {
+    if (!posting) return notFound(res);
+    let input;
+    try {
+      input = await readJson(req);
+    } catch {
+      res.writeHead(400, { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'bad request' }));
+      return true;
+    }
+    const loc = (await pool.query("SELECT data->>'locale_default' l FROM rows WHERE clinic_id = $1 AND tbl = 'clinic_settings' AND NOT deleted LIMIT 1", [owner.clinic_id])).rows[0]?.l === 'en' ? 'en' : 'ar';
+    const r = await bookSlot(pool, owner, { ...input, label: TEXT[loc].bookedOnlineNote });
+    if (r.status === 200) hooks.afterBooking?.(owner.clinic_id, r.notifications ?? []);
+    res.writeHead(r.status, { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(r.body));
+    return true;
+  }
   const d = await ownerPageData(pool, owner);
   // An X-ray image of one of this owner's pets (only those listed in their data), from the server's volume.
   if (sub.startsWith('/f/')) {
@@ -381,6 +406,29 @@ export async function handleOwnerPage(pool, req, res, url) {
   res.writeHead(200, { ...baseHeaders, 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': `${sub === '/calendar.ics' ? 'inline' : 'attachment'}; filename="${filename}"` });
   res.end(req.method === 'HEAD' ? undefined : body);
   return true;
+}
+
+/** A small JSON body (a booking), at most 4 KB. */
+function readJson(req, max = 4096) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > max) {
+        reject(new Error('too large'));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on('end', () => {
+      try {
+        resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {});
+      } catch (e) {
+        reject(e);
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 function notFound(res) {

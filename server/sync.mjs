@@ -1,5 +1,5 @@
 // Applying device changes on the server: role checks, per-column last-writer-wins, invoice numbers.
-import { inTx } from './db.mjs';
+import { inTx, numberingLock, pullLock } from './db.mjs';
 import { refuse } from './rules.mjs';
 import { createNotifications } from './notify.mjs';
 import { SYNC_TABLES } from './tables.mjs';
@@ -19,6 +19,7 @@ const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
  */
 export async function applyChanges(pool, { clinicId, user, deviceId, changes, seenSeq = null }) {
   return inTx(pool, async (c) => {
+    await numberingLock(c, clinicId);
     const rejected = [];
     const reverts = [];
     const events = [];
@@ -158,6 +159,7 @@ async function nextOwnerCode(c, clinicId) {
  */
 export async function assignOwnerCodes(pool, clinicId) {
   return inTx(pool, async (c) => {
+    await numberingLock(c, clinicId);
     const missing = (await c.query(
       `SELECT id, versions FROM rows WHERE clinic_id = $1 AND tbl = 'owners' AND NOT deleted
          AND (data->>'code' IS NULL OR data->>'code' = '' OR data->>'code' LIKE 'TMP-%')
@@ -176,10 +178,11 @@ export async function assignOwnerCodes(pool, clinicId) {
 
 /** Rows changed after `since`, oldest first. */
 export async function pullSince(pool, clinicId, since, limit = 1000) {
-  const r = await pool.query(
-    'SELECT tbl, id, data, deleted, seq FROM rows WHERE clinic_id = $1 AND seq > $2 ORDER BY seq LIMIT $3',
-    [clinicId, since, limit + 1],
-  );
+  // Waits for writes in progress (numberingLock in server/db.mjs), so nothing numbered below what this returns is still uncommitted.
+  const r = await inTx(pool, async (c) => {
+    await pullLock(c, clinicId);
+    return c.query('SELECT tbl, id, data, deleted, seq FROM rows WHERE clinic_id = $1 AND seq > $2 ORDER BY seq LIMIT $3', [clinicId, since, limit + 1]);
+  });
   const more = r.rows.length > limit;
   const rows = r.rows.slice(0, limit).map((x) => ({ tbl: x.tbl, id: x.id, data: x.deleted ? null : x.data, deleted: x.deleted, seq: Number(x.seq) }));
   return { rows, more, seq: rows.length ? rows[rows.length - 1].seq : since };
@@ -191,6 +194,7 @@ export async function pullSince(pool, clinicId, since, limit = 1000) {
  */
 export async function bootstrapRows(pool, { clinicId, deviceId, rows, done }) {
   return inTx(pool, async (c) => {
+    await numberingLock(c, clinicId);
     const cl = (await c.query('SELECT bootstrapped FROM clinics WHERE id = $1 FOR UPDATE', [clinicId])).rows[0];
     if (!cl || cl.bootstrapped) return { error: 'this clinic already has data' };
     const now = stamp(new Date().toISOString(), deviceId);
