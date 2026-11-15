@@ -11,7 +11,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { getOwner, getPet, getSettings, listVaccineTypes, petVaccinations, petWeights, shownCode, type VaccinationRow } from '../db/repo';
 import { platform } from '../lib/platform';
-import { Icon } from '../components/ui';
+import { Icon, SavePdfButton } from '../components/ui';
 import { QrCode, clinicPageUrl } from '../components/Qr';
 import { Bi, intlDate } from './Certificate';
 
@@ -72,6 +72,7 @@ export function HealthRecordPrint() {
         </div>
         <span className="spacer" />
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={pet.owner_name} pet={pet.name} doc={t('healthRecord.title')} size="A4" />
       </div>
       <p className="muted no-print" style={{ maxWidth: '75ch' }}>{t('healthRecord.howTo')}</p>
       <div className="sheet-wrap hr-wrap">

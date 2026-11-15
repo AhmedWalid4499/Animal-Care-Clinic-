@@ -8,7 +8,7 @@ import { createOwnerPage, disableOwnerPage, getOwner, getSettings, ownerPets, re
 import type { Owner } from '../db/types';
 import { serverUrl } from '../sync/engine';
 import { platform } from '../lib/platform';
-import { Confirm, Icon, WaButton, SheetAddress } from './ui';
+import { Confirm, Icon, SavePdfButton, WaButton, SheetAddress } from './ui';
 
 export const ownerPageUrl = (token: string, base = serverUrl()) => (base ? `${base}/o/${token}` : null);
 
@@ -100,6 +100,7 @@ export function OwnerCardPrint() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" disabled={!url} onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={owner.full_name} doc={t('portal.title')} disabled={!url} />
       </div>
       {!url ? (
         <p className="note">{serverUrl() ? t('portal.intro') : t('portal.needsServer')}</p>

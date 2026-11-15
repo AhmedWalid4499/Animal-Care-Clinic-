@@ -9,7 +9,7 @@ import { platform } from '../lib/platform';
 import { telUrl } from '../lib/whatsapp';
 import { serverUrl } from '../sync/engine';
 import { PageHead } from '../components/Layout';
-import { Badge, Confirm, Icon, OwnerCode, PetAvatar, WaButton } from '../components/ui';
+import { Badge, Confirm, Icon, OwnerCode, PetAvatar, SavePdfButton, WaButton } from '../components/ui';
 import { QrCode } from '../components/OwnerPage';
 
 const mapUrl = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}`;
@@ -99,6 +99,7 @@ export function PetTag() {
         {url && isAdmin && <button className="btn ghost" onClick={() => setConfirm('disable')}>{t('tag.disable')}</button>}
         {url && <button className="btn" onClick={() => platform.openExternal(url)}><Icon name="eye" /> {t('tag.preview')}</button>}
         {url && <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>}
+        {url && <SavePdfButton owner={pet.owner_name} pet={pet.name} doc={t('tag.title')} />}
       </div>
       {!base ? (
         <p className="note">{t('portal.needsServer')}</p>

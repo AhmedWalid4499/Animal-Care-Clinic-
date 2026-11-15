@@ -262,7 +262,7 @@ ipcMain.handle('file:export', (_e, { name, bytes }) => {
 });
 
 ipcMain.handle('shell:showItem', (_e, file) => {
-  if (typeof file === 'string' && file.startsWith(exportDir)) shell.showItemInFolder(file);
+  if (typeof file === 'string' && (file.startsWith(exportDir) || savedPdfs.has(file))) shell.showItemInFolder(file);
 });
 
 ipcMain.handle('file:pick', async (e, { filters }) => {
@@ -300,6 +300,33 @@ ipcMain.handle('app:pdf', async (e, pageSize) => {
   if (!win) return null;
   const size = pageSize === 'A4' ? 'A4' : 'A5';
   return win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, pageSize: size });
+});
+
+// "Save As PDF" on every printed document: render the page as Print lays it out (A5 or A4; a named @page such as the
+// health record's A4 landscape wins) and ask where to save, suggesting "<client> - <pet> - <document>.pdf" in
+// Documents/Animal Care Clinic/PDFs. Returns the saved path, or null if cancelled.
+const pdfDir = process.env.CLINIC_PDF_DIR || path.join(app.getPath('documents'), 'Animal Care Clinic', 'PDFs');
+const savedPdfs = new Set();
+ipcMain.handle('pdf:save', async (e, { name, pageSize } = {}) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  let base = String(name || 'document')
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')
+    .slice(0, 150);
+  if (!base) base = 'document';
+  const pdf = await e.sender.printToPDF({ pageSize: pageSize === 'A4' ? 'A4' : 'A5', printBackground: true, preferCSSPageSize: true });
+  fs.mkdirSync(pdfDir, { recursive: true });
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: path.join(pdfDir, `${base}.pdf`),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return null;
+  const file = /\.pdf$/i.test(filePath) ? filePath : `${filePath}.pdf`;
+  fs.writeFileSync(file, pdf);
+  savedPdfs.add(file);
+  return file;
 });
 
 // Minimal macOS menu: app (About/Hide/Quit), Edit (copy/paste/undo in text fields), Window. No reload/devtools.

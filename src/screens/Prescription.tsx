@@ -7,7 +7,7 @@ import { useApp, useQuery } from '../lib/app';
 import { getPet, getSettings, getTemplate, getVisit, lastWeight, listDrugs, shownCode, templateRx, type PetOption } from '../db/repo';
 import { calcDose, doseText, findDrug } from '../lib/dose';
 import { platform } from '../lib/platform';
-import { Field, Icon, PetPicker, WaButton, SheetAddress } from '../components/ui';
+import { Field, Icon, PetPicker, SavePdfButton, WaButton, SheetAddress } from '../components/ui';
 import ar from '../i18n/ar.json';
 import en from '../i18n/en.json';
 
@@ -28,7 +28,7 @@ const dateIn = (lang: Lang, iso: string | null | undefined) =>
 
 export function PrescriptionPrint() {
   const { visitId = '' } = useParams();
-  const { t, locale } = useApp();
+  const { t, fmt, locale } = useApp();
   const nav = useNavigate();
   const [lang, setLang] = useState<Lang>(locale === 'en' ? 'en' : 'ar');
   const visit = useQuery(() => getVisit(visitId), [visitId]);
@@ -53,6 +53,7 @@ export function PrescriptionPrint() {
         <span className="spacer" />
         <WaButton phone={pet.owner_whatsapp || pet.owner_phone} text={waText} label={t('rxSheet.sendWa')} />
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={pet.owner_name} pet={pet.name} doc={`${t('rxSheet.title')} ${fmt.date(visit.visited_at)}`} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5 rx-sheet" dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang}>
@@ -137,6 +138,7 @@ export function TemplatePrint() {
         </div>
         <span className="spacer" />
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={pet?.owner_name} pet={pet?.name} doc={`${t('rxSheet.title')} - ${tpl.name}`} />
       </div>
       <div className="no-print tpl-patient">
         <Field label={t('templates.forPatient')} optional hint={t('templates.forPatientHint')} group><PetPicker value={picked} onChange={setPicked} /></Field>

@@ -9,7 +9,7 @@ import {
 } from '../db/repo';
 import { addDays, daysBetween, localDateOf, startOfDayIso, today } from '../lib/dates';
 import { platform } from '../lib/platform';
-import { Badge, Icon, WaButton } from '../components/ui';
+import { Badge, Icon, SavePdfButton, WaButton } from '../components/ui';
 import { PricingTabs } from '../components/Sections';
 import { ExpensesReport } from './Expenses';
 import { PageHead } from '../components/Layout';
@@ -30,6 +30,7 @@ export function Reports() {
       <PricingTabs />
       <PageHead title={t('reports.title')}>
         <button className="btn primary no-print" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={null} doc={`${t('reports.title')} - ${t(`reports.${view}`)}`} size="A4" />
       </PageHead>
       <div className="tabs no-print" style={{ marginTop: -18, marginBottom: 18 }}>
         {(['day', 'month', 'expenses'] as View[]).map((k) => (

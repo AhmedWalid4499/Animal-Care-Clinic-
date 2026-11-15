@@ -6,7 +6,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { getConsent, getPet, getSettings, saveConsent } from '../db/repo';
 import { platform } from '../lib/platform';
-import { Field, Icon, SheetAddress } from '../components/ui';
+import { Field, Icon, SavePdfButton, SheetAddress } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import ar from '../i18n/ar.json';
 import en from '../i18n/en.json';
@@ -155,6 +155,7 @@ export function ConsentView() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(`/pets/${c.pet_id}?tab=files`)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={c.owner_name} pet={c.pet_name} doc={t('consent.title')} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5 consent-sheet">

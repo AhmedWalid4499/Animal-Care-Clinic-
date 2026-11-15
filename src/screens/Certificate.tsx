@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { getPet, getSettings, petVaccinations, shownCode } from '../db/repo';
 import { platform } from '../lib/platform';
-import { Icon, SheetAddress } from '../components/ui';
+import { Icon, SavePdfButton, SheetAddress } from '../components/ui';
 import ar from '../i18n/ar.json';
 import en from '../i18n/en.json';
 
@@ -37,6 +37,7 @@ export function VaccinationCertificate() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={pet.owner_name} pet={pet.name} doc={t('certificate.title')} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5 certificate">

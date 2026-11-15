@@ -367,6 +367,48 @@ async function pdfOf(hash, name, size = 'A5', sel) {
   check('lab-request-print', 'The lab request (the clinic\'s whole test list) prints on one A4 page', lr.pages === 1 && lr.a4, `lab-request-A4.pdf: ${lr.pages} page, ${lr.size}`);
   const c = await pdfOf(`#/pets/${pet}/report`, 'case-report-A4.pdf', 'A4');
   check('case-report', 'The case report prints on A4 with the owner, the history and the diagnoses', c.pages >= 1 && c.a4 && (await win.locator('.case-report').innerText()).includes('AC-'), `case-report-A4.pdf: ${c.pages} page(s), ${c.size}`);
+
+  // "Save As PDF" on every printed document: the save dialog suggests "<client> - <pet> - <document>.pdf" and the saved
+  // file has the document's page size (A5, A4, or the health record's A4 landscape).
+  const pdfOut = path.join(out, 'save-as-pdf');
+  fs.mkdirSync(pdfOut, { recursive: true });
+  await app.evaluate(({ dialog }, dir) => {
+    globalThis.__suggested = [];
+    dialog.showSaveDialog = async (_w, opts) => {
+      const name = String(opts.defaultPath).split(/[\\/]/).pop();
+      globalThis.__suggested.push(name);
+      return { canceled: false, filePath: `${dir}/${name}` };
+    };
+  }, pdfOut);
+  const row = (sql) => db.exec(sql)[0].values[0];
+  const [invOwner, invPet, invNo] = row(`SELECT o.full_name, p.name, i.number FROM invoices i JOIN owners o ON o.id = i.owner_id LEFT JOIN pets p ON p.id = i.pet_id WHERE i.id = '${inv}'`);
+  const [petName, petOwner] = row(`SELECT p.name, o.full_name FROM pets p JOIN owners o ON o.id = p.owner_id WHERE p.id = '${pet}'`);
+  const rxRow = db.exec("SELECT v.id, p.name, o.full_name FROM visits v JOIN pets p ON p.id = v.pet_id JOIN owners o ON o.id = p.owner_id WHERE EXISTS (SELECT 1 FROM prescriptions r WHERE r.visit_id = v.id) LIMIT 1")[0]?.values[0];
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const docs = [
+    ['S7.5-save-pdf', 'receipt', `#/invoices/${inv}/print`, `${[invOwner, invPet, `Receipt ${invNo}`].filter(Boolean).join(' - ')}.pdf`, '.sheet.a5', 'a5'],
+    ['S4-save-pdf', 'pet summary', `#/pets/${pet}/print`, `${petOwner} - ${petName} - Patient summary.pdf`, '.sheet.a5', 'a5'],
+    ['case-report-save-pdf', 'case report', `#/pets/${pet}/report`, `${petOwner} - ${petName} - Medical case report.pdf`, '.sheet.a4', 'a4'],
+    ['health-record-save-pdf', 'health record', `#/pets/${pet}/health-record`, `${petOwner} - ${petName} - Pet Health Record.pdf`, '.hr-page', 'a4land'],
+  ];
+  if (rxRow) docs.push(['rx-save-pdf', 'prescription', `#/visits/${rxRow[0]}/prescription`, new RegExp(`^${esc(`${rxRow[2]} - ${rxRow[1]} - Prescription `)}\\d{1,2} \\w{3} \\d{4}\\.pdf$`), '.rx-sheet', 'a5']);
+  for (const [id, what, hash, expectName, sel, size] of docs) {
+    await go(win, hash);
+    await win.waitForSelector(sel);
+    await sleep(300);
+    await win.getByRole('button', { name: 'Save As PDF' }).click();
+    await win.getByRole('button', { name: 'Show in folder' }).waitFor({ timeout: 15000 });
+    const suggested = (await app.evaluate(() => globalThis.__suggested)).pop();
+    const file = path.join(pdfOut, suggested);
+    const text = fs.existsSync(file) ? fs.readFileSync(file).toString('latin1') : '';
+    const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
+    const [w, h] = box ? [Number(box[1]), Number(box[2])] : [0, 0];
+    const near = (a, b) => Math.abs(a - b) < 3;
+    const sized = { a5: near(w, 419.5) && near(h, 595.3), a4: near(w, 595.3) && near(h, 841.9), a4land: near(w, 841.9) && near(h, 595.3) }[size];
+    const named = typeof expectName === 'string' ? suggested === expectName : expectName.test(suggested);
+    check(id, `"Save As PDF" on the ${what} saves it named after the client, pet and document`, named && text.startsWith('%PDF') && sized,
+      `suggested "${suggested}" (expected ${typeof expectName === 'string' ? `"${expectName}"` : expectName}), ${text.length} bytes, ${box ? `${Math.round(w)}×${Math.round(h)} pt` : 'no page'} (${size})`);
+  }
 }
 
 // ------------------------------------------------------------------ 7. Arabic RTL pass

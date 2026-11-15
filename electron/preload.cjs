@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('clinicDesktop', {
   loginItemStatus: () => ipcRenderer.invoke('app:loginItemStatus'),
   openLoginItemsSettings: () => ipcRenderer.invoke('app:openLoginItemsSettings'),
   print: () => ipcRenderer.invoke('app:print'),
+  savePdf: (name, pageSize) => ipcRenderer.invoke('pdf:save', { name: String(name), pageSize: pageSize === 'A4' ? 'A4' : 'A5' }),
   pdf: (pageSize) => ipcRenderer.invoke('app:pdf', pageSize),
   probe: (url) => ipcRenderer.invoke('app:probe', url),
   // Automatic updates (electron/updater.cjs)

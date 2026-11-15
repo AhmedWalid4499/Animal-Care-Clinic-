@@ -37,6 +37,7 @@ interface DesktopBridge {
   openExternal(url: string): Promise<void>;
   showDataFolder(): Promise<void>;
   print(): Promise<void>;
+  savePdf(name: string, pageSize: 'A4' | 'A5'): Promise<string | null>;
   pdf(pageSize: 'A4' | 'A5'): Promise<Uint8Array | null>;
   probe(url: string): Promise<ServerProbe>;
   updateGet(): Promise<UpdateState>;
@@ -226,6 +227,25 @@ export const platform = {
     if (desktop) desktop.print();
     else window.print();
   },
+  /**
+   * "Save As PDF" for a printed document, named after the client, pet and document (see pdfName).
+   * Desktop: renders the page as Print lays it out (A5 or A4) and opens a save dialog → saved path, or null if cancelled.
+   * Browser: opens the print dialog with the page title set to the name, which the "Save as PDF"
+   * destination uses as the file name → null (the browser does the saving).
+   */
+  async savePdf(name: string, pageSize: 'A4' | 'A5' = 'A5'): Promise<string | null> {
+    if (desktop) return desktop.savePdf(name, pageSize);
+    const title = document.title;
+    document.title = name;
+    const restore = () => {
+      document.title = title;
+      window.removeEventListener('afterprint', restore);
+    };
+    window.addEventListener('afterprint', restore);
+    window.print();
+    setTimeout(restore, 1000);
+    return null;
+  },
   /** Desktop: why a server address doesn't answer (see electron/certs.cjs probe). Browser: null. */
   async probe(url: string): Promise<ServerProbe | null> {
     return desktop?.probe ? desktop.probe(url) : null;
@@ -238,6 +258,11 @@ export const platform = {
     return b ? new Uint8Array(b) : null;
   },
 };
+
+/** File name for a generated document: "<client> - <pet> - <document>" (no pet part when there is no pet). */
+export function pdfName(owner: string | null | undefined, pet: string | null | undefined, doc: string) {
+  return [owner, pet, doc].map((s) => (s ?? '').trim()).filter(Boolean).join(' - ') || 'document';
+}
 
 const WEB_UPDATE_STATE: UpdateState = {
   current: __APP_VERSION__, auto: false, supported: false, reason: 'web', status: 'idle', version: null, progress: 0, error: null, releasesUrl: '',

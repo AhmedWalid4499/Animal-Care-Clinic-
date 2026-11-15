@@ -18,15 +18,15 @@ import xrayMenu from '../lib/xray-menu.json';
 import { ageParts } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Icon, SheetAddress } from '../components/ui';
+import { Icon, SavePdfButton, SheetAddress } from '../components/ui';
 import { examParts } from '../components/Exam';
 import { labFlag } from './Labs';
 
 const range = (r: Pick<LabResult, 'ref_low' | 'ref_high'>) =>
   r.ref_low != null && r.ref_high != null ? `${r.ref_low}–${r.ref_high}` : r.ref_low != null ? `≥ ${r.ref_low}` : r.ref_high != null ? `≤ ${r.ref_high}` : '';
 
-/** Back + Print above a sheet, and the sheet itself. */
-function PrintPage({ children, actions, onPrint }: { children: ReactNode; actions?: ReactNode; onPrint?: () => void }) {
+/** Back + Print + Save As PDF above a sheet, and the sheet itself. */
+function PrintPage({ children, actions, onPrint, pdf }: { children: ReactNode; actions?: ReactNode; onPrint?: () => void; pdf: { pet: PetRow; doc: string; size?: 'A4' | 'A5' } }) {
   const { t } = useApp();
   const nav = useNavigate();
   return (
@@ -36,6 +36,7 @@ function PrintPage({ children, actions, onPrint }: { children: ReactNode; action
         <span className="spacer" />
         {actions}
         <button className="btn primary print-btn" onClick={() => { onPrint?.(); setTimeout(() => platform.print(), onPrint ? 150 : 0); }}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={pdf.pet.owner_name} pet={pdf.pet.name} doc={pdf.doc} size={pdf.size} />
       </div>
       <div className="sheet-wrap">{children}</div>
     </div>
@@ -92,7 +93,7 @@ export function LabReportPrint() {
   const panels = [...new Set(rows.map((r) => r.panel ?? ''))];
   const notes = [...new Set(rows.map((r) => r.note).filter(Boolean))];
   return (
-    <PrintPage>
+    <PrintPage pdf={{ pet, doc: `${t('docs.labTitle')} ${fmt.date(date)}` }}>
       <div className="sheet a5 doc lab-sheet">
         <SheetHead />
         <h2 className="doc-title">{t('docs.labTitle')}</h2>
@@ -191,6 +192,7 @@ export function CaseReport() {
 
   return (
     <PrintPage
+      pdf={{ pet, doc: t('docs.reportTitle'), size: 'A4' }}
       actions={
         <div className="row report-options">
           <label className="small">{t('docs.from')} <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
@@ -470,6 +472,7 @@ export function RequestForm({ kind: newKind }: { kind?: RequestKind }) {
   const by = saved ? saved.requested_by_name : user?.name;
   return (
     <PrintPage
+      pdf={{ pet, doc: `${t(`${prefix}.title`)} ${fmt.date(when)}`, size: kind === 'LAB' ? 'A4' : 'A5' }}
       onPrint={editable && (dirty || !saved) ? () => { save(); toast(t('app.saved')); } : undefined}
       actions={
         <>
