@@ -2,6 +2,7 @@
 
 Status, 5 Nov 2026:
 - **Phase 1 live** at `https://animal-care-clinic-production.up.railway.app`; the first laptop syncs.
+- **Own domain (15 Nov):** Ahmed bought `animalcarecliniceg.com`. The server moves to `https://app.animalcarecliniceg.com` (steps in `docs/RAILWAY-SETUP.md`, "Your own domain"); the Railway address keeps working alongside it.
 - **Phase 3 (notifications) built and tested locally.** `scripts/sync-test.mjs` passes 18/18 against Postgres 16 with two desktop apps and a fake phone push service; results are in `docs/acceptance/SYNC-TEST.md`.
 - **Phase 5 built and tested locally** (devices, temporary passwords / reset / invite, pre-diagnosis queue): `scripts/sync-test.mjs` passes 23/23.
 - **Phase 2 (offline) built and tested locally:** `scripts/sync-test.mjs` passes 31/31, including two laptops working with the server unreachable and ending identical.
@@ -27,7 +28,7 @@ Status, 5 Nov 2026:
 | Devices | **Three laptops now, built to scale** | An Admin adds and removes users in the app. The server is built for many clinics from day one |
 | Hosting | **Railway, Ahmed's own paid account** | Setup steps in `docs/RAILWAY-SETUP.md` |
 | Offline | **Must fully work offline** | Local-first sync (below) |
-| Address | **Free Railway address** | `https://<name>.up.railway.app` |
+| Address | **Free Railway address** | `https://<name>.up.railway.app`. Since 15 Nov also `https://app.animalcarecliniceg.com` (Ahmed's domain) |
 
 ## The design in one picture
 
