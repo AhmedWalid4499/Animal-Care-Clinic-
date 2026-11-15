@@ -107,6 +107,21 @@ export async function createFoundNotifications(c, clinicId, data) {
   return out;
 }
 
+/** An owner booked on their page (server/booking.mjs): everyone at the clinic who wants appointment notifications. */
+export async function createOnlineBookingNotifications(c, clinicId, data) {
+  const users = (await c.query(
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
+    [clinicId],
+  )).rows;
+  const out = users
+    .filter((u) => !u.off.split(',').map((s) => s.trim()).includes('appointment'))
+    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'appointment', event: 'online', data }));
+  for (const n of out) {
+    await c.query('INSERT INTO notifications (id, clinic_id, user_id, kind, event, data) VALUES ($1,$2,$3,$4,$5,$6)', [n.id, clinicId, n.user_id, n.kind, n.event, n.data]);
+  }
+  return out;
+}
+
 const stampUser = (s) => (s ? s.split('|')[2] || null : null);
 /** Scheduled appointments overlapping `a` that arrived after `seenSeq` (not from this same push). */
 async function unseenOverlaps(c, clinicId, id, a, seenSeq, firstSeq) {
@@ -144,6 +159,7 @@ const T = {
     queue: { waiting: '{by} sent {pet} ({owner}) to the vet: {complaint}', emergency: '🚨 Emergency: {pet} ({owner}) is waiting for the vet: {complaint}' },
     appointment: {
       booked: '{by} booked {pet} ({owner}) for {at}',
+      online: '🌐 {owner} booked {pet} online for {at}',
       moved: '{by} moved {pet}’s appointment to {at}',
       cancelled: '{by} cancelled {pet}’s appointment ({at})',
       no_show: '{pet} was marked no-show ({at})',
@@ -161,6 +177,7 @@ const T = {
     queue: { waiting: '{by} أرسل {pet} ({owner}) إلى الطبيب: {complaint}', emergency: '🚨 حالة طارئة: {pet} ({owner}) في انتظار الطبيب: {complaint}' },
     appointment: {
       booked: '{by} حجز موعداً لـ {pet} ({owner}) يوم {at}',
+      online: '🌐 {owner} حجز موعداً لـ {pet} عبر الإنترنت يوم {at}',
       moved: '{by} غيّر موعد {pet} إلى {at}',
       cancelled: '{by} ألغى موعد {pet} ({at})',
       no_show: '{pet} لم يحضر موعده ({at})',

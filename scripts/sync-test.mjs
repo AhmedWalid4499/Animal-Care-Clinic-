@@ -912,6 +912,33 @@ await step('phase6: owner page', async () => {
       && !!pdfReady.v && pdfOk && pdfPages === 1 && pdfA5 && !!pdfButton.v && clinicOk && docQr,
     `Document button on the request card: ${!!reqHref}; lab request sheet with logo, customer ID and address: ${docLooks(labHtml)}, ${ticked} boxes ticked, other tests shown: ${labHtml.includes('Bile acids')}; prescription sheet → ${rxRes?.status}, logo/ID/address: ${docLooks(rxHtml)}, drug shown: ${rxHtml.includes(DRUG)}; someone else's visit → ${notTheirs}; X-ray request PDF made on laptop B and on the owner's page: ${!!pdfReady.v}, downloads as a PDF: ${pdfOk} (${pdfPages} page, A5: ${pdfA5}, ${pdfBuf.length} bytes), Download PDF button: ${!!pdfButton.v}; clinic QR on the documents: ${docQr}; /clinic page (head, address, InstaPay): ${clinicOk}`);
 
+  // Online booking (15 Nov 2026): the owner books a free time on their page; the clinic's laptops get the appointment
+  // and staff are told; the same time can't be booked twice, nor a closed time, nor someone else's pet.
+  await phonePage.evaluate(() => { location.hash = '#book'; });
+  await phonePage.waitForSelector('.slot.free');
+  const freeShown = await phonePage.locator('.slot.free').count();
+  const bookedShownBefore = await phonePage.locator('.slot.booked').count();
+  await phonePage.locator('.slot.free').first().click();
+  await phonePage.locator('#book-note').fill('Limping since yesterday');
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-11-book.png'), fullPage: true });
+  await phonePage.locator('.book-btn').click();
+  const bookedOk = await until(async () => (await phonePage.locator('.book-msg.ok').count()) === 1, 10_000, 200);
+  const online = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'appointments' AND data->>'owner_id' = $1 AND data->>'notes' LIKE '🌐%' ORDER BY seq DESC LIMIT 1", [String(ownerId)])).rows[0];
+  const bookPost = (body) => fetch(`${url}/book`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const again = online ? (await bookPost({ pet_id: online.data.pet_id, at: online.data.scheduled_at, type: 'CHECKUP' })).status : 0;
+  const closed = online ? (await bookPost({ pet_id: online.data.pet_id, at: '2026-01-01T01:00:00.000Z', type: 'CHECKUP' })).status : 0;
+  const slotsNow = await (await fetch(`${url}/slots`)).json();
+  const freeNext = slotsNow.days.flatMap((x) => x.slots).find((s) => s.free);
+  const notMine = freeNext ? (await bookPost({ pet_id: 'not-this-owners-pet', at: freeNext.at, type: 'CHECKUP' })).status : 0;
+  const nowBooked = online ? slotsNow.days.flatMap((x) => x.slots).some((s) => s.at === online.data.scheduled_at && !s.free) : false;
+  const onLaptop = online ? await until(async () => localState(A.dataDir, `SELECT COUNT(*) FROM appointments WHERE id = '${online.id}'`)[0][0] === 1, 15_000, 300) : { v: null };
+  const told = online ? Number((await pool.query("SELECT COUNT(*) n FROM notifications WHERE event = 'online' AND data->>'appointment_id' = $1", [online.id])).rows[0].n) : 0;
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-12-booked.png'), fullPage: true });
+  await phonePage.evaluate(() => { location.hash = '#home'; });
+  check('owner-booking', 'An owner books a free time on their page (Sat–Wed 5–10 PM, free / booked only); the clinic gets the appointment and is told; no double, closed-time or someone-else\'s-pet bookings',
+    freeShown > 0 && !!bookedOk.v && !!online && online.data.notes.includes('Limping') && again === 409 && closed === 400 && notMine === 400 && nowBooked && !!onLaptop.v && told > 0,
+    `free times shown: ${freeShown}, booked shown: ${bookedShownBefore}; booked from the page: ${!!bookedOk.v} (${online?.data.scheduled_at ?? 'none'}, note kept: ${online?.data.notes.includes('Limping')}); same time again → ${again}; closed time → ${closed}; another owner's pet → ${notMine}; now shown as booked: ${nowBooked}; on laptop A: ${!!onLaptop.v}; staff notified: ${told}`);
+
   // Only an Admin may replace a printed code; the server refuses it from a Doctor.
   const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);
   // The admin replaces the code (a lost card): the old link stops at once, and the open page says so.

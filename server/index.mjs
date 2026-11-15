@@ -382,7 +382,14 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     // An owner's page from their QR code (server/portal.mjs): public, the link itself is the key.
-    if ((url.pathname.startsWith('/o/') || url.pathname.startsWith('/o-font/')) && (await handleOwnerPage(pool, req, res, url))) return;
+    if ((url.pathname.startsWith('/o/') || url.pathname.startsWith('/o-font/')) && (await handleOwnerPage(pool, req, res, url, {
+      // An owner booked online (server/booking.mjs): devices pull the appointment, open owner pages refresh, staff are told.
+      afterBooking: (clinicId, notifications) => {
+        broadcast(clinicId, { type: 'changed' });
+        ownerPagesChanged(clinicId);
+        deliver(clinicId, notifications);
+      },
+    }))) return;
     // The clinic's own page (server/clinic-page.mjs): the QR on every printed document opens it. Public.
     if (url.pathname.startsWith('/clinic') && (await handleClinicPage(pool, req, res, url))) return;
     // A pet's collar tag (server/tags.mjs): public; a finder's Alert becomes a found report everyone at the clinic sees.

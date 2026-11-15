@@ -171,6 +171,35 @@ main { padding: 20px 0 40px; }
 .filters { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
 .filters button { flex: none; border: 1px solid var(--rule); background: var(--card); border-radius: 999px; min-height: 38px; padding: 6px 16px; font-size: 14px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
 .filters button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.emergency { display: flex; gap: 12px; align-items: flex-start; background: var(--bad-soft); border-color: transparent; }
+.emergency > svg.i { color: var(--bad); flex: none; margin-top: 2px; }
+.emergency .actions { margin-top: 8px; }
+.book-msg { display: flex; gap: 12px; align-items: flex-start; }
+.book-msg.ok { background: var(--ok-soft); border-color: transparent; }
+.book-msg.ok > svg.i { color: var(--ok); }
+.book-msg.bad { background: var(--warn-soft); border-color: transparent; }
+.book-msg.bad > svg.i { color: var(--warn); }
+.book-hours { display: flex; gap: 8px; align-items: center; margin: 4px 2px 12px; }
+.book-form .label, .book-cal .label, .book-confirm .label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 10px 0 6px; }
+.book-form .label:first-child, .book-cal .label:first-child { margin-top: 0; }
+.filters.days button { display: grid; justify-items: center; gap: 0; min-width: 76px; padding: 6px 10px; border-radius: 12px; line-height: 1.25; }
+.filters.days .dname { font-size: 12px; font-weight: 400; }
+.filters.days .dfree { font-size: 11px; font-weight: 400; opacity: .85; }
+.filters.days button.full:not(.on) { opacity: .55; }
+.slot-legend { display: flex; align-items: center; gap: 6px; margin: 12px 0 8px; }
+.slot-legend .sw { width: 14px; height: 14px; border-radius: 4px; display: inline-block; margin-inline-start: 6px; }
+.slot-legend .sw:first-child { margin-inline-start: 0; }
+.slot-legend .sw.free { border: 2px solid var(--accent); }
+.slot-legend .sw.booked { background: var(--rule); }
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 8px; }
+.slot { display: grid; place-items: center; min-height: 48px; border-radius: 10px; font-size: 15px; font-weight: 600; font-family: inherit; }
+.slot.free { border: 2px solid var(--accent); background: var(--card); color: var(--accent); cursor: pointer; }
+.slot.free.on { background: var(--accent); color: var(--on-accent); }
+.slot.booked { border: 1px solid var(--rule); background: var(--bg); color: var(--ink-3); text-decoration: line-through; line-height: 1.1; }
+.slot.booked small { font-size: 11px; font-weight: 400; text-decoration: none; }
+.book-confirm textarea { width: 100%; font: inherit; font-size: 15px; border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 10px; background: var(--card); color: var(--ink); }
+.book-confirm .actions { margin-top: 12px; }
+.book-row { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .rxhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .rxhead b { font-size: 16px; }
 .drug { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 12px 0 0; margin-top: 12px; border-top: 1px dashed var(--rule); }
@@ -282,7 +311,8 @@ footer.site b { color: var(--ink-2); }
     star: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
   };
   const VIEWS = ['home', 'pets', 'appointments', 'prescriptions', 'requests', 'details'];
-  const NAV_ICON = { home: 'home', pets: 'paw', appointments: 'calendar', prescriptions: 'pill', requests: 'clip', details: 'user' };
+  const NAV_ICON = { home: 'home', pets: 'paw', appointments: 'calendar', prescriptions: 'pill', requests: 'clip', details: 'user', book: 'calendar' };
+  const EXTRA_VIEWS = ['book']; // reached from buttons, not the tab bar
   const base = location.pathname.replace(/\\/+$/, '');
   let lang = null;
   try { lang = localStorage.getItem('owner-page-lang'); } catch (e) {}
@@ -297,7 +327,7 @@ footer.site b { color: var(--ink-2); }
   const t = (k, v) => fill(k.split('.').reduce((o, p) => (o ? o[p] : undefined), T()) || k, v);
   // '#pet:<id>' is a pet's own profile (shown under the Pets tab).
   const profileId = () => (location.hash.startsWith('#pet:') ? decodeURIComponent(location.hash.slice(5)) : null);
-  const view = () => { if (profileId()) return 'pets'; const v = location.hash.slice(1); return VIEWS.includes(v) ? v : 'home'; };
+  const view = () => { if (profileId()) return 'pets'; const v = location.hash.slice(1); return VIEWS.includes(v) || EXTRA_VIEWS.includes(v) ? v : 'home'; };
 
   // Elements are built from text nodes only: nothing from the records is ever parsed as HTML.
   function h(tag, attrs, ...kids) {
@@ -444,7 +474,7 @@ footer.site b { color: var(--ink-2); }
       return h('div', { class: 'card next' },
         h('div', { class: 'icobox' }, icon('calendar')),
         h('div', null, h('div', { class: 'label' }, t('nextAppointment')), h('b', null, t('noNext')), h('div', { class: 'muted small' }, t('bookHint'))),
-        wa ? h('div', { class: 'actions' }, h('a', { class: 'btn sm primary', href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), t('book'))) : null);
+        h('div', { class: 'actions' }, bookButton(), wa ? h('a', { class: 'btn sm', href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), t('book')) : null));
     }
     return h('div', { class: 'card next' },
       dateTile(a.scheduled_at),
@@ -571,6 +601,7 @@ footer.site b { color: var(--ink-2); }
   function appointmentsView() {
     const list = d.appointments;
     return [
+      h('div', { class: 'book-row' }, bookButton()),
       list.length ? list.map((a) => h('article', { class: 'card appt' },
         dateTile(a.scheduled_at),
         h('div', null,
@@ -800,6 +831,114 @@ footer.site b { color: var(--ink-2); }
   }
 
   // ---- render
+  // ---- book an appointment (server/booking.mjs): the opening times for the next two weeks, each free or booked
+  let slots = null;
+  let slotsLoading = false;
+  let bookDay = null;
+  const pick = { pet: null, type: 'CHECKUP', at: null, note: '' };
+  let bookMsg = null;
+  let booking = false;
+  const BOOK_TYPES = ['CHECKUP', 'VACCINATION', 'FOLLOW_UP', 'OTHER'];
+  async function loadSlots() {
+    if (slotsLoading) return;
+    slotsLoading = true;
+    try {
+      const r = await fetch(base + '/slots', { cache: 'no-store' });
+      if (r.ok) slots = await r.json();
+    } catch (e) {}
+    slotsLoading = false;
+    if (view() === 'book') render();
+  }
+  function hoursText(hrs) {
+    const day = (n) => new Intl.DateTimeFormat(tag(), { weekday: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, 0, 7 + n))); // 7 Jan 2024 was a Sunday
+    const at = (hhmm) => {
+      const p = hhmm.split(':');
+      return new Intl.DateTimeFormat(tag(), { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(new Date(Date.UTC(2024, 0, 1, Number(p[0]), Number(p[1]))));
+    };
+    return t('hoursLine', { first: day(hrs.days[0]), last: day(hrs.days[hrs.days.length - 1]), from: at(hrs.from), to: at(hrs.to) });
+  }
+  async function confirmBooking() {
+    if (booking || !pick.pet || !pick.at) return;
+    booking = true;
+    render();
+    let res = null;
+    let body = {};
+    try {
+      res = await fetch(base + '/book', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pet_id: pick.pet, at: pick.at, type: pick.type, note: pick.note }) });
+      body = await res.json().catch(() => ({}));
+    } catch (e) {}
+    booking = false;
+    if (res && res.ok) {
+      const petName = (d.pets.find((p) => p.id === pick.pet) || {}).name || '';
+      bookMsg = { ok: true, text: t('bookedOk', { pet: petName, date: fmtLong(pick.at), time: fmtTime(pick.at) }) };
+      pick.at = null;
+      pick.note = '';
+      slots = null;
+      load();
+    } else if (res && res.status === 409) {
+      bookMsg = { ok: false, text: t('slotTaken') };
+      pick.at = null;
+      slots = null;
+    } else if (res && res.status === 429 && body.error === 'too_many') bookMsg = { ok: false, text: t('tooManyBookings', { n: body.n }) };
+    else bookMsg = { ok: false, text: t('bookFailed') };
+    render();
+    window.scrollTo(0, 0);
+  }
+  function emergencyCard() {
+    const phone = d.clinic.phone || d.clinic.whatsapp;
+    const wa = waClinic();
+    return h('div', { class: 'card emergency' }, icon('alert'),
+      h('div', null, h('b', null, t('emergencyTitle')), h('div', null, t('emergencyText')),
+        h('div', { class: 'actions' },
+          phone ? h('a', { class: 'btn sm primary', href: 'tel:' + String(phone).replace(/[^0-9+]/g, '') }, icon('phone'), t('callDoctor')) : null,
+          wa ? h('a', { class: 'btn sm', href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener noreferrer' }, icon('chat'), t('whatsappClinic')) : null)));
+  }
+  function bookView() {
+    if (!slots) loadSlots();
+    const pets = d.pets.filter((p) => p.status === 'ACTIVE');
+    if (!pets.some((p) => p.id === pick.pet)) pick.pet = pets[0] ? pets[0].id : null;
+    const out = [emergencyCard()];
+    if (bookMsg) {
+      out.push(h('div', { class: 'card book-msg ' + (bookMsg.ok ? 'ok' : 'bad'), role: 'status' }, icon(bookMsg.ok ? 'check' : 'alert'),
+        h('div', null, bookMsg.text, bookMsg.ok ? h('div', { class: 'actions' }, h('a', { class: 'btn sm', href: '#appointments' }, icon('calendar'), t('nav.appointments'))) : null)));
+    }
+    if (!pets.length) return [...out, h('div', { class: 'card' }, h('div', { class: 'empty' }, t('noPets')))];
+    if (!slots) return [...out, h('div', { class: 'card' }, h('div', { class: 'muted' }, '…'))];
+    out.push(h('p', { class: 'muted book-hours' }, icon('calendar'), h('span', null, hoursText(slots.hours))));
+    out.push(h('div', { class: 'card book-form' },
+      h('div', { class: 'label' }, t('pickPet')),
+      h('div', { class: 'filters pets-pick', role: 'group' }, pets.map((p) => h('button', { type: 'button', class: pick.pet === p.id ? 'on' : null, onclick: () => { pick.pet = p.id; render(); } }, p.name))),
+      h('div', { class: 'label' }, t('pickType')),
+      h('div', { class: 'filters', role: 'group' }, BOOK_TYPES.map((k) => h('button', { type: 'button', class: pick.type === k ? 'on' : null, onclick: () => { pick.type = k; render(); } }, t('visitType.' + k))))));
+    const days = slots.days;
+    if (!days.length) return [...out, h('div', { class: 'card' }, h('div', { class: 'empty' }, t('noSlots')))];
+    if (!days.some((x) => x.date === bookDay)) bookDay = (days.find((x) => x.slots.some((s) => s.free)) || days[0]).date;
+    const day = days.find((x) => x.date === bookDay);
+    out.push(h('div', { class: 'card book-cal' },
+      h('div', { class: 'label' }, t('pickSlot')),
+      h('div', { class: 'filters days', role: 'group' }, days.map((x) => {
+        const free = x.slots.filter((s) => s.free).length;
+        return h('button', { type: 'button', class: (x.date === bookDay ? 'on' : '') + (free ? '' : ' full'), onclick: () => { bookDay = x.date; pick.at = null; render(); } },
+          h('span', { class: 'dname' }, f(x.date, { weekday: 'short' })), h('b', null, f(x.date, { day: 'numeric', month: 'short' })),
+          h('span', { class: 'dfree' }, free ? t('freeN', { n: free }) : t('full')));
+      })),
+      h('div', { class: 'slot-legend muted small' }, h('span', { class: 'sw free' }), t('free'), h('span', { class: 'sw booked' }), t('booked')),
+      h('div', { class: 'slots' }, day.slots.map((s) => (s.free
+        ? h('button', { type: 'button', class: 'slot free' + (pick.at === s.at ? ' on' : ''), 'aria-pressed': pick.at === s.at ? 'true' : 'false', onclick: () => { pick.at = s.at; bookMsg = null; render(); } }, h('bdi', null, fmtTime(s.at)))
+        : h('span', { class: 'slot booked', title: t('booked') }, h('bdi', null, fmtTime(s.at)), h('small', null, t('booked'))))))));
+    if (pick.at) {
+      const petName = (pets.find((p) => p.id === pick.pet) || {}).name || '';
+      out.push(h('div', { class: 'card book-confirm' },
+        h('b', null, t('confirmTitle', { pet: petName, date: fmtLong(pick.at), time: fmtTime(pick.at) })),
+        h('div', { class: 'muted small' }, t('visitType.' + pick.type) + ' · ' + t('minutes', { n: slots.hours.slotMin })),
+        h('label', { class: 'label', for: 'book-note' }, t('noteLabel')),
+        h('textarea', { id: 'book-note', rows: 2, maxlength: 300, oninput: (e) => { pick.note = e.target.value; } }, pick.note),
+        h('div', { class: 'actions' }, h('button', { type: 'button', class: 'btn primary book-btn', disabled: booking ? true : null, onclick: confirmBooking }, icon('check'), booking ? '…' : t('confirmBooking')))));
+    }
+    return out;
+  }
+  const bookButton = (cls) => h('a', { class: 'btn sm ' + (cls || 'primary') + ' book-link', href: '#book' }, icon('calendar'), t('bookOnline'));
+
   function render() {
     const app = document.getElementById('app');
     document.documentElement.lang = L();
@@ -818,7 +957,7 @@ footer.site b { color: var(--ink-2); }
     const v = view();
     const pid = profileId();
     const profilePet = pid ? d.pets.find((p) => p.id === pid) : null;
-    const body = profilePet ? petProfile(profilePet) : { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, requests: requestsView, details: detailsView }[v]();
+    const body = profilePet ? petProfile(profilePet) : { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, requests: requestsView, details: detailsView, book: bookView }[v]();
     app.replaceChildren(...[
       topbar(),
       v === 'home' ? hero() : null,
@@ -839,7 +978,7 @@ footer.site b { color: var(--ink-2); }
     try { localStorage.setItem('owner-page-lang', l); } catch (e) {}
     render();
   }
-  window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', () => { if (view() === 'book') { slots = null; bookMsg = null; } render(); window.scrollTo(0, 0); });
 
   let loading = null;
   async function load() {
@@ -870,7 +1009,7 @@ footer.site b { color: var(--ink-2); }
     if (gone || !('EventSource' in window)) return;
     es = new EventSource(base + '/live');
     es.onopen = () => { connected = true; load(); };
-    es.onmessage = () => { clearTimeout(timer); timer = setTimeout(load, 400); };
+    es.onmessage = () => { clearTimeout(timer); timer = setTimeout(() => { load(); if (view() === 'book') loadSlots(); }, 400); };
     es.onerror = () => {
       connected = false;
       refreshStatus();
