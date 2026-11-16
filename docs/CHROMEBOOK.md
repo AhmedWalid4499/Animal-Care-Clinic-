@@ -1,7 +1,7 @@
 # Chromebook app
 
 Added 14 Nov 2026 at Ahmed's request. A Chromebook runs the clinic app as an **installed web app**: it is
-served by the clinic server (`https://animal-care-clinic-production.up.railway.app`), installs from Chrome in
+served by the clinic server (`https://app.animalcarecliniceg.com`), installs from Chrome in
 one click, and then opens in its own window with an icon on the shelf, like any other Chromebook app. It
 works on every Chromebook (Intel or ARM, personal or school/managed), with no Linux mode or Play Store.
 
@@ -13,7 +13,7 @@ works on every Chromebook (Intel or ARM, personal or school/managed), with no Li
 **English**
 
 1. On the Chromebook, open **Chrome** and go to the clinic address:
-   `animal-care-clinic-production.up.railway.app`
+   `app.animalcarecliniceg.com`
 2. Sign in with your clinic email and password (the Admin sends them from Settings → Users).
 3. Click **Install the app** in the banner at the top. (Or the install icon at the right end of the address
    bar, or Chrome menu ⋮ → *Cast, save and share* → *Install*.)
@@ -23,7 +23,7 @@ works on every Chromebook (Intel or ARM, personal or school/managed), with no Li
 **العربية**
 
 1. على الكروم بوك افتح **Chrome** واذهب إلى عنوان العيادة:
-   `animal-care-clinic-production.up.railway.app`
+   `app.animalcarecliniceg.com`
 2. سجّل الدخول ببريدك وكلمة المرور (يرسلها المدير من الإعدادات ← المستخدمون).
 3. اضغط **تثبيت التطبيق** في الشريط أعلى الصفحة (أو أيقونة التثبيت في نهاية شريط العنوان، أو القائمة ⋮ ← الإرسال والحفظ والمشاركة ← تثبيت).
 4. يفتح التطبيق في نافذة خاصة به. اضغط بزر الفأرة الأيمن على أيقونته في الرف ← **تثبيت** لإبقائها هناك،
