@@ -1758,6 +1758,7 @@ await step('admin password recovery', async () => {
 await B.app.close().catch(() => {});
 await stopServer().catch(() => {});
 pushService.close();
+waService.close();
 await s3.close().catch(() => {});
 await pool.end();
 
