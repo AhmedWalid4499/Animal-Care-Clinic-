@@ -63,6 +63,8 @@ export interface Owner {
   portal_token: string | null;
   /** Customer ID, e.g. AC-00012 (schema v16). TMP-… until the clinic server gives the real one. */
   code: string | null;
+  /** 1 = never send this owner automatic WhatsApp reminders (schema v21). */
+  wa_opt_out?: number;
 }
 export interface Pet {
   id: string; owner_id: string; name: string; species: Species; breed: string | null; sex: Sex; is_neutered: number;
@@ -108,6 +110,8 @@ export type StockReason = (typeof STOCK_REASONS)[number];
 export interface StockMove {
   id: string; price_item_id: string; qty: number; reason: StockReason; invoice_id: string | null; note: string | null; user_id: string | null; at: string;
   batch_no: string | null; expires_at: string | null;
+  /** The supplier purchase this restock came from (schema v21). */
+  purchase_id?: string | null;
 }
 /** Someone scanned a pet's collar tag and pressed Alert (schema v18); written by the clinic server. */
 export interface FoundReport {
@@ -159,6 +163,8 @@ export interface Payment {
 export interface ClinicSettings {
   id: 1; name_en: string; name_ar: string; logo_url: string | null; phone: string | null; whatsapp: string | null;
   address: string | null; currency: string; locale_default: Locale; receipt_footer: string | null;
+  /** Automatic WhatsApp (schema v21): on/off, which reminders (WA_KINDS, comma-separated), from which hour (clinic time). */
+  wa_auto?: number; wa_auto_kinds?: string | null; wa_auto_hour?: number | null;
 }
 
 // Dose calculator and treatment templates (schema v7).
@@ -174,4 +180,42 @@ export interface TemplateRx { drug: string; dose: string; frequency: string; dur
 export interface TreatmentTemplate {
   id: string; name: string; diagnosis: string | null; treatment_notes: string | null; prescriptions: string | null;
   is_active: number; created_by: string | null; owner_note: string | null;
+}
+
+// Prepaid packages (schema v21). items is JSON: PackageItem[]; key stays the same when the Admin renames a line.
+export interface PackageItem { key: string; label: string; qty: number; vaccine_type_id?: string | null }
+export interface PackageType {
+  id: string; name: string; species: string | null; price: number; valid_days: number | null; items: string; notes: string | null; is_active: number;
+}
+export interface PetPackage {
+  id: string; pet_id: string; owner_id: string; package_type_id: string | null; name: string; items: string; price: number;
+  started_at: string; expires_at: string | null; invoice_id: string | null; status: 'ACTIVE' | 'CANCELLED'; sold_by: string | null; notes: string | null;
+  created_at: string;
+}
+export interface PackageUse {
+  id: string; pet_package_id: string; item_key: string; visit_id: string | null; used_at: string; user_id: string | null; note: string | null;
+  status: 'ACTIVE' | 'VOID';
+}
+
+// Suppliers and purchases (schema v21, Admin).
+export interface Supplier { id: string; name: string; phone: string | null; notes: string | null; is_active: number }
+export interface Purchase {
+  id: string; supplier_id: string; purchased_at: string; reference: string | null; total: number; notes: string | null;
+  status: 'ACTIVE' | 'VOID'; user_id: string | null; created_at: string;
+}
+export interface PurchaseItem {
+  id: string; purchase_id: string; price_item_id: string | null; description: string; qty: number; unit_cost: number; line_total: number;
+  batch_no: string | null; expires_at: string | null;
+}
+export interface SupplierPayment {
+  id: string; supplier_id: string; purchase_id: string | null; paid_at: string; amount: number; method: PaymentMethod; reference: string | null;
+  note: string | null; status: 'ACTIVE' | 'VOID'; user_id: string | null; created_at: string;
+}
+
+// Automatic WhatsApp (schema v21): which reminders the clinic server sends by itself, and its log (server-written).
+export const WA_KINDS = ['VACCINE', 'APPOINTMENT'] as const;
+export type WaKind = (typeof WA_KINDS)[number];
+export interface WaMessage {
+  id: string; kind: string; owner_id: string | null; pet_id: string | null; ref_id: string | null; phone: string | null; template: string | null;
+  status: 'SENT' | 'FAILED' | 'SKIPPED'; error: string | null; wa_id: string | null; sent_at: string;
 }

@@ -17,6 +17,7 @@ import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } fro
 import { handleOwnerPage, ownerPagesChanged } from './portal.mjs';
 import { handleTag } from './tags.mjs';
 import { handleClinicPage } from './clinic-page.mjs';
+import { runReminders, scheduleWhatsApp, sendTest, waStatus } from './whatsapp.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -310,6 +311,22 @@ async function api(req, res, url) {
       return res.end(bytes);
     }
   }
+  // Automatic WhatsApp reminders (schema v21, server/whatsapp.mjs): status, "Send due reminders now", a test (Admin only).
+  if (p.startsWith('/api/whatsapp/')) {
+    if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
+    if (p === '/api/whatsapp/status' && req.method === 'GET') return send(res, 200, await waStatus(pool, s.clinicId));
+    if (p === '/api/whatsapp/run' && req.method === 'POST') {
+      const r = await runReminders(pool, s.clinicId, { force: true });
+      if (r.changed) broadcast(s.clinicId, { type: 'changed' });
+      return send(res, 200, { ...r, status: await waStatus(pool, s.clinicId) });
+    }
+    if (p === '/api/whatsapp/test' && req.method === 'POST') {
+      const { phone } = await readJson(req);
+      const r = await sendTest(pool, s.clinicId, typeof phone === 'string' ? phone : '');
+      broadcast(s.clinicId, { type: 'changed' });
+      return send(res, 200, r);
+    }
+  }
   // Backups (Phase 4): status, "Back up now", and a copy to keep (Admin only).
   if (p.startsWith('/api/backup/')) {
     if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
@@ -444,6 +461,7 @@ bootstrapServer()
     const st = storageInfo();
     if (!st.persistent) console.warn(`FILES ARE NOT ON A VOLUME (${st.dir}): X-rays and backups are lost at the next deploy. Railway: add a Volume mounted at /data and set FILES_DIR=/data.`);
     scheduleBackups(pool);
+    scheduleWhatsApp(pool, (clinicId) => broadcast(clinicId, { type: 'changed' }));
     server.listen(PORT, () => console.log(`clinic server on :${PORT} (web app from ${STATIC_DIR}, files in ${st.dir})`));
   })
   .catch((e) => {

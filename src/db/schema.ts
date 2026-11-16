@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 20;
+export const SCHEMA_VERSION = 21;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -148,6 +148,124 @@ const foundTables = `CREATE TABLE IF NOT EXISTS found_reports (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS found_reports_status ON found_reports(status, reported_at);`;
+// Schema v21 (16 Nov 2026, change requests): prepaid packages, supplier purchases, automatic WhatsApp reminders.
+// Packages: the Admin's catalogue (package_types, items = JSON [{ key, label, qty, vaccine_type_id? }]); selling one to a
+// pet copies its name, items and price into pet_packages (so a later catalogue change doesn't alter what was sold) and
+// makes an invoice for the price. Each session used is a package_uses row (append-only; VOID to undo), so uses recorded
+// on two devices simply add up; left = qty − active uses.
+const packageTables = `CREATE TABLE IF NOT EXISTS package_types (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  species TEXT,
+  price INTEGER NOT NULL DEFAULT 0,
+  valid_days INTEGER,
+  items TEXT NOT NULL,
+  notes TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  ${ts}
+);
+CREATE TABLE IF NOT EXISTS pet_packages (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  owner_id TEXT NOT NULL REFERENCES owners(id),
+  package_type_id TEXT REFERENCES package_types(id),
+  name TEXT NOT NULL,
+  items TEXT NOT NULL,
+  price INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL,
+  expires_at TEXT,
+  invoice_id TEXT REFERENCES invoices(id),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','CANCELLED')),
+  sold_by TEXT REFERENCES users(id),
+  notes TEXT,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS pet_packages_pet ON pet_packages(pet_id, status);
+CREATE TABLE IF NOT EXISTS package_uses (
+  id TEXT PRIMARY KEY,
+  pet_package_id TEXT NOT NULL REFERENCES pet_packages(id),
+  item_key TEXT NOT NULL,
+  visit_id TEXT REFERENCES visits(id),
+  used_at TEXT NOT NULL,
+  user_id TEXT REFERENCES users(id),
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','VOID')),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS package_uses_package ON package_uses(pet_package_id);`;
+// Suppliers (Admin): a purchase is one delivery with its lines; a line for a tracked price item restocks it (its RESTOCK
+// stock move carries purchase_id and is reconciled from the lines on every save and void, like invoices do). What the
+// clinic owes a supplier = active purchases − active payments. Supplier payments count as money spent in the monthly
+// report. Purchases and payments are voided, never deleted; purchase_items are replaced when their purchase is edited.
+const supplierTables = `CREATE TABLE IF NOT EXISTS suppliers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  phone TEXT,
+  notes TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  ${ts}
+);
+CREATE TABLE IF NOT EXISTS purchases (
+  id TEXT PRIMARY KEY,
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id),
+  purchased_at TEXT NOT NULL,
+  reference TEXT,
+  total INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','VOID')),
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS purchases_supplier ON purchases(supplier_id, purchased_at);
+CREATE TABLE IF NOT EXISTS purchase_items (
+  id TEXT PRIMARY KEY,
+  purchase_id TEXT NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+  price_item_id TEXT REFERENCES price_items(id),
+  description TEXT NOT NULL,
+  qty REAL NOT NULL DEFAULT 1,
+  unit_cost INTEGER NOT NULL DEFAULT 0,
+  line_total INTEGER NOT NULL DEFAULT 0,
+  batch_no TEXT,
+  expires_at TEXT,
+  ${ts}
+);
+CREATE TABLE IF NOT EXISTS supplier_payments (
+  id TEXT PRIMARY KEY,
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id),
+  purchase_id TEXT REFERENCES purchases(id),
+  paid_at TEXT NOT NULL,
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  method TEXT NOT NULL DEFAULT 'CASH' CHECK (method IN ('CASH','INSTAPAY','CARD','OTHER')),
+  reference TEXT,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','VOID')),
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS supplier_payments_supplier ON supplier_payments(supplier_id, paid_at);`;
+// Automatic WhatsApp (WhatsApp Business Cloud API, sent by the clinic server, never by a device): the Admin's switch
+// and choices on clinic_settings, an owner can be left out (owners.wa_opt_out), and every message the server sent or
+// failed to send is a wa_messages row (written only by the server, read-only on devices).
+const waTables = `CREATE TABLE IF NOT EXISTS wa_messages (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  owner_id TEXT REFERENCES owners(id),
+  pet_id TEXT REFERENCES pets(id),
+  ref_id TEXT,
+  phone TEXT,
+  template TEXT,
+  status TEXT NOT NULL,
+  error TEXT,
+  wa_id TEXT,
+  sent_at TEXT NOT NULL,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS wa_messages_sent ON wa_messages(sent_at);`;
+const v21Cols = `ALTER TABLE stock_moves ADD COLUMN purchase_id TEXT;
+ALTER TABLE owners ADD COLUMN wa_opt_out INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE clinic_settings ADD COLUMN wa_auto INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE clinic_settings ADD COLUMN wa_auto_kinds TEXT;
+ALTER TABLE clinic_settings ADD COLUMN wa_auto_hour INTEGER;`;
 const wardTables = `CREATE TABLE IF NOT EXISTS admissions (
   id TEXT PRIMARY KEY,
   pet_id TEXT NOT NULL REFERENCES pets(id),
@@ -432,6 +550,10 @@ ${requestPdfCols}
 ${foundTables}
 ${v13Cols}
 ${v14Cols}
+${packageTables}
+${supplierTables}
+${waTables}
+${v21Cols}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -537,12 +659,18 @@ export const MIGRATIONS: Record<number, string> = {
   // v20 (14 Nov 2026): a saved X-ray / lab request keeps its PDF (an attachment, so it reaches the clinic server and the
   // owner's page) and what it was made from (items, other tests, notes), to make a new one when the vet changes them.
   20: requestPdfCols,
+  // v21 (16 Nov 2026, change requests): prepaid packages, supplier purchases, automatic WhatsApp reminders.
+  21: `${packageTables}
+${supplierTables}
+${waTables}
+${v21Cols}`,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports',
+  'package_types', 'pet_packages', 'package_uses', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments', 'wa_messages', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */

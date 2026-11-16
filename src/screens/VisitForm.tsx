@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { batchesInStock, getAppointment, getPet, getVisit, lastWeight, listDrugs, listTemplates, listVaccineTypes, listVets, saveTemplate, saveVisit, templateRx, type VisitInput } from '../db/repo';
+import { batchesInStock, getAppointment, getPet, getVisit, lastWeight, listDrugs, listTemplates, listVaccineTypes, listVets, saveTemplate, saveVisit, templateRx, visitPackageUses, type VisitInput } from '../db/repo';
+import { VisitPackagesSection, type PackagePick } from './Packages';
 import { allergyMatch, calcDose, doseText, findDrug } from '../lib/dose';
 import { addDays, fromLocalInput, localDateOf, nowLocalInput, toLocalInput } from '../lib/dates';
 import { Dialog, Field, Icon, PetAlerts, PetAvatar, PetPicker } from '../components/ui';
@@ -115,6 +116,9 @@ export function VisitFormPage() {
   const prevWeight = useQuery(() => lastWeight(petId), [petId]);
   const [tplPick, setTplPick] = useState(false);
   const [tplSave, setTplSave] = useState<string | null>(null);
+  // Prepaid package sessions this visit uses (schema v21), recorded with the visit; not part of the draft.
+  const [pkgPicks, setPkgPicks] = useState<PackagePick[]>([]);
+  const usedHere = useQuery(() => (visitId ? visitPackageUses(visitId) : []), [visitId]);
 
   // Offline-tolerant draft: every change is kept locally until the visit is saved. Once saved, never write it again:
   // a draft timer still pending from the last keystroke would otherwise bring the saved visit back as a "draft".
@@ -194,8 +198,19 @@ export function VisitFormPage() {
       prescriptions: f.prescriptions.map((r) => ({ ...r, duration_days: r.duration_days ? Number(r.duration_days) : null })),
       vaccinations: f.vaccinations.map((x) => ({ id: x.id, vaccine_type_id: x.vaccine_type_id, administered_at: x.administered_at, next_due_at: x.next_due_at, batch_no: x.batch_no })),
       appointment_id: appointmentId,
+      package_uses: pkgPicks,
     };
-    const id = saveVisit(input, visitId);
+    let id: string;
+    try {
+      id = saveVisit(input, visitId);
+    } catch (err) {
+      // A package session ticked here was used up meanwhile (another computer): nothing was saved, the form stays.
+      const m = err instanceof Error ? err.message : '';
+      if (m !== 'PACKAGE_NONE_LEFT' && m !== 'PACKAGE_NOT_USABLE') throw err;
+      setPkgPicks([]);
+      toast(t(m === 'PACKAGE_NONE_LEFT' ? 'packages.noneLeft' : 'packages.notUsable'));
+      return;
+    }
     saved.current = true;
     try {
       localStorage.removeItem(key);
@@ -342,6 +357,8 @@ export function VisitFormPage() {
             </div>
           ))}
         </div>
+
+        <VisitPackagesSection petId={pet.id} value={pkgPicks} onChange={setPkgPicks} usedHere={usedHere} />
 
         <div className="form-section">
           <div className="grid g2">

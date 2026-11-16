@@ -885,3 +885,15 @@ a.owner-code:hover { text-decoration: underline; }
 .open-elsewhere h1 { font-size: 20px; margin: 0 0 6px; }
 .open-elsewhere p { margin: 0; color: var(--ink-2); }
 .open-elsewhere .btn { min-height: 44px; padding-inline: 22px; }
+
+/* Prepaid packages and supplier purchases (schema v21, 16 Nov 2026) */
+.repeat.pkg-line { grid-template-columns: 2fr 90px 1.6fr auto; }
+.repeat.buy-line { grid-template-columns: 2fr 72px 110px 1fr 1fr 90px auto; }
+@media (max-width: 760px) { .repeat.pkg-line, .repeat.buy-line { grid-template-columns: 1fr 1fr; } }
+.pet-packages { margin: 14px 0 4px; }
+.pet-packages .list li.done { opacity: .6; }
+.pkg-lines { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 4px; }
+.pkg-line-chip { display: inline-flex; align-items: center; gap: 8px; }
+ul.plain { list-style: none; padding: 0; margin: 8px 0; }
+ul.plain li { padding: 2px 0; }
+.buy-total { font-size: 18px; }

@@ -19,6 +19,7 @@ import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 import { RxArchive } from '../components/RxArchive';
 import { RequestsTab } from '../components/RequestsTab';
 import { mimeOf } from '../lib/mime';
+import { PetPackagesPanel } from './Packages';
 
 type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'exam' | 'labs' | 'requests' | 'files';
 
@@ -97,6 +98,8 @@ export function PetRecord() {
           )}
         </div>
       </div>
+
+      <PetPackagesPanel petId={id} />
 
       <div className="tabs" role="tablist">
         {(['timeline', 'vaccinations', 'prescriptions', 'weight', 'exam', 'labs', 'requests', 'files'] as Tab[]).map((k) => (

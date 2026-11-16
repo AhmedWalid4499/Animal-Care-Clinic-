@@ -124,6 +124,11 @@ export function OwnerFormPage() {
           <Field label={t('common.notes')} className="span2" optional>
             <textarea value={f.notes ?? ''} onChange={set('notes')} />
           </Field>
+          <Field label={t('waAuto.tab')} hint={t('waAuto.optOutHint')} className="span2" group>
+            <label className="check">
+              <input type="checkbox" checked={!!f.wa_opt_out} onChange={(e) => setF({ ...f, wa_opt_out: e.target.checked })} /> {t('waAuto.optOut')}
+            </label>
+          </Field>
         </div>
         <div className="actionbar">
           <button type="button" className="btn" onClick={() => nav(-1)}>{t('common.cancel')}</button>
@@ -150,5 +155,5 @@ export function OwnerFormPage() {
 }
 
 function pick(o: Owner): OwnerInput {
-  return { full_name: o.full_name, phone: o.phone, whatsapp: o.whatsapp, email: o.email, address: o.address, national_id: o.national_id, notes: o.notes };
+  return { full_name: o.full_name, phone: o.phone, whatsapp: o.whatsapp, email: o.email, address: o.address, national_id: o.national_id, notes: o.notes, wa_opt_out: !!o.wa_opt_out };
 }

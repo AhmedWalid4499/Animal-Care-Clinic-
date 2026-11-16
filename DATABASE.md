@@ -47,6 +47,14 @@ users (clinic staff) ──< visits.vet_id, invoices.created_by
 | **clinic_settings** | single row: name_en, name_ar, logo_url, phone, whatsapp, address, currency (EGP), locale_default, receipt_footer | Loaded once per request. |
 | **test_requests** (v17) | pet_id → pets, visit_id?, kind `XRAY \| LAB`, items (ticked keys, comma-separated), other, notes, status `REQUESTED \| DONE \| CANCELLED`, requested_by → users, requested_at | X-ray and lab requests given to the owner; never deleted. Lab test keys: `src/lib/lab-tests.json`. Shown on the owner page (not cancelled ones). |
 | **found_reports** (v18) | pet_id → pets, owner_id?, reported_at, lat?, lng?, accuracy_m?, finder_name?, finder_phone?, message?, status `NEW \| HANDLED`, handled_by → users, handled_at | Written only by the clinic server when someone presses Alert on a collar tag page; devices may only mark it handled. Never deleted. |
+| **package_types** (v21) | name, species? (comma-separated, empty = any), price (piastres), valid_days?, items (JSON: key, label, qty, vaccine_type_id?), notes, is_active | Prepaid packages the clinic sells (e.g. puppy package). Admin only. |
+| **pet_packages** (v21) | pet_id → pets, owner_id → owners, package_type_id?, name, items (JSON copied at sale), price, started_at, expires_at?, invoice_id → invoices, status `ACTIVE \| CANCELLED`, sold_by → users, notes | A package sold to a pet, with the invoice made for its price. Anyone sells; only an Admin cancels. Never deleted. |
+| **package_uses** (v21) | pet_package_id → pet_packages, item_key, visit_id?, used_at, user_id → users, note, status `ACTIVE \| VOID` | One session used. Left per line = qty − active uses. Append-only; VOID (Doctor/Admin) gives it back. |
+| **suppliers** (v21) | name, phone, notes, is_active | Who the clinic buys from. Admin only. |
+| **purchases** (v21) | supplier_id → suppliers, purchased_at (local date), reference (their invoice no.), total, notes, status `ACTIVE \| VOID`, user_id → users | One delivery. Owed to a supplier = Σ active purchases − Σ active payments. Voided, never deleted. |
+| **purchase_items** (v21) | purchase_id → purchases, price_item_id?, description, qty, unit_cost, line_total, batch_no?, expires_at? | Replaced when the purchase is edited (like invoice_items). A line for a tracked price item restocks it: RESTOCK `stock_moves` with `purchase_id`, reconciled on every save and void. |
+| **supplier_payments** (v21) | supplier_id → suppliers, purchase_id?, paid_at (local date), amount, method, reference, note, status `ACTIVE \| VOID`, user_id → users | Money paid to a supplier; counted as money spent in the monthly report. |
+| **wa_messages** (v21) | kind `VACCINE \| APPOINTMENT \| TEST`, owner_id?, pet_id?, ref_id (vaccination / appointment), phone, template, status `SENT \| FAILED \| SKIPPED`, error, wa_id, sent_at | Automatic WhatsApp log, written only by the clinic server (`server/whatsapp.mjs`); devices read it. Also v21: `owners.wa_opt_out`, `clinic_settings.wa_auto / wa_auto_kinds / wa_auto_hour`, `stock_moves.purchase_id`. |
 | **audit_log** | user_id, table_name, record_id, action `CREATE \| UPDATE \| DELETE \| LOGIN`, diff (jsonb), at | Who changed what. Append-only. |
 
 ## Indexes worth creating on day one
@@ -64,7 +72,7 @@ users (clinic staff) ──< visits.vet_id, invoices.created_by
 - Invoice status ← payments sum (store it, but recompute on every payment write)
 
 ## Deliberately out of v1
-Owner logins / portal, full inventory (suppliers, batches, expiry; a simple stock count was added in v8 by change request), multi-branch (`clinic_id` on every table), lab-result structured data, SMS/WhatsApp API delivery log, boarding kennels. Each is a v2 table that attaches to this schema without changing it.
+Owner logins / portal, full inventory (a simple stock count was added in v8, batches and expiry in v10, suppliers and purchases in v21, by change request), multi-branch (`clinic_id` on every table), lab-result structured data, SMS delivery (WhatsApp Business API reminders were added in v21 by change request), boarding kennels. Each is a v2 table that attaches to this schema without changing it.
 
 ## Seed data (migration `0001_seed`)
 - One VET user (Dr. Waleed), one ASSISTANT

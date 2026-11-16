@@ -5,7 +5,8 @@ import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 
 // drugs: the dose calculator's list (doses decide what the calculator says), so only the Admin edits it.
 // expenses: the clinic's own spending (rent, salaries…), Admin only like the reports that use it.
-const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'expenses']);
+// package_types (the package catalogue and its prices) and suppliers / purchases / supplier payments (schema v21): Admin.
+const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'expenses', 'package_types', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments']);
 const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates', 'lab_results', 'admissions', 'care_tasks', 'test_requests']);
 // In-patients: assistants tick a care task done or skipped (with a note), nothing else on the ward.
 const ASSISTANT_TASK_COLS = new Set(['status', 'done_at', 'done_by', 'note', 'updated_at']);
@@ -25,6 +26,8 @@ function assistantIntake(change, before, userId) {
 }
 // Everyone may change these on their own user row: the bell's on/off switches, and their own password.
 const FOUND_COLS = new Set(['status', 'handled_by', 'handled_at', 'updated_at']);
+const PACKAGE_DESK_COLS = new Set(['notes', 'updated_at']);
+const USE_COLS = new Set(['status', 'note', 'updated_at']);
 const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_password', 'updated_at']);
 
 /**
@@ -45,6 +48,16 @@ export function refuse(role, change, before, userId) {
     if (!before) return 'found reports come from the collar tag page';
     if (!Object.keys(cols).every((c) => FOUND_COLS.has(c))) return 'only the handled status of a found report can change';
     return null;
+  }
+  // Automatic WhatsApp (schema v21): the log is written by the clinic server when it sends; devices only read it.
+  if (tbl === 'wa_messages') return 'WhatsApp messages are recorded by the clinic server';
+  // Prepaid packages (schema v21): anyone at the desk may sell one (it comes with its invoice) and record a session used.
+  // Afterwards a sold package only changes by an Admin (cancel), apart from its note; a used session only changes to
+  // VOID (undo), by an Admin or a Doctor.
+  if (tbl === 'pet_packages' && before && role !== 'ADMIN' && !Object.keys(cols).every((c) => PACKAGE_DESK_COLS.has(c))) return 'changing a sold package is for admins';
+  if (tbl === 'package_uses' && before) {
+    if (!Object.keys(cols).every((c) => USE_COLS.has(c)) || (cols.status != null && cols.status !== 'VOID')) return 'a used session can only be undone';
+    if (role === 'ASSISTANT') return 'undoing a used session is for doctors and admins';
   }
   // Anyone may give a pet a collar tag; replacing or switching off a printed one is for admins (like the owner page).
   if (tbl === 'pets' && 'tag_token' in cols && before?.tag_token && cols.tag_token !== before.tag_token && role !== 'ADMIN') return 'replacing a collar tag is for admins';

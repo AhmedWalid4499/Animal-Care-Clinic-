@@ -38,7 +38,7 @@ export function Layout() {
     { to: '/ward', icon: 'stethoscope', label: t('ward.title'), sideOnly: true, group: 'day' },
     { to: '/lost-found', icon: 'paw', label: t('lostFound.title'), sideOnly: true, group: 'day', count: foundNew },
     // Invoices, Reports and the Price list (the tabs on top of each move between them).
-    { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices'], group: 'clinic' },
+    { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices', '/packages'], group: 'clinic' },
     { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true, group: 'clinic' },
     ...(canVisit ? [{ to: '/templates', icon: 'clipboard', label: t('settings.templates'), sideOnly: true, group: 'clinic' as const }] : []),
     // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).

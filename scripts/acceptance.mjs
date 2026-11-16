@@ -29,7 +29,7 @@ fs.mkdirSync(path.join(out, 'rtl'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-data-'));
 const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-export-'));
 const dbFile = path.join(dataDir, 'clinic.sqlite');
-const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'audit_log'];
+const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'package_types', 'pet_packages', 'package_uses', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments', 'wa_messages', 'audit_log'];
 const SQL = await initSqlJs();
 // The schema version a fresh or upgraded database must reach (src/db/schema.ts).
 const CURRENT_SCHEMA = fs.readFileSync('src/db/schema.ts', 'utf8').match(/SCHEMA_VERSION = (\d+)/)[1];
@@ -44,8 +44,22 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function openDbFile(file = dbFile) {
   return new SQL.Database(fs.readFileSync(file));
 }
+/** Row counts per table; closes the database (sql.js copies are held in a fixed amount of memory, so close each one). */
 function counts(db) {
-  return Object.fromEntries(TABLES.map((t) => [t, db.exec(`SELECT COUNT(*) FROM ${t}`)[0].values[0][0]]));
+  try {
+    return Object.fromEntries(TABLES.map((t) => [t, db.exec(`SELECT COUNT(*) FROM ${t}`)[0].values[0][0]]));
+  } finally {
+    db.close();
+  }
+}
+/** One query on a fresh copy of the database file, closed straight after. */
+function execOnce(sql, file = dbFile) {
+  const db = openDbFile(file);
+  try {
+    return db.exec(sql);
+  } finally {
+    db.close();
+  }
 }
 async function waitForFile(dir, re, timeout = 15000) {
   const t0 = Date.now();
@@ -152,6 +166,7 @@ await app.close();
   }
   db.run('COMMIT');
   fs.writeFileSync(dbFile, Buffer.from(db.export()));
+  db.close();
   const c = counts(openDbFile());
   check('size', 'Test database at the scope size (screen 1: 500 pets)', c.pets === 500, `${c.pets} pets, ${c.owners} owners, ${c.visits} visits, ${c.vaccinations} vaccinations, ${c.invoices} invoices, ${c.appointments} appointments`);
 }
@@ -434,6 +449,7 @@ async function pdfOf(hash, name, size = 'A5', sel) {
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
     ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/prices'], ['settings-vaccines', '#/stock/vaccines'],
     ['settings-users', '#/settings?tab=users'], ['settings-data', '#/settings?tab=data'],
+    ['packages', '#/packages'], ['suppliers', '#/stock/suppliers'], ['reports-expenses', '#/reports?view=expenses'],
   ];
   const problems = [];
   for (const [w, h, tag] of [[1366, 860, 'laptop'], [390, 844, 'phone']]) {
@@ -508,10 +524,15 @@ await app.close();
   db.run('ALTER TABLE pets DROP COLUMN tag_token');
   // …nor the physical examination on visits (v19).
   for (const c of ['bp_systolic', 'bp_diastolic', 'mucous_membrane', 'eyes', 'skin_coat', 'glands', 'glands_note', 'anal_glands', 'nails', 'fleas_ticks']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
+  // …nor prepaid packages, suppliers and purchases, automatic WhatsApp (schema v21; stock_moves.purchase_id went with stock above).
+  for (const t of ['package_uses', 'pet_packages', 'package_types', 'purchase_items', 'supplier_payments', 'purchases', 'suppliers', 'wa_messages']) db.run(`DROP TABLE ${t}`);
+  db.run('ALTER TABLE owners DROP COLUMN wa_opt_out');
+  for (const c of ['wa_auto', 'wa_auto_kinds', 'wa_auto_hour']) db.run(`ALTER TABLE clinic_settings DROP COLUMN ${c}`);
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
   fs.writeFileSync(dbFile, Buffer.from(db.export()));
+  db.close();
 }
 ({ app, win } = await launch());
 const loginLogo = await win.locator('.login .logo-plate img').first().isVisible();
@@ -520,7 +541,7 @@ const sideLogo = await win.locator('.side .logo-plate img').evaluate((img) => im
 await flushWait();
 const afterRelaunch = counts(openDbFile());
 {
-  const row = openDbFile().exec('SELECT logo_url, phone, address, receipt_footer FROM clinic_settings WHERE id = 1')[0].values[0];
+  const row = execOnce('SELECT logo_url, phone, address, receipt_footer FROM clinic_settings WHERE id = 1')[0].values[0];
   {
     const db2 = openDbFile();
     const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
@@ -541,13 +562,14 @@ await app.close();
   const db = openDbFile();
   db.run("UPDATE clinic_settings SET logo_url = 'file:///C:/Users/clinic/AppData/Local/Temp/2abc/resources/app.asar/dist/assets/clinic-logo-F2anZT9h.png?inline' WHERE id = 1");
   fs.writeFileSync(dbFile, Buffer.from(db.export()));
+  db.close();
 }
 ({ app, win } = await launch());
 await signIn(win);
 const linkFixedShown = await win.locator('.side .logo-plate img').evaluate((img) => img.complete && img.naturalWidth > 0);
 await flushWait();
 {
-  const logo = String(openDbFile().exec('SELECT logo_url FROM clinic_settings WHERE id = 1')[0].values[0][0]);
+  const logo = String(execOnce('SELECT logo_url FROM clinic_settings WHERE id = 1')[0].values[0][0]);
   check('upgrade-link', 'A logo saved as a broken install-folder link is repaired', logo.startsWith('data:image/png') && linkFixedShown, `stored logo now ${logo.slice(0, 22)}…; image ${linkFixedShown ? 'drawn' : 'NOT drawn'} in the sidebar`);
 }
 // The upgrade runs once: a logo the vet removes afterwards must stay removed.
@@ -556,12 +578,13 @@ await app.close();
   const db = openDbFile();
   db.run('UPDATE clinic_settings SET logo_url = NULL WHERE id = 1');
   fs.writeFileSync(dbFile, Buffer.from(db.export()));
+  db.close();
 }
 ({ app, win } = await launch());
 await signIn(win);
 await flushWait();
 {
-  const logo = openDbFile().exec('SELECT logo_url FROM clinic_settings WHERE id = 1')[0].values[0][0];
+  const logo = execOnce('SELECT logo_url FROM clinic_settings WHERE id = 1')[0].values[0][0];
   check('upgrade-once', 'The upgrade runs once and respects a removed logo', logo === null, `logo removed after the upgrade is still removed on the next start (logo_url = ${logo})`);
 }
 const backups = fs.readdirSync(path.join(dataDir, 'backups')).filter((f) => /^clinic-\d{4}-\d{2}-\d{2}\.sqlite$/.test(f));
