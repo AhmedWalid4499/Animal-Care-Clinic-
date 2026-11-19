@@ -1,6 +1,6 @@
 // Eye chart anatomy for dogs and cats (change request, 19 Nov 2026). OD = the pet's right eye, OS = its left eye.
 // The iris is drawn in the eye colour chosen on the pet; the vet can change each eye on its own (e.g. odd eyes).
-import type { EyeColor } from '../db/types';
+import { EYE_COLORS, type EyeColor } from '../db/types';
 import { mixHex } from './dental';
 
 export type EyeSide = 'OD' | 'OS';
@@ -50,3 +50,21 @@ export function irisAtAge(adult: string, blue: number) {
 }
 
 export const partKey = (side: EyeSide, part: EyePart) => `${side}.${part}`;
+
+/** Eye colour as written in the import sheet: the code (BROWN), English (dark brown) or Arabic (بني غامق).
+ *  Returns null for an empty cell and undefined when the text is not a colour the app knows. */
+export function parseEyeColor(v: unknown): EyeColor | null | undefined {
+  const raw = String(v ?? '').trim();
+  if (!raw) return null;
+  const code = raw.toUpperCase().replace(/[\s-]+/g, '_');
+  if ((EYE_COLORS as readonly string[]).includes(code)) return code as EyeColor;
+  const words: Record<string, EyeColor> = {
+    dark_brown: 'DARK_BROWN', brown: 'BROWN', light_brown: 'BROWN', amber: 'AMBER', hazel: 'HAZEL', gold: 'GOLD', golden: 'GOLD',
+    yellow: 'GOLD', copper: 'COPPER', orange: 'COPPER', green: 'GREEN', blue: 'BLUE', odd: 'ODD', odd_eyes: 'ODD',
+    heterochromia: 'ODD', two_colours: 'ODD', two_colors: 'ODD',
+    'بني_غامق': 'DARK_BROWN', 'بني': 'BROWN', 'عسلي_كهرماني': 'AMBER', 'كهرماني': 'AMBER', 'عسلي': 'HAZEL', 'ذهبي': 'GOLD',
+    'أصفر': 'GOLD', 'اصفر': 'GOLD', 'نحاسي': 'COPPER', 'أخضر': 'GREEN', 'اخضر': 'GREEN', 'أزرق': 'BLUE', 'ازرق': 'BLUE',
+    'مختلفتين': 'ODD', 'لونين': 'ODD', 'عينان_بلونين_مختلفين': 'ODD',
+  };
+  return words[code.toLowerCase()] ?? words[raw.replace(/\s+/g, '_')];
+}

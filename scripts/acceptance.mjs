@@ -280,12 +280,12 @@ check('S4-template', 'Spreadsheet template matches import/TEMPLATE.md', JSON.str
     const o = { owner_full_name: `Import Owner ${i}`, owner_phone: `0128${String(1000000 + i).padStart(7, '0')}`, owner_address: 'Giza' };
     expect.newOwners++;
     if (i < 30) {
-      rows.push({ ...o, pet_name: `Imported ${i}a`, species: i % 2 ? 'CAT' : 'كلب', sex: 'F', date_of_birth: '14/05/2022', is_neutered: 'yes' });
+      rows.push({ ...o, pet_name: `Imported ${i}a`, species: i % 2 ? 'CAT' : 'كلب', sex: 'F', date_of_birth: '14/05/2022', is_neutered: 'yes', eye_color: ['BLUE', 'dark brown', 'أخضر'][i % 3] });
       rows.push({ ...o, pet_name: `Imported ${i}b`, species: 'DOG', breed: 'Baladi', microchip_no: `9900000${String(i).padStart(5, '0')}` });
       expect.pets += 2;
     } else rows.push(o);
   }
-  rows.push({ owner_full_name: 'Mona Hassan', owner_phone: '010 1234 5678', pet_name: 'Tiger', species: 'CAT' }); // merges into the demo owner
+  rows.push({ owner_full_name: 'Mona Hassan', owner_phone: '010 1234 5678', pet_name: 'Tiger', species: 'CAT', eye_color: 'purple' }); // merges into the demo owner; unknown eye colour → imported, noted, left empty
   expect.pets++;
   rows.push({ owner_full_name: 'Duplicate Chip', owner_phone: '01287777777', pet_name: 'Twin', species: 'DOG', microchip_no: '990000000001' }); // chip already used above → skipped (owner still created)
   expect.newOwners++;
@@ -311,6 +311,16 @@ check('S4-template', 'Spreadsheet template matches import/TEMPLATE.md', JSON.str
   const accounted = pets + ownerOnly + expect.skipped;
   check('S7.9-import', 'Imported data matches the spreadsheet row count', owners === expect.newOwners && pets === expect.pets && accounted === rows.length,
     `${rows.length} sheet rows = ${pets} pets + ${ownerOnly} owner-only rows + ${expect.skipped} skipped rows (reported by row number); ${owners} new owners, 1 row merged into an existing owner by phone. App said: "${message}"`);
+  // Eye colour column (Dental & Vision change request): codes, English and Arabic words are read; an unknown one is noted.
+  {
+    const db = openDbFile();
+    const eyes = Object.fromEntries(db.exec("SELECT COALESCE(eye_color, '-'), COUNT(*) FROM pets WHERE name LIKE 'Imported %a' GROUP BY 1")[0].values);
+    const tiger = db.exec("SELECT eye_color FROM pets WHERE name = 'Tiger'")[0].values[0][0];
+    const full = await win.locator('pre.note').innerText();
+    const noted = /eye colour "purple" not recognised/.test(full);
+    check('S7.9-eye', 'Import reads the eye colour (code, English or Arabic) and notes one it does not know', eyes.BLUE === 10 && eyes.DARK_BROWN === 10 && eyes.GREEN === 10 && tiger === null && noted,
+      `imported eye colours ${JSON.stringify(eyes)}; "purple" left empty: ${tiger === null}, listed after the import: ${noted}`);
+  }
   await win.screenshot({ path: path.join(out, 'settings-import-result.png') });
 }
 

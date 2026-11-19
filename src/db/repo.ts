@@ -8,6 +8,7 @@ import type {
 } from './types';
 import { EXAM_KEYS, ROLES, highestRole, userRoles } from './types';
 import { CLINIC, OLD_ADDRESS } from './seed';
+import { parseEyeColor } from '../lib/vision';
 
 const like = (q: string) => `%${q.trim().toLowerCase()}%`;
 const digits = (s: string) => s.replace(/\D/g, '');
@@ -737,7 +738,7 @@ export function tableRows(table: string) {
 export interface ImportRow {
   owner_full_name: string; owner_phone: string; owner_whatsapp?: string; owner_email?: string; owner_address?: string; owner_notes?: string;
   pet_name?: string; species?: string; breed?: string; sex?: string; is_neutered?: string; date_of_birth?: string;
-  dob_is_estimate?: string; color?: string; microchip_no?: string; pet_notes?: string;
+  dob_is_estimate?: string; color?: string; eye_color?: string; microchip_no?: string; pet_notes?: string;
 }
 /** One-off import of the owners/pets sheet (import/TEMPLATE.md). Owners are de-duplicated by phone. */
 export function importOwnersPets(rows: ImportRow[]) {
@@ -759,7 +760,8 @@ export function importOwnersPets(rows: ImportRow[]) {
     const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
     return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
   };
-  const result = { owners: 0, pets: 0, skipped: [] as { row: number; reason: string }[] };
+  // notes: rows imported with something left out (e.g. an eye colour the app does not know).
+  const result = { owners: 0, pets: 0, skipped: [] as { row: number; reason: string }[], notes: [] as { row: number; reason: string }[] };
   tx(() => {
     const byPhone = new Map<string, string>();
     all<Owner>('SELECT * FROM owners').forEach((o) => byPhone.set(digits(o.phone).slice(-9), o.id));
@@ -781,10 +783,20 @@ export function importOwnersPets(rows: ImportRow[]) {
       if (!petName) return;
       const chip = String(r.microchip_no ?? '').trim();
       if (chip && get('SELECT 1 FROM pets WHERE microchip_no = ?', [chip])) return result.skipped.push({ row: i + 2, reason: `microchip ${chip} already exists` });
+      const species = sp(r.species);
+      // Eye colour (Dental & Vision change request, 19 Nov 2026): drawn on the Vision tab, so only kept for dogs and cats.
+      let eye = parseEyeColor(r.eye_color);
+      if (eye === undefined) {
+        result.notes.push({ row: i + 2, reason: `eye colour "${String(r.eye_color).trim()}" not recognised, left empty` });
+        eye = null;
+      } else if (eye && species !== 'DOG' && species !== 'CAT') {
+        result.notes.push({ row: i + 2, reason: 'eye colour is only kept for dogs and cats, left empty' });
+        eye = null;
+      }
       insert('pets', {
-        owner_id: ownerId, name: petName, species: sp(r.species), breed: blank(String(r.breed ?? '')), sex: sexOf(r.sex),
+        owner_id: ownerId, name: petName, species, breed: blank(String(r.breed ?? '')), sex: sexOf(r.sex),
         is_neutered: yes(r.is_neutered) ? 1 : 0, date_of_birth: dateOf(r.date_of_birth), dob_is_estimate: yes(r.dob_is_estimate) ? 1 : 0,
-        color: blank(String(r.color ?? '')), microchip_no: chip || null, notes: blank(String(r.pet_notes ?? '')),
+        color: blank(String(r.color ?? '')), eye_color: eye, microchip_no: chip || null, notes: blank(String(r.pet_notes ?? '')),
       });
       result.pets++;
     });
