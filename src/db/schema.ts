@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 21;
+export const SCHEMA_VERSION = 22;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -33,6 +33,24 @@ const visitExam = `bp_systolic INTEGER,
   anal_glands TEXT,
   nails TEXT,
   fleas_ticks TEXT`;
+// Dental & Vision charts (change request, 19 Nov 2026): one row per (pet, chart, part) holding the vet's current finding.
+// The id is '<pet_id>:<chart>:<part>', so two devices marking the same tooth offline merge into one row on sync.
+// part = Triadan number for teeth ('104', '508'), 'PALATE' / 'GUM_UPPER' / 'GUM_LOWER' / 'TONGUE' / 'MOUTH',
+// or '<OD|OS>.<EYELIDS|THIRD_EYELID|CONJUNCTIVA|CORNEA|IRIS|PUPIL|LENS|GLOBE>' / 'EYES'. Never deleted: reset = conditions NULL.
+const chartMarks = `CREATE TABLE IF NOT EXISTS pet_chart_marks (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  chart TEXT NOT NULL CHECK (chart IN ('DENTAL','VISION')),
+  part TEXT NOT NULL,
+  conditions TEXT,
+  severity INTEGER CHECK (severity IN (1,2,3)),
+  shade TEXT,
+  notes TEXT,
+  updated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pet_chart_marks_part ON pet_chart_marks(pet_id, chart, part);`;
 const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
 
@@ -148,7 +166,7 @@ const foundTables = `CREATE TABLE IF NOT EXISTS found_reports (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS found_reports_status ON found_reports(status, reported_at);`;
-// Schema v21 (16 Nov 2026, change requests): prepaid packages, supplier purchases, automatic WhatsApp reminders.
+// Schema v22 (16 Nov 2026, change requests): prepaid packages, supplier purchases, automatic WhatsApp reminders.
 // Packages: the Admin's catalogue (package_types, items = JSON [{ key, label, qty, vaccine_type_id? }]); selling one to a
 // pet copies its name, items and price into pet_packages (so a later catalogue change doesn't alter what was sold) and
 // makes an invoice for the price. Each session used is a package_uses row (append-only; VOID to undo), so uses recorded
@@ -261,7 +279,7 @@ const waTables = `CREATE TABLE IF NOT EXISTS wa_messages (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS wa_messages_sent ON wa_messages(sent_at);`;
-const v21Cols = `ALTER TABLE stock_moves ADD COLUMN purchase_id TEXT;
+const v22Cols = `ALTER TABLE stock_moves ADD COLUMN purchase_id TEXT;
 ALTER TABLE owners ADD COLUMN wa_opt_out INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE clinic_settings ADD COLUMN wa_auto INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE clinic_settings ADD COLUMN wa_auto_kinds TEXT;
@@ -383,6 +401,7 @@ CREATE TABLE pets (
   alert_note TEXT,
   recall_sent_at TEXT,
   tag_token TEXT,
+  eye_color TEXT,
   ${ts}
 );
 CREATE INDEX pets_owner ON pets(owner_id);
@@ -520,6 +539,8 @@ CREATE TABLE attachments (
   uploaded_by TEXT REFERENCES users(id),
   ${ts}
 );
+${chartMarks}
+
 CREATE TABLE attachment_blobs (
   attachment_id TEXT PRIMARY KEY REFERENCES attachments(id),
   data BLOB NOT NULL
@@ -553,7 +574,7 @@ ${v14Cols}
 ${packageTables}
 ${supplierTables}
 ${waTables}
-${v21Cols}
+${v22Cols}
 
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
@@ -659,17 +680,23 @@ export const MIGRATIONS: Record<number, string> = {
   // v20 (14 Nov 2026): a saved X-ray / lab request keeps its PDF (an attachment, so it reaches the clinic server and the
   // owner's page) and what it was made from (items, other tests, notes), to make a new one when the vet changes them.
   20: requestPdfCols,
-  // v21 (16 Nov 2026, change requests): prepaid packages, supplier purchases, automatic WhatsApp reminders.
-  21: `${packageTables}
+  // v21 (19 Nov 2026, change request): Dental and Vision tabs — eye colour on the pet, and the vet's chart findings.
+  21: `
+    ALTER TABLE pets ADD COLUMN eye_color TEXT;
+    ${chartMarks}
+  `,
+  // v22 (16 Nov 2026, change requests; numbered after Dental & Vision): prepaid packages, supplier purchases,
+  // automatic WhatsApp reminders.
+  22: `${packageTables}
 ${supplierTables}
 ${waTables}
-${v21Cols}`,
+${v22Cols}`,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'pet_chart_marks',
   'package_types', 'pet_packages', 'package_uses', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments', 'wa_messages', 'audit_log',
 ] as const;
 

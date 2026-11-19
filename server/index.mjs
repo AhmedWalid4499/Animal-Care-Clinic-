@@ -311,7 +311,7 @@ async function api(req, res, url) {
       return res.end(bytes);
     }
   }
-  // Automatic WhatsApp reminders (schema v21, server/whatsapp.mjs): status, "Send due reminders now", a test (Admin only).
+  // Automatic WhatsApp reminders (schema v22, server/whatsapp.mjs): status, "Send due reminders now", a test (Admin only).
   if (p.startsWith('/api/whatsapp/')) {
     if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
     if (p === '/api/whatsapp/status' && req.method === 'GET') return send(res, 200, await waStatus(pool, s.clinicId));

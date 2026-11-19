@@ -5,9 +5,9 @@ import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 
 // drugs: the dose calculator's list (doses decide what the calculator says), so only the Admin edits it.
 // expenses: the clinic's own spending (rent, salaries…), Admin only like the reports that use it.
-// package_types (the package catalogue and its prices) and suppliers / purchases / supplier payments (schema v21): Admin.
+// package_types (the package catalogue and its prices) and suppliers / purchases / supplier payments (schema v22): Admin.
 const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'expenses', 'package_types', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments']);
-const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates', 'lab_results', 'admissions', 'care_tasks', 'test_requests']);
+const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'treatment_templates', 'lab_results', 'admissions', 'care_tasks', 'test_requests', 'pet_chart_marks']);
 // In-patients: assistants tick a care task done or skipped (with a note), nothing else on the ward.
 const ASSISTANT_TASK_COLS = new Set(['status', 'done_at', 'done_by', 'note', 'updated_at']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
@@ -49,9 +49,9 @@ export function refuse(role, change, before, userId) {
     if (!Object.keys(cols).every((c) => FOUND_COLS.has(c))) return 'only the handled status of a found report can change';
     return null;
   }
-  // Automatic WhatsApp (schema v21): the log is written by the clinic server when it sends; devices only read it.
+  // Automatic WhatsApp (schema v22): the log is written by the clinic server when it sends; devices only read it.
   if (tbl === 'wa_messages') return 'WhatsApp messages are recorded by the clinic server';
-  // Prepaid packages (schema v21): anyone at the desk may sell one (it comes with its invoice) and record a session used.
+  // Prepaid packages (schema v22): anyone at the desk may sell one (it comes with its invoice) and record a session used.
   // Afterwards a sold package only changes by an Admin (cancel), apart from its note; a used session only changes to
   // VOID (undo), by an Admin or a Doctor.
   if (tbl === 'pet_packages' && before && role !== 'ADMIN' && !Object.keys(cols).every((c) => PACKAGE_DESK_COLS.has(c))) return 'changing a sold package is for admins';

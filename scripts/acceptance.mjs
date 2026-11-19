@@ -29,7 +29,7 @@ fs.mkdirSync(path.join(out, 'rtl'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-data-'));
 const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-export-'));
 const dbFile = path.join(dataDir, 'clinic.sqlite');
-const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'package_types', 'pet_packages', 'package_uses', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments', 'wa_messages', 'audit_log'];
+const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'pet_chart_marks', 'package_types', 'pet_packages', 'package_uses', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments', 'wa_messages', 'audit_log'];
 const SQL = await initSqlJs();
 // The schema version a fresh or upgraded database must reach (src/db/schema.ts).
 const CURRENT_SCHEMA = fs.readFileSync('src/db/schema.ts', 'utf8').match(/SCHEMA_VERSION = (\d+)/)[1];
@@ -439,7 +439,7 @@ async function pdfOf(hash, name, size = 'A5', sel) {
   const routes = [
     ['dashboard', '#/'], ['owners', '#/owners'], ['owner-new', '#/owners/new'], ['owner-detail', `#/owners/${ownerId}`],
     ['pet-new', `#/owners/${ownerId}/pets/new`], ['pet-timeline', `#/pets/${petId}?tab=timeline`], ['pet-vaccinations', `#/pets/${petId}?tab=vaccinations`],
-    ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-edit', `#/pets/${petId}/edit`],
+    ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-dental', `#/pets/${petId}?tab=dental`], ['pet-vision', `#/pets/${petId}?tab=vision`], ['pet-edit', `#/pets/${petId}/edit`],
     ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
     ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`],
     ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`],
@@ -524,7 +524,10 @@ await app.close();
   db.run('ALTER TABLE pets DROP COLUMN tag_token');
   // …nor the physical examination on visits (v19).
   for (const c of ['bp_systolic', 'bp_diastolic', 'mucous_membrane', 'eyes', 'skin_coat', 'glands', 'glands_note', 'anal_glands', 'nails', 'fleas_ticks']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
-  // …nor prepaid packages, suppliers and purchases, automatic WhatsApp (schema v21; stock_moves.purchase_id went with stock above).
+  // …nor the Dental / Vision charts (v21).
+  db.run('DROP TABLE pet_chart_marks');
+  db.run('ALTER TABLE pets DROP COLUMN eye_color');
+  // …nor prepaid packages, suppliers and purchases, automatic WhatsApp (schema v22; stock_moves.purchase_id went with stock above).
   for (const t of ['package_uses', 'pet_packages', 'package_types', 'purchase_items', 'supplier_payments', 'purchases', 'suppliers', 'wa_messages']) db.run(`DROP TABLE ${t}`);
   db.run('ALTER TABLE owners DROP COLUMN wa_opt_out');
   for (const c of ['wa_auto', 'wa_auto_kinds', 'wa_auto_hour']) db.run(`ALTER TABLE clinic_settings DROP COLUMN ${c}`);

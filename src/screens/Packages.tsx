@@ -2,7 +2,7 @@
 // of 3 vaccines + deworming — and each session used is ticked off. The Admin keeps the package list (Invoices & prices →
 // Packages); anyone at the desk sells one from the pet's record (an invoice for the price is made, the payment is taken
 // on it as usual) and records a session used, from the pet's record or on the visit form. Data: package_types,
-// pet_packages, package_uses (schema v21, src/db/schema.ts).
+// pet_packages, package_uses (schema v22, src/db/schema.ts).
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';

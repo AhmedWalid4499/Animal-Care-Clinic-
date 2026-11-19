@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from './core';
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
-  Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
+  Appointment, ApptStatus, Attachment, AttachmentKind, ChartKind, ChartMark, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
   Admission, CareTask, CareTaskStatus, Consent, PackageItem, PackageType, PetPackage, PackageUse, Purchase, PurchaseItem, Supplier, SupplierPayment, WaMessage, Drug, ExamFields, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 import { EXAM_KEYS, ROLES, highestRole, userRoles } from './types';
@@ -187,7 +187,7 @@ export function setOwnerStatus(id: string, status: 'ACTIVE' | 'ARCHIVED') {
   tx(() => update('owners', id, { status }));
 }
 
-// ---------------------------------------------------------------- owner page (Phase 6)
+// ---------------------------------------------------------------- owner page (change request 19 Nov)
 /** 128 random bits, URL-safe: the secret part of the owner page link. Unguessable, so the link is the key. */
 function newPortalToken(): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -273,6 +273,31 @@ export function microchipTaken(no: string, excludeId?: string) {
 }
 export function setPetStatus(id: string, status: PetStatus) {
   tx(() => update('pets', id, { status, deceased_at: status === 'DECEASED' ? today() : null }));
+}
+
+// ---------------------------------------------------------------- dental & vision charts (change request 19 Nov)
+export const petChartMarks = (petId: string, chart?: ChartKind) =>
+  all<ChartMark>(
+    `SELECT m.*, u.name updated_by_name FROM pet_chart_marks m LEFT JOIN users u ON u.id = m.updated_by
+     WHERE m.pet_id = ? ${chart ? 'AND m.chart = ?' : ''} ORDER BY m.chart, m.part`,
+    chart ? [petId, chart] : [petId],
+  );
+export interface ChartMarkInput { conditions: string[]; severity: number | null; shade: string | null; notes: string | null }
+/** Save the vet's finding for one tooth / eye part. "Back to normal" saves empty values; the row is never deleted. */
+export function saveChartMark(petId: string, chart: ChartKind, part: string, d: ChartMarkInput, userId: string | null) {
+  const id = `${petId}:${chart}:${part}`;
+  const conditions = d.conditions.filter(Boolean);
+  const values: Record<string, unknown> = {
+    conditions: conditions.length ? conditions.join(',') : null,
+    severity: conditions.length && d.severity ? d.severity : null,
+    shade: blank(d.shade),
+    notes: blank(d.notes),
+    updated_by: userId,
+  };
+  tx(() => {
+    if (get('SELECT 1 FROM pet_chart_marks WHERE id = ?', [id])) update('pet_chart_marks', id, values);
+    else insert('pet_chart_marks', { id, pet_id: petId, chart, part, ...values });
+  });
 }
 
 export interface PetOption { id: string; name: string; species: string; owner_id: string; owner_name: string; owner_phone: string; owner_code?: string | null; status: string }
@@ -399,7 +424,7 @@ export interface VisitInput {
   exam?: ExamFields;
   /** Heart rate (/min) of a visit recorded without a pre-diagnosis; with one, it comes in `intake`. */
   heart_rate?: number | null;
-  /** Prepaid package sessions used at this visit (schema v21). */
+  /** Prepaid package sessions used at this visit (schema v22). */
   package_uses?: { pet_package_id: string; item_key: string }[];
 }
 
@@ -515,7 +540,7 @@ export function saveVisit(d: VisitInput, id?: string): string {
       else insert('appointments', { pet_id: d.pet_id, owner_id: pet.owner_id, scheduled_at: d.follow_up_at, duration_min: 20, type: 'FOLLOW_UP', status: 'SCHEDULED' });
     }
 
-    // Prepaid package sessions used at this visit (schema v21).
+    // Prepaid package sessions used at this visit (schema v22).
     for (const u of d.package_uses ?? []) recordPackageUse(u.pet_package_id, u.item_key, visitId, getActor(), d.visited_at);
 
     if (d.appointment_id) update('appointments', d.appointment_id, { status: 'DONE', visit_id: visitId });
@@ -826,7 +851,7 @@ export function revenueByMonth(month: string, n = 12): { month: string; invoiced
     const r = at.get(e.spent_at.slice(0, 7));
     if (r) r.spent += e.amount;
   }
-  // Payments to suppliers (schema v21) are money spent too, dated by local day like expenses.
+  // Payments to suppliers (schema v22) are money spent too, dated by local day like expenses.
   for (const e of all<{ paid_at: string; amount: number }>("SELECT paid_at, amount FROM supplier_payments WHERE status = 'ACTIVE' AND paid_at >= ? AND paid_at < ?", [`${first}-01`, `${monthAdd(month, 1)}-01`])) {
     const r = at.get(e.paid_at.slice(0, 7));
     if (r) r.spent += e.amount;
@@ -1287,7 +1312,7 @@ export function openBalance(): { n: number; due: number } {
 }
 
 
-// ---------------------------------------------------------------- prepaid packages (schema v21, 16 Nov 2026 change request)
+// ---------------------------------------------------------------- prepaid packages (schema v22, 16 Nov 2026 change request)
 /** A package's lines from its JSON; bad or missing JSON = no lines. */
 export function packageItems(json: string | null | undefined): PackageItem[] {
   try {
@@ -1388,7 +1413,7 @@ export function cancelPetPackage(id: string, note: string) {
   tx(() => update('pet_packages', id, { status: 'CANCELLED', notes: blank(note) }));
 }
 
-// ---------------------------------------------------------------- suppliers and purchases (schema v21, Admin)
+// ---------------------------------------------------------------- suppliers and purchases (schema v22, Admin)
 export const listSuppliers = (activeOnly = false) =>
   all<Supplier>(`SELECT * FROM suppliers ${activeOnly ? 'WHERE is_active = 1' : ''} ORDER BY is_active DESC, name COLLATE NOCASE`);
 export const getSupplier = (id: string) => get<Supplier>('SELECT * FROM suppliers WHERE id = ?', [id]);
@@ -1521,7 +1546,7 @@ export const supplierPaymentsBetween = (fromDate: string, toDate: string) =>
 /** Total the clinic owes all its suppliers. */
 export const totalOwedToSuppliers = () => supplierBalances().reduce((s, r) => s + Math.max(0, r.owed), 0);
 
-// ---------------------------------------------------------------- automatic WhatsApp (schema v21)
+// ---------------------------------------------------------------- automatic WhatsApp (schema v22)
 /** The clinic server's log of automatic WhatsApp messages, newest first. */
 export const waLog = (limit = 100) =>
   all<WaMessage & { owner_name: string | null; pet_name: string | null }>(

@@ -97,7 +97,7 @@ const pushService = https.createServer({ key: fs.readFileSync(path.join(certDir,
 });
 await new Promise((r) => pushService.listen(PUSH_PORT, '127.0.0.1', r));
 
-// A fake WhatsApp Business Cloud API (graph.facebook.com) for the automatic reminders (schema v21). Every server this
+// A fake WhatsApp Business Cloud API (graph.facebook.com) for the automatic reminders (schema v22). Every server this
 // test starts knows it; nothing is sent until an Admin switches the reminders on. Numbers ending in 9999 are refused.
 const WA_PORT = 8792;
 const waSent = [];
@@ -716,7 +716,7 @@ await step('expenses: admin only', async () => {
     `assistant: ${desk.rejected[0]?.reason ?? 'ACCEPTED'}; doctor: ${doc.rejected[0]?.reason ?? 'ACCEPTED'}; admin: ${admin.rejected.length ? 'REFUSED' : 'accepted'}`);
 });
 
-// ---------------------------------------------------------------- schema v21: packages, suppliers, automatic WhatsApp
+// ---------------------------------------------------------------- schema v22: packages, suppliers, automatic WhatsApp
 await step('packages and suppliers: who may change them', async () => {
   // The package list and everything about suppliers is the Admin's. Anyone sells a package and records a session used;
   // a sold package then changes only by an Admin (cancel); a used session only to VOID, by a Doctor or Admin.

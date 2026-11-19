@@ -407,6 +407,67 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
   .sheet.a5 { width: 148mm; max-width: none; }
 }
 
+/* ---------- Dental & Vision charts (change request 19 Nov) ---------- */
+.clin-chart { margin-top: 14px; }
+.clin-head { align-items: flex-end; gap: 12px; }
+.clin-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; margin-top: 12px; }
+.clin-stage { position: relative; }
+.clin-stage svg { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+svg.mouth { max-height: 680px; }
+.clin-stage .part { cursor: pointer; outline: none; }
+.clin-stage .part:focus-visible { outline: 2px solid var(--accent); }
+.svg-lbl { font: 600 12px var(--font); fill: var(--ink-3); }
+.svg-num { font: 600 8.5px var(--font); fill: var(--ink-3); pointer-events: none; }
+.svg-num.on { fill: var(--accent); font-size: 10px; }
+.eye-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.eye-pair figure { margin: 0; min-width: 0; }
+.clin-stage.eyes figcaption { text-align: center; font-weight: 600; font-size: 13px; color: var(--ink-2); margin: 6px 0; }
+.eye-svg { border-radius: var(--radius); }
+.eye-svg .part.sel > *:not(g) { filter: drop-shadow(0 0 2px var(--accent)); }
+.eye-parts { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.eye-parts button { display: flex; width: 100%; align-items: center; gap: 8px; justify-content: space-between; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 7px 4px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: start; }
+.eye-parts button:hover { background: var(--bg-2); }
+.eye-parts button.on { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.eye-parts .badge { white-space: normal; text-align: end; }
+.hovercard { position: absolute; z-index: 15; width: 260px; pointer-events: none; background: var(--bg); border: 1px solid var(--rule-2); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.16); padding: 10px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.hovercard p { margin: 2px 0; }
+.hovercard dl, .facts-dl { margin: 2px 0; display: grid; gap: 2px; }
+.hovercard dl div, .facts-dl div { display: flex; gap: 6px; font-size: 12px; }
+.hovercard dt, .facts-dl dt { color: var(--ink-3); min-width: 88px; }
+.hovercard dd, .facts-dl dd { margin: 0; font-weight: 600; }
+.hc-notes { border-inline-start: 2px solid var(--accent); padding-inline-start: 8px; white-space: pre-wrap; }
+.insp-col { position: sticky; top: 12px; }
+.inspector { border-inline-start: 1px solid var(--rule); padding-inline-start: 18px; }
+.inspector header { padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.inspector header b { font-size: 16px; }
+.insp-sec { margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
+.insp-sec .lbl { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.insp-sec textarea { min-height: 70px; }
+.fchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fchip { border: 1px solid var(--rule-2); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.fchip:hover:not(:disabled) { border-color: var(--accent); }
+.fchip.on { background: var(--warn-soft); border-color: var(--warn); color: var(--ink); font-weight: 600; }
+.fchip.ok.on { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+.fchip:disabled, .swatch:disabled, .inspector .seg button:disabled { cursor: default; opacity: .75; }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.swatch { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule-2); background: var(--bg); border-radius: var(--radius); padding: 3px 8px 3px 4px; font: inherit; font-size: 12px; color: var(--ink); cursor: pointer; }
+.swatch i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); display: inline-block; }
+.swatch.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); font-weight: 600; }
+.findings { margin-top: 22px; }
+.findings h3 { font-size: 15px; margin: 0 0 4px; }
+.list > li.sel { background: var(--accent-soft); }
+.btn.on { background: var(--accent-soft); }
+.eye-swatch { width: 26px; height: 26px; flex: none; border-radius: 50%; border: 1px solid var(--rule-2); background-clip: padding-box; }
+.eye-swatch[data-odd] { background: linear-gradient(90deg, #5f9fd8 50%, #c98614 50%) !important; }
+.row.nowrap { flex-wrap: nowrap; }
+@media (max-width: 900px) {
+  .clin-grid { grid-template-columns: minmax(0, 1fr); }
+  .insp-col { position: static; }
+  .inspector { border-inline-start: 0; padding-inline-start: 0; border-top: 1px solid var(--rule); padding-top: 12px; }
+  .eye-pair { grid-template-columns: minmax(0, 1fr); }
+  .hovercard { display: none; }
+}
+
 /* ---------- print: A5 receipt / pet summary ---------- */
 .print-only { display: none; }
 .sheet { background: #fff; color: #111; }
@@ -630,7 +691,7 @@ b.neg { color: var(--bad); }
 .menu button:hover, .menu button:focus-visible { background: var(--bg-2); }
 .menu button svg { width: 16px; height: 16px; color: var(--ink-3); }
 
-/* Owner page (Phase 6): QR code section on Owner detail, and the printable QR card */
+/* Owner page (change request 19 Nov): QR code section on Owner detail, and the printable QR card */
 .owner-page-body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; margin-top: 14px; }
 .owner-page-empty { margin-top: 10px; }
 .owner-page-empty p { margin: 0 0 12px; max-width: 60ch; }
@@ -886,7 +947,7 @@ a.owner-code:hover { text-decoration: underline; }
 .open-elsewhere p { margin: 0; color: var(--ink-2); }
 .open-elsewhere .btn { min-height: 44px; padding-inline: 22px; }
 
-/* Prepaid packages and supplier purchases (schema v21, 16 Nov 2026) */
+/* Prepaid packages and supplier purchases (schema v22, 16 Nov 2026) */
 .repeat.pkg-line { grid-template-columns: 2fr 90px 1.6fr auto; }
 .repeat.buy-line { grid-template-columns: 2fr 72px 110px 1fr 1fr 90px auto; }
 @media (max-width: 760px) { .repeat.pkg-line, .repeat.buy-line { grid-template-columns: 1fr 1fr; } }

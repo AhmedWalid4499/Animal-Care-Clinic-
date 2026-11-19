@@ -116,7 +116,7 @@ export function VisitFormPage() {
   const prevWeight = useQuery(() => lastWeight(petId), [petId]);
   const [tplPick, setTplPick] = useState(false);
   const [tplSave, setTplSave] = useState<string | null>(null);
-  // Prepaid package sessions this visit uses (schema v21), recorded with the visit; not part of the draft.
+  // Prepaid package sessions this visit uses (schema v22), recorded with the visit; not part of the draft.
   const [pkgPicks, setPkgPicks] = useState<PackagePick[]>([]);
   const usedHere = useQuery(() => (visitId ? visitPackageUses(visitId) : []), [visitId]);
 

@@ -15,7 +15,7 @@ export function ExpensesReport({ Stepper }: { Stepper: (p: { label: string; onPr
   const month = sp.get('month') || today().slice(0, 7);
   const go = (m: string) => setSp({ view: 'expenses', month: m }, { replace: true });
   const rows = useQuery(() => expensesBetween(`${month}-01`, `${monthAdd(month, 1)}-01`), [month]);
-  // Payments to suppliers (schema v21) are money spent too: shown here, entered under Stock → Suppliers.
+  // Payments to suppliers (schema v22) are money spent too: shown here, entered under Stock → Suppliers.
   const supplierPaid = useQuery(() => supplierPaymentsBetween(`${month}-01`, `${monthAdd(month, 1)}-01`), [month]);
   const supplierTotal = supplierPaid.reduce((s, r) => s + r.amount, 0);
   const [edit, setEdit] = useState<Partial<ExpenseRow> | null>(null);

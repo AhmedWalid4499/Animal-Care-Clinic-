@@ -1,7 +1,7 @@
 // Suppliers and purchases (16 Nov 2026, change request; Admin): who the clinic buys from, each delivery with what it
 // cost, and what is still owed. A purchase line for an item counted in stock restocks it (with its batch and expiry);
 // voiding the purchase takes it back out. Payments to suppliers are money spent in the monthly report, next to the
-// clinic's other expenses. Data: suppliers, purchases, purchase_items, supplier_payments (schema v21).
+// clinic's other expenses. Data: suppliers, purchases, purchase_items, supplier_payments (schema v22).
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
