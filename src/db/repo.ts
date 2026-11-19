@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from './core';
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
-  Appointment, ApptStatus, Attachment, AttachmentKind, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
+  Appointment, ApptStatus, Attachment, AttachmentKind, ChartKind, ChartMark, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
   Admission, CareTask, CareTaskStatus, Consent, Drug, ExamFields, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 import { EXAM_KEYS, ROLES, highestRole, userRoles } from './types';
@@ -185,7 +185,7 @@ export function setOwnerStatus(id: string, status: 'ACTIVE' | 'ARCHIVED') {
   tx(() => update('owners', id, { status }));
 }
 
-// ---------------------------------------------------------------- owner page (Phase 6)
+// ---------------------------------------------------------------- owner page (change request 19 Nov)
 /** 128 random bits, URL-safe: the secret part of the owner page link. Unguessable, so the link is the key. */
 function newPortalToken(): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -271,6 +271,31 @@ export function microchipTaken(no: string, excludeId?: string) {
 }
 export function setPetStatus(id: string, status: PetStatus) {
   tx(() => update('pets', id, { status, deceased_at: status === 'DECEASED' ? today() : null }));
+}
+
+// ---------------------------------------------------------------- dental & vision charts (change request 19 Nov)
+export const petChartMarks = (petId: string, chart?: ChartKind) =>
+  all<ChartMark>(
+    `SELECT m.*, u.name updated_by_name FROM pet_chart_marks m LEFT JOIN users u ON u.id = m.updated_by
+     WHERE m.pet_id = ? ${chart ? 'AND m.chart = ?' : ''} ORDER BY m.chart, m.part`,
+    chart ? [petId, chart] : [petId],
+  );
+export interface ChartMarkInput { conditions: string[]; severity: number | null; shade: string | null; notes: string | null }
+/** Save the vet's finding for one tooth / eye part. "Back to normal" saves empty values; the row is never deleted. */
+export function saveChartMark(petId: string, chart: ChartKind, part: string, d: ChartMarkInput, userId: string | null) {
+  const id = `${petId}:${chart}:${part}`;
+  const conditions = d.conditions.filter(Boolean);
+  const values: Record<string, unknown> = {
+    conditions: conditions.length ? conditions.join(',') : null,
+    severity: conditions.length && d.severity ? d.severity : null,
+    shade: blank(d.shade),
+    notes: blank(d.notes),
+    updated_by: userId,
+  };
+  tx(() => {
+    if (get('SELECT 1 FROM pet_chart_marks WHERE id = ?', [id])) update('pet_chart_marks', id, values);
+    else insert('pet_chart_marks', { id, pet_id: petId, chart, part, ...values });
+  });
 }
 
 export interface PetOption { id: string; name: string; species: string; owner_id: string; owner_name: string; owner_phone: string; owner_code?: string | null; status: string }

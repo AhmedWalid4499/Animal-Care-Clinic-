@@ -39,6 +39,15 @@ export const EXAM_KEYS: (keyof ExamFields)[] = ['bp_systolic', 'bp_diastolic', '
 export type VisitStage = 'WAITING' | 'WITH_VET' | 'DONE';
 export const ROLES: Role[] = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
 export type Locale = 'ar' | 'en';
+/** Eye colour chosen when the pet is created (dogs and cats); drawn on the Vision tab. ODD = two different colours. */
+export const EYE_COLORS = ['DARK_BROWN', 'BROWN', 'AMBER', 'HAZEL', 'GOLD', 'COPPER', 'GREEN', 'BLUE', 'ODD'] as const;
+export type EyeColor = (typeof EYE_COLORS)[number];
+export type ChartKind = 'DENTAL' | 'VISION';
+/** The vet's current finding on one part of a pet's dental or eye chart (pet_chart_marks). */
+export interface ChartMark {
+  id: string; pet_id: string; chart: ChartKind; part: string; conditions: string | null; severity: number | null;
+  shade: string | null; notes: string | null; updated_by: string | null; updated_at: string; updated_by_name?: string | null;
+}
 
 export interface User {
   id: string; name: string; email: string; password_hash: string; role: Role; locale: Locale; is_active: number; notify_off?: string | null; must_change_password?: number;
@@ -66,7 +75,7 @@ export interface Owner {
 }
 export interface Pet {
   id: string; owner_id: string; name: string; species: Species; breed: string | null; sex: Sex; is_neutered: number;
-  date_of_birth: string | null; dob_is_estimate: number; color: string | null; microchip_no: string | null;
+  date_of_birth: string | null; dob_is_estimate: number; color: string | null; eye_color?: EyeColor | null; microchip_no: string | null;
   photo_url: string | null; status: PetStatus; deceased_at: string | null; notes: string | null;
   /** Comma-separated ALERT_FLAGS, and free text (e.g. "penicillin"). Schema v6. */
   alert_flags: string | null; alert_note: string | null;
