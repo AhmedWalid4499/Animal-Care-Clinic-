@@ -168,7 +168,8 @@ function ToothGlyph({ p, a, look, natural, uid, sel, hov }: { p: Placed; a: Anim
   const ghost = p.slot.grown === 0;
   const fill = TOOTH_SHADES[look.shade ?? ''] ?? TOOTH_SHADES[conditionShade(c) ?? ''] ?? natural;
   const clip = `${uid}-c${t.id}`;
-  const outline = sel ? 'var(--accent)' : hov ? 'color-mix(in srgb, var(--accent) 70%, transparent)' : undefined;
+  // No color-mix() here: the Windows 7 / 32-bit build (Chromium 108) would drop the stroke. Opacity does the same.
+  const outline = sel || hov ? 'var(--accent)' : undefined;
   return (
     <g transform={`matrix(${p.m.map((v) => v.toFixed(4)).join(' ')})`}>
       <clipPath id={clip}><path d={shape} /></clipPath>
@@ -217,7 +218,7 @@ function ToothGlyph({ p, a, look, natural, uid, sel, hov }: { p: Placed; a: Anim
           {c.includes('RETAINED') && <path d={shape} transform="scale(1.3)" fill="none" stroke="#d98b1f" strokeWidth={1} strokeDasharray="2 1.6" />}
         </>
       )}
-      {outline && <path d={shape} transform={sel ? 'scale(1.18)' : 'scale(1.1)'} fill="none" stroke={outline} strokeWidth={sel ? 2.2 : 1.6} />}
+      {outline && <path d={shape} transform={sel ? 'scale(1.18)' : 'scale(1.1)'} fill="none" stroke={outline} strokeOpacity={sel ? 1 : 0.7} strokeWidth={sel ? 2.2 : 1.6} />}
       {/* generous invisible hit area so small teeth are easy to point at */}
       <ellipse rx={Math.max(x, 6) + 2} ry={Math.max(y, 6) + 2} fill="transparent" />
     </g>
