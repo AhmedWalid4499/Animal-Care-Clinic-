@@ -49,7 +49,7 @@ After that, every merge to `main` deploys by itself, the same way the desktop ap
 
 The desktop app needs version 0.1.6 or later, which installs itself through auto-update.
 
-1. **First laptop: the one with the clinic's records.** On the sign-in screen, click **Connect to clinic server** (الاتصال بخادم العيادة), paste the `https://….up.railway.app` address, and click **Connect**. Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. This laptop uploads its records to the empty clinic.
+1. **First laptop: the one with the clinic's records.** On the sign-in screen, click **Connect to clinic server** (الاتصال بخادم العيادة), paste the server address (`https://app.animalcarecliniceg.com` once the domain is set up, see **Your own domain** below; before that the `https://….up.railway.app` address), and click **Connect**. Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`. This laptop uploads its records to the empty clinic.
    - The demo logins `waleed@clinic.local` / `assistant@clinic.local` are switched off on the server if they still have their default passwords.
 2. **Users.** On that laptop, open **Settings → Users** and add everyone with their own email and role (**Admin**, **Doctor** or **Assistant**).
 3. **Other laptops.** Click **Connect to clinic server**, paste the same address, and sign in with that person's own email. The laptop downloads the clinic's records.
@@ -110,14 +110,31 @@ The **Live check** job (`.github/workflows/live-check.yml`) looks at the real ad
 2. GitHub → the repository → **Settings → Secrets and variables → Actions** → **New repository secret**: `LIVE_EMAIL` and `LIVE_PASSWORD` with that user's email and password.
 3. **Actions → Live check → Run workflow** to try it now. The summary lists each check.
 
+## Your own domain: `app.animalcarecliniceg.com` (about 15 minutes, once)
+
+Ahmed bought `animalcarecliniceg.com` on 15 Nov 2026 (Cloudflare) and it went live on 16 Nov. The clinic server gets the address **`https://app.animalcarecliniceg.com`**. That leaves the bare `animalcarecliniceg.com` free for a clinic website later. No code changes: the server accepts any address.
+
+1. **Railway:** app service → **Settings** → **Networking** → **Custom Domain** → type `app.animalcarecliniceg.com`. If it asks for a port, keep the one it suggests (the same one the Railway address uses).
+2. Railway shows two records. Copy them exactly:
+   - a **CNAME**: name `app`, value something like `xxxxxxxx.up.railway.app`
+   - a **TXT**: name like `_railway-verify.app`, value a long code
+3. **At the shop where you bought the domain:** open its **DNS** page and add both records. Type only `app` (or `_railway-verify.app`) in the name field, not the full domain: the shop adds `.animalcarecliniceg.com` itself.
+   - **Cloudflare:** set the CNAME to **DNS only** (grey cloud, not orange). Otherwise Railway can't issue the certificate.
+4. Wait until Railway shows a green tick next to the domain. This usually takes a few minutes and sometimes up to an hour. Then open `https://app.animalcarecliniceg.com/health` in a browser. It should say `"ok":true`.
+5. **Live check:** GitHub → the repository → **Settings → Secrets and variables → Actions** → **Variables** tab → **New repository variable**: name `LIVE_URL`, value `https://app.animalcarecliniceg.com`. The morning check then also catches an expired domain or certificate.
+
+After that:
+- **Laptops:** nothing to do. The old `…up.railway.app` address keeps working alongside the new one, so laptops already connected keep syncing. New laptops connect with `https://app.animalcarecliniceg.com`. A laptop puts the address it is connected with in the clinic QR on printed documents and in owner-page links, so connected laptops keep printing the Railway address. Both addresses work.
+- **Phones:** a phone's installed app and its notifications belong to the address it was installed from. To move a phone to the new address, delete the old home-screen icon, follow **Phones** below with the new address, and turn notifications on again from the bell. Do this on a quiet day. Phones left on the old address keep working.
+- **Renewal:** keep **auto-renew** on at the shop. If the domain lapses, the new address stops working. The Railway address still works as a fallback.
+
 ## Phones
 
-1. On the phone, open `https://animal-care-clinic-production.up.railway.app` in **Chrome** (Android) or **Safari** (iPhone) and sign in.
+1. On the phone, open `https://app.animalcarecliniceg.com` in **Chrome** (Android) or **Safari** (iPhone) and sign in. (Before the domain has its green tick on Railway, use `https://animal-care-clinic-production.up.railway.app`.)
 2. **Android:** tap **Install the app** in the banner (or Chrome's ⋮ menu → **Install app**). **iPhone:** tap **Share** → **Add to Home Screen**.
 3. Open it from the home screen. It works without a connection once signed in, and the bell can turn on notifications for the phone.
 
 ## Later
 
 - **Handing it to Dr. Waleed:** Railway can transfer a project to another user. Add him as a member of the project, then click the three dots next to his name → **Transfer Ownership**. Both accounts need an active Hobby or Pro plan.
-- **Your own domain:** app service → **Settings** → **Networking** → custom domain. Railway shows a `CNAME` and a `TXT` record to add at your domain provider; both are required.
 - **Cost check:** Railway shows usage per service. Expect about $5–10/month at three laptops and one phone. Look again after the first month.

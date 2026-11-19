@@ -4,8 +4,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useApp, useQuery } from '../lib/app';
 import {
   addAttachment, getAttachmentBytes, getPet, getSettings, lastWeight, markVaccinationReminded, petAppointments, petAttachments,
-  petChartMarks, petVaccinations, petVisits, petWeights, visitInvoice,
-} from '../db/repo';
+  petChartMarks, petVaccinations, petVisits, petWeights, visitInvoice, petConsents, shownCode } from '../db/repo';
 import { DentalTab } from '../components/DentalChart';
 import { VisionTab } from '../components/EyeChart';
 import { splitConditions, toothById, type Animal } from '../lib/dental';
@@ -13,19 +12,26 @@ import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
 import { downloadAttachment, serverUrl } from '../sync/engine';
-import { Badge, Field, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Badge, Field, Icon, MenuButton, OwnerCode, PetAlerts, PetAvatar, SavePdfButton, StatusBadge, WaButton, SheetAddress } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { ExamSummary } from '../components/Exam';
+import { PetExamTab } from './ExamStats';
+import { LabsTab } from './Labs';
+import { isImage, useImages } from './Documents';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
+import { RxArchive } from '../components/RxArchive';
+import { RequestsTab } from '../components/RequestsTab';
+import { mimeOf } from '../lib/mime';
 
-type Tab = 'timeline' | 'vaccinations' | 'weight' | 'files' | 'dental' | 'vision';
-/** Dental and Vision (Phase 6 change request) are drawn for dogs and cats only. */
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'exam' | 'labs' | 'requests' | 'files' | 'dental' | 'vision';
+/** Dental and Vision (change request, 19 Nov 2026) are drawn for dogs and cats only. */
 const hasCharts = (species: string) => species === 'DOG' || species === 'CAT';
 
 export function PetRecord() {
   const { id = '' } = useParams();
   const [sp, setSp] = useSearchParams();
   const askedTab = (sp.get('tab') as Tab) || 'timeline';
-  const { t, fmt, canVisit, locale } = useApp();
+  const { t, fmt, canVisit, canIntake, locale } = useApp();
   const nav = useNavigate();
   const pet = useQuery(() => getPet(id), [id]);
   const settings = useQuery(getSettings);
@@ -33,7 +39,7 @@ export function PetRecord() {
   const upcoming = useQuery(() => petAppointments(id), [id]);
   if (!pet) return <div className="page">{t('common.notFound')}</div>;
   const age = pet.date_of_birth ? ageParts(pet.date_of_birth) : null;
-  const tabs: Tab[] = ['timeline', 'vaccinations', 'weight', 'files', ...(hasCharts(pet.species) ? (['dental', 'vision'] as Tab[]) : [])];
+  const tabs: Tab[] = ['timeline', 'vaccinations', 'prescriptions', 'weight', 'exam', 'labs', 'requests', 'files', ...(hasCharts(pet.species) ? (['dental', 'vision'] as Tab[]) : [])];
   const tab = tabs.includes(askedTab) ? askedTab : 'timeline';
 
   return (
@@ -43,16 +49,33 @@ export function PetRecord() {
           phone={pet.owner_whatsapp || pet.owner_phone}
           text={t('wa.pet', { owner: pet.owner_name, clinic: locale === 'ar' ? settings.name_ar : settings.name_en, pet: pet.name })}
         />
-        <button className="btn" onClick={() => nav(`/pets/${id}/print`)}><Icon name="print" /> {t('petRecord.printSummary')}</button>
+        {/* Printouts and forms under one button (10 Nov 2026): the header had seven buttons in a row. */}
+        <MenuButton
+          icon="print"
+          label={t('petRecord.printForms')}
+          items={[
+            { icon: 'print', label: t('petRecord.printSummary'), onClick: () => nav(`/pets/${id}/print`) },
+            { icon: 'print', label: t('certificate.button'), onClick: () => nav(`/pets/${id}/certificate`) },
+            { icon: 'print', label: t('healthRecord.button'), onClick: () => nav(`/pets/${id}/health-record`) },
+            { icon: 'qr', label: t('tag.button'), onClick: () => nav(`/pets/${id}/tag`) },
+            ...(canVisit ? [
+              { icon: 'file', label: t('docs.reportButton'), onClick: () => nav(`/pets/${id}/report`) },
+              { icon: 'clipboard', label: t('xray.button'), onClick: () => nav(`/pets/${id}/xray-request`) },
+              { icon: 'clipboard', label: t('labReq.button'), onClick: () => nav(`/pets/${id}/lab-request`) },
+            ] : []),
+            ...(pet.status === 'ACTIVE' ? [{ icon: 'edit', label: t('consent.button'), onClick: () => nav(`/pets/${id}/consent/new`) }] : []),
+          ]}
+        />
         <button className="btn" onClick={() => nav(`/pets/${id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>
+        {canIntake && pet.status === 'ACTIVE' && (
+          <button className={`btn${canVisit ? '' : ' primary'}`} onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
+        )}
         {canVisit && pet.status === 'ACTIVE' && (
-          <>
-            <button className="btn" onClick={() => nav(`/pets/${id}/intake`)}><Icon name="clipboard" /> {t('nav.intake')}</button>
-            <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
-          </>
+          <button className="btn primary" onClick={() => nav(`/pets/${id}/visits/new`)}><Icon name="plus" /> {t('nav.newVisit')}</button>
         )}
       </PageHead>
 
+      <PetAlerts flags={pet.alert_flags} note={pet.alert_note} className="big" />
       <div className={`record ${pet.status !== 'ACTIVE' ? 'greyed' : ''}`} style={{ gridTemplateColumns: 'auto 1fr' }}>
         <PetAvatar photo={pet.photo_url} species={pet.species} />
         <div>
@@ -72,7 +95,7 @@ export function PetRecord() {
             {hasCharts(pet.species) && <div><span>{t('pets.eyeColor')}</span><b>{pet.eye_color ? t(`eyeColor.${pet.eye_color}`) : '—'}</b></div>}
             <div><span>{t('pets.microchip')}</span><b className="ltr num">{pet.microchip_no || '—'}</b></div>
             <div><span>{t('pets.lastWeight')}</span><b className="num">{weight ? `${fmt.num(weight.weight_kg, 2)} ${t('common.kg')}` : '—'}</b></div>
-            <div><span>{t('pets.owner')}</span><b><a href={`#/owners/${pet.owner_id}`}>{pet.owner_name}</a> <span className="ltr muted small">{pet.owner_phone}</span></b></div>
+            <div><span>{t('pets.owner')}</span><b><a href={`#/owners/${pet.owner_id}`}>{pet.owner_name}</a> <OwnerCode code={pet.owner_code} ownerId={pet.owner_id} /> <span className="ltr muted small">{pet.owner_phone}</span></b></div>
           </div>
           {pet.notes && <p className="note" style={{ marginTop: 12, marginBottom: 0 }}>{pet.notes}</p>}
           {upcoming.length > 0 && (
@@ -93,7 +116,11 @@ export function PetRecord() {
       <div key={tab} className="tab-enter">
         {tab === 'timeline' && <Timeline petId={id} />}
         {tab === 'vaccinations' && <Vaccinations petId={id} />}
+        {tab === 'prescriptions' && <RxArchive petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
+        {tab === 'exam' && <PetExamTab petId={id} />}
+        {tab === 'labs' && <LabsTab petId={id} />}
+        {tab === 'requests' && <RequestsTab petId={id} active={pet.status === 'ACTIVE'} />}
         {tab === 'files' && <Files petId={id} />}
         {tab === 'dental' && <DentalTab pet={pet} />}
         {tab === 'vision' && <VisionTab pet={pet} />}
@@ -103,7 +130,7 @@ export function PetRecord() {
 }
 
 function Timeline({ petId }: { petId: string }) {
-  const { t, fmt, canVisit } = useApp();
+  const { t, fmt, canVisit, canIntake } = useApp();
   const nav = useNavigate();
   const visits = useQuery(() => petVisits(petId), [petId]);
   if (!visits.length) return <p className="empty">{t('petRecord.noVisits')}</p>;
@@ -128,7 +155,8 @@ function Timeline({ petId }: { petId: string }) {
                 ) : (
                   <button className="btn ghost sm" onClick={() => nav(`/invoices/new?visit=${v.id}`)}><Icon name="receipt" /> {t('petRecord.createInvoice')}</button>
                 )}
-                {canVisit && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
+                {v.prescriptions.length > 0 && <button className="btn ghost sm" onClick={() => nav(`/visits/${v.id}/prescription`)}><Icon name="print" /> {t('rxSheet.button')}</button>}
+                {(canVisit || (canIntake && v.stage === 'WAITING')) && <button className="btn ghost sm" onClick={() => nav(v.stage === 'WAITING' ? `/visits/${v.id}/intake` : `/visits/${v.id}/edit`)}><Icon name="edit" /> {t('common.edit')}</button>}
               </div>
               {v.complaint && <p><span className="muted">{t('visits.complaint')}:</span> {v.complaint}</p>}
               {v.intake_at && (v.history || v.intake_notes) && (
@@ -144,6 +172,7 @@ function Timeline({ petId }: { petId: string }) {
                 {v.resp_rate != null && <span>🫁 {v.resp_rate}/min</span>}
                 {v.follow_up_at && <span>↻ {t('visits.followUp')}: {fmt.dateTime(v.follow_up_at)}</span>}
               </div>
+              <ExamSummary v={v} />
               {v.treatment_notes && <p className="small">{v.treatment_notes}</p>}
               {(v.prescriptions.length > 0 || v.vaccinations.length > 0) && (
                 <ul className="rx">
@@ -252,9 +281,29 @@ function WeightChart({ petId }: { petId: string }) {
   );
 }
 
+/** A document icon with its type on a coloured band, as file managers show them: red PDF, blue DOC, green XLS. */
+function DocIcon({ name }: { name: string }) {
+  const ext = (name.split('.').pop() ?? '').toLowerCase();
+  const label = ext === 'jpeg' ? 'JPG' : ext === 'docx' ? 'DOC' : ext === 'xlsx' ? 'XLS' : ext.slice(0, 4).toUpperCase() || 'FILE';
+  const colour = ext === 'pdf' ? '#d93025' : /^docx?$/.test(ext) ? '#2b579a' : /^xlsx?$|^csv$/.test(ext) ? '#217346' : /^(png|jpe?g|gif|webp|heic|bmp)$/.test(ext) ? '#8e44ad' : ext === 'dcm' ? '#2e6f73' : '#6b7280';
+  return (
+    <svg className="doc-icon" viewBox="0 0 48 60" aria-hidden="true">
+      <path d="M4 2h28l12 12v42a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2z" fill="var(--bg)" stroke="var(--rule-2)" strokeWidth="1.5" />
+      <path d="M32 2v10a2 2 0 002 2h10" fill="none" stroke="var(--rule-2)" strokeWidth="1.5" />
+      <rect x="0" y="34" width="40" height="15" rx="2" fill={colour} />
+      <text x="20" y="45" textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff" fontFamily="system-ui, sans-serif">{label}</text>
+    </svg>
+  );
+}
+
 function Files({ petId }: { petId: string }) {
   const { t, fmt, user, toast } = useApp();
   const files = useQuery(() => petAttachments(petId), [petId]);
+  // Previews only for pictures already on this computer (no downloads just to draw a tile).
+  const localImages = files.filter((a) => isImage(a) && !!get('SELECT 1 FROM attachment_blobs WHERE attachment_id = ?', [a.id]));
+  const thumbs = useImages(localImages, true);
+  const consents = useQuery(() => petConsents(petId), [petId]);
+  const nav = useNavigate();
   const [kind, setKind] = useState<AttachmentKind>('LAB');
   const [fetching, setFetching] = useState<string | null>(null);
   const upload = async () => {
@@ -269,6 +318,19 @@ function Files({ petId }: { petId: string }) {
   };
   return (
     <div>
+      {consents.length > 0 && (
+        <section className="section consents">
+          <header><h2>✍ {t('consent.signedForms')}</h2><span className="count">{consents.length}</span></header>
+          <ul className="list">
+            {consents.map((c) => (
+              <li key={c.id} className="link" onClick={() => nav(`/consents/${c.id}`)}>
+                <div className="main-col"><b>{c.procedure}</b><div className="sub">{fmt.dateTime(c.signed_at)} · {c.signer_name}</div></div>
+                <Icon name="print" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="row" style={{ margin: '14px 0' }}>
         <Field label={t('petRecord.kind')}>
           <select value={kind} onChange={(e) => setKind(e.target.value as AttachmentKind)}>
@@ -277,8 +339,9 @@ function Files({ petId }: { petId: string }) {
         </Field>
         <button className="btn primary" style={{ alignSelf: 'flex-end' }} onClick={upload}><Icon name="file" /> {t('petRecord.upload')}</button>
       </div>
-      <ul className="list">
-        {files.length === 0 && <li className="empty">{t('petRecord.noFiles')}</li>}
+      {files.length === 0 && <p className="empty">{t('petRecord.noFiles')}</p>}
+      {/* Files side by side as document tiles (like large icons in Windows), not one wide row each (14 Nov 2026). */}
+      <ul className="file-grid">
         {files.map((a) => {
           // Added on another device: the bytes come from the clinic server the first time it is opened here.
           const here = !!get('SELECT 1 FROM attachment_blobs WHERE attachment_id = ?', [a.id]);
@@ -293,16 +356,17 @@ function Files({ petId }: { petId: string }) {
             else toast(t('petRecord.fileNotHere'));
           };
           return (
-            <li key={a.id} className="link" onClick={() => void open()}>
-              <Icon name="file" />
-              <div className="main-col">
-                <b>{a.file_name}</b>
-                <div className="sub">
-                  {t(`attachmentKind.${a.kind}`)} · {fmt.date(a.created_at)} · {Math.max(1, Math.round((a.size_bytes ?? 0) / 1024))} KB
-                  {!here && <> · ☁ {t('petRecord.onServer')}</>}
-                </div>
-              </div>
-              <span className="btn sm">{fetching === a.id ? '…' : t('common.open')}</span>
+            <li key={a.id}>
+              <button type="button" className="file-tile" title={a.file_name} onClick={() => void open()}>
+                <span className="file-thumb">
+                  {isImage(a) && thumbs[a.id] ? <img src={thumbs[a.id]!} alt="" /> : <DocIcon name={a.file_name} />}
+                  {fetching === a.id && <span className="file-busy">…</span>}
+                  {!here && <span className="file-cloud" title={t('petRecord.onServer')}>☁</span>}
+                </span>
+                <span className="file-name" dir="auto">{a.file_name}</span>
+                <span className="file-sub">{t(`attachmentKind.${a.kind}`)} · {fmt.date(a.created_at)}</span>
+                <span className="file-sub" dir="ltr">{Math.max(1, Math.round((a.size_bytes ?? 0) / 1024))} KB</span>
+              </button>
             </li>
           );
         })}
@@ -311,10 +375,6 @@ function Files({ petId }: { petId: string }) {
   );
 }
 
-function mimeOf(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return ({ pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', txt: 'text/plain', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dcm: 'application/dicom' } as Record<string, string>)[ext] ?? 'application/octet-stream';
-}
 
 /** Print / PDF summary of the pet record (A5, print CSS). */
 export function PetSummaryPrint() {
@@ -327,7 +387,7 @@ export function PetSummaryPrint() {
   const settings = useQuery(getSettings);
   const nav = useNavigate();
   if (!pet) return null;
-  // Dental and eye findings that are not "normal" (Phase 6), one line each.
+  // Dental and eye findings that are not "normal" (change request 19 Nov), one line each.
   const findings = hasCharts(pet.species)
     ? marks.filter((m) => m.conditions || m.notes).map((m) => {
       let where: string;
@@ -353,13 +413,14 @@ export function PetSummaryPrint() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={pet.owner_name} pet={pet.name} doc={t('petRecord.summaryTitle')} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5">
           <div className="head">
             <div>
               <b style={{ fontSize: 15 }}>{locale === 'ar' ? settings.name_ar : settings.name_en}</b>
-              <div style={{ fontSize: 10 }}>{settings.address} {settings.phone && <span className="ltr">· {settings.phone}</span>}</div>
+              <div style={{ fontSize: 10 }}>{settings.phone && <span className="ltr">{settings.phone}</span>}</div>
             </div>
             {settings.logo_url && <img src={settings.logo_url} alt="" />}
           </div>
@@ -368,7 +429,7 @@ export function PetSummaryPrint() {
             <tbody>
               <tr><td>{t('pets.species')}</td><td>{t(`species.${pet.species}`)}{pet.breed ? ` · ${pet.breed}` : ''}</td><td>{t('pets.sex')}</td><td>{t(`sex.${pet.sex}`)}{pet.is_neutered ? ` · ${t('pets.neutered')}` : ''}</td></tr>
               <tr><td>{t('pets.dob')}</td><td>{fmt.date(pet.date_of_birth)}{age ? ` (${t('pets.ageValue', { y: age.years, m: age.months })})` : ''}</td><td>{t('pets.microchip')}</td><td className="ltr">{pet.microchip_no || '—'}</td></tr>
-              <tr><td>{t('pets.owner')}</td><td>{pet.owner_name}</td><td>{t('owners.phone')}</td><td className="ltr">{pet.owner_phone}</td></tr>
+              <tr><td>{t('pets.owner')}</td><td>{pet.owner_name}{shownCode(pet.owner_code) ? ` · ${pet.owner_code}` : ''}</td><td>{t('owners.phone')}</td><td className="ltr">{pet.owner_phone}</td></tr>
             </tbody>
           </table>
           <h3 style={{ margin: '12px 0 4px' }}>{t('petRecord.vaccinations')}</h3>
@@ -399,6 +460,7 @@ export function PetSummaryPrint() {
             </tbody>
           </table>
           <div className="foot">{fmt.date(new Date().toISOString())}</div>
+          <SheetAddress address={settings.address} />
         </div>
       </div>
     </div>

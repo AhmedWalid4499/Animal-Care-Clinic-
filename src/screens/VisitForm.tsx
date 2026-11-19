@@ -1,28 +1,42 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { getAppointment, getPet, getVisit, listVaccineTypes, listVets, saveVisit, type VisitInput } from '../db/repo';
+import { batchesInStock, getAppointment, getPet, getVisit, lastWeight, listDrugs, listTemplates, listVaccineTypes, listVets, saveTemplate, saveVisit, templateRx, type VisitInput } from '../db/repo';
+import { allergyMatch, calcDose, doseText, findDrug } from '../lib/dose';
 import { addDays, fromLocalInput, localDateOf, nowLocalInput, toLocalInput } from '../lib/dates';
-import { Dialog, Field, Icon, PetAvatar, PetPicker } from '../components/ui';
+import { Dialog, Field, Icon, PetAlerts, PetAvatar, PetPicker } from '../components/ui';
 import { PageHead } from '../components/Layout';
-import { VISIT_TYPES, type VisitType } from '../db/types';
+import { ExamEditor, emptyExam, examDraftOf, examFieldsOf, type ExamDraft } from '../components/Exam';
+import { VISIT_TYPES, type Drug, type TreatmentTemplate, type VisitType } from '../db/types';
 import type { PetOption } from '../db/repo';
-import { IntakeEditor, num, type IntakeDraft } from './IntakeForm';
+import { IntakeEditor, NewPatientForm, num, type IntakeDraft } from './IntakeForm';
 
-/** /visits/new — choose the pet first (dashboard "New visit" button). */
+/** /visits/new and /intake/new — choose the pet first. For a pre-diagnosis, a new patient can be added right here. */
 export function VisitPickPet({ intake }: { intake?: boolean }) {
   const { t } = useApp();
   const nav = useNavigate();
   const [pet, setPet] = useState<PetOption | null>(null);
+  const [newPatient, setNewPatient] = useState(false);
   useEffect(() => {
     if (pet) nav(intake ? `/pets/${pet.id}/intake` : `/pets/${pet.id}/visits/new`, { replace: true });
   }, [pet, nav, intake]);
   return (
     <div className="page narrow">
       <PageHead title={intake ? t('intake.new') : t('visits.new')} sub={intake ? t('intake.sub') : t('visits.minFields')} />
-      <Field label={t('visits.pickPet')} group>
-        <PetPicker value={pet} onChange={setPet} autoFocus />
-      </Field>
+      {newPatient ? (
+        <NewPatientForm onDone={(id) => nav(`/pets/${id}/intake`, { replace: true })} onCancel={() => setNewPatient(false)} />
+      ) : (
+        <>
+          <Field label={t('visits.pickPet')} group>
+            <PetPicker value={pet} onChange={setPet} autoFocus />
+          </Field>
+          {intake && (
+            <button type="button" className="btn" onClick={() => setNewPatient(true)}>
+              <Icon name="plus" /> {t('intake.newPatient')}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -30,10 +44,12 @@ export function VisitPickPet({ intake }: { intake?: boolean }) {
 interface RxRow { drug: string; dose: string; frequency: string; duration_days: string; instructions: string }
 interface VxRow { id?: string; vaccine_type_id: string; administered_at: string; next_due_at: string; batch_no: string; dueTouched?: boolean }
 interface Form {
-  visited_at: string; type: VisitType; complaint: string; weight_kg: string; temperature_c: string; diagnosis: string;
+  visited_at: string; type: VisitType; complaint: string; weight_kg: string; temperature_c: string; heart_rate: string; diagnosis: string;
   treatment_notes: string; follow_up_at: string; vet_id: string; prescriptions: RxRow[]; vaccinations: VxRow[];
   /** The pre-diagnosis this visit started with (Phase 5); null for a visit recorded directly. */
   intake: IntakeDraft | null;
+  /** Physical examination (schema v19). */
+  exam: ExamDraft;
 }
 
 function draftKey(petId: string, visitId?: string) {
@@ -60,6 +76,8 @@ export function VisitFormPage() {
   const appt = useMemo(() => (appointmentId ? getAppointment(appointmentId) : undefined), [appointmentId]);
   const vets = useQuery(listVets);
   const vtypes = useQuery(() => listVaccineTypes(true).filter((v) => !pet || v.species.split(',').includes(pet.species) || pet.species === 'OTHER'), [pet?.species]);
+  // Vaccine batches still on the shelf (Stock → restock with a batch number): pick instead of typing.
+  const vxBatches = useQuery(() => batchesInStock().filter((b) => b.category === 'VACCINE' && b.batch_no));
   const key = draftKey(petId, visitId);
 
   const initial = useMemo<Form>(() => {
@@ -67,7 +85,7 @@ export function VisitFormPage() {
       return {
         visited_at: toLocalInput(existing.visited_at), type: existing.type, complaint: existing.complaint ?? '',
         weight_kg: existing.weight_kg?.toString() ?? '', temperature_c: existing.temperature_c?.toString() ?? '',
-        diagnosis: existing.diagnosis ?? '', treatment_notes: existing.treatment_notes ?? '',
+        heart_rate: existing.heart_rate?.toString() ?? '', diagnosis: existing.diagnosis ?? '', treatment_notes: existing.treatment_notes ?? '',
         follow_up_at: existing.follow_up_at ? toLocalInput(existing.follow_up_at) : '', vet_id: existing.vet_id ?? '',
         prescriptions: existing.prescriptions.map((r) => ({ drug: r.drug, dose: r.dose ?? '', frequency: r.frequency ?? '', duration_days: r.duration_days?.toString() ?? '', instructions: r.instructions ?? '' })),
         vaccinations: existing.vaccinations.map((x) => ({ id: x.id, vaccine_type_id: x.vaccine_type_id, administered_at: x.administered_at, next_due_at: x.next_due_at ?? '', batch_no: x.batch_no ?? '', dueTouched: true })),
@@ -78,22 +96,32 @@ export function VisitFormPage() {
               heart_rate: existing.heart_rate?.toString() ?? '', resp_rate: existing.resp_rate?.toString() ?? '', intake_notes: existing.intake_notes ?? '',
             }
           : null,
+        exam: examDraftOf(existing),
       };
     return {
       visited_at: appt ? toLocalInput(appt.scheduled_at) : nowLocalInput(), type: appt?.type ?? 'CHECKUP', complaint: appt?.notes ?? '',
-      weight_kg: '', temperature_c: '', diagnosis: '', treatment_notes: '', follow_up_at: '',
-      vet_id: user && user.role !== 'ASSISTANT' ? user.id : vets[0]?.id ?? '', prescriptions: [], vaccinations: [], intake: null,
+      weight_kg: '', temperature_c: '', heart_rate: '', diagnosis: '', treatment_notes: '', follow_up_at: '',
+      vet_id: user && user.role !== 'ASSISTANT' ? user.id : vets[0]?.id ?? '', prescriptions: [], vaccinations: [], intake: null, exam: emptyExam,
     };
   }, [existing, appt, user, vets]);
 
   const [draft] = useState(() => readDraft(key));
-  const [f, setF] = useState<Form>(draft ? { ...initial, ...draft } : initial);
+  const [f, setF] = useState<Form>(draft ? { ...initial, ...draft, exam: { ...initial.exam, ...draft.exam } } : initial);
   const [restored, setRestored] = useState(!!draft);
   const [savedId, setSavedId] = useState<string | null>(null);
+  // Dose calculator + treatment templates (6 Nov 2026).
+  const drugs = useQuery(() => listDrugs(true));
+  const templates = useQuery(() => listTemplates(true));
+  const prevWeight = useQuery(() => lastWeight(petId), [petId]);
+  const [tplPick, setTplPick] = useState(false);
+  const [tplSave, setTplSave] = useState<string | null>(null);
 
-  // Offline-tolerant draft: every change is kept locally until the visit is saved.
+  // Offline-tolerant draft: every change is kept locally until the visit is saved. Once saved, never write it again:
+  // a draft timer still pending from the last keystroke would otherwise bring the saved visit back as a "draft".
+  const saved = useRef(false);
   useEffect(() => {
     const h = setTimeout(() => {
+      if (saved.current) return;
       try {
         if (JSON.stringify(f) !== JSON.stringify(initial)) localStorage.setItem(key, JSON.stringify(f));
       } catch {
@@ -119,6 +147,38 @@ export function VisitFormPage() {
       return { ...x, vaccinations: rows };
     });
   const setRx = (i: number, patch: Partial<RxRow>) => setF((x) => ({ ...x, prescriptions: x.prescriptions.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
+  // Weight for doses: this visit's (or its pre-diagnosis'), else the pet's last recorded weight.
+  const typedKg = num(f.intake ? f.intake.weight_kg : f.weight_kg);
+  const kg = typedKg ?? prevWeight?.weight_kg ?? null;
+  const unitLabel = (u: string, n: number) => t(n === 1 ? `drugs.unit1.${u}` : `drugs.unit.${u}`);
+  const fillFromDrug = (d: Drug, r: RxRow): RxRow => ({
+    ...r,
+    dose: kg ? doseText(calcDose(d, kg, pet), d, unitLabel) : r.dose,
+    frequency: r.frequency || d.frequency || '',
+    duration_days: r.duration_days || (d.duration_days != null ? String(d.duration_days) : ''),
+  });
+  const applyTemplate = (tpl: TreatmentTemplate) => {
+    const rows = templateRx(tpl).map((r) => {
+      const row: RxRow = { drug: r.drug, dose: r.dose ?? '', frequency: r.frequency ?? '', duration_days: String(r.duration_days ?? ''), instructions: r.instructions ?? '' };
+      const d = findDrug(drugs, r.drug);
+      return d && !row.dose ? fillFromDrug(d, row) : row;
+    });
+    setF((x) => ({
+      ...x,
+      diagnosis: x.diagnosis || tpl.diagnosis || '',
+      treatment_notes: [x.treatment_notes, tpl.treatment_notes].filter((v) => v && v.trim()).join('\n'),
+      prescriptions: [...x.prescriptions, ...rows],
+    }));
+    setTplPick(false);
+    toast(t('templates.applied', { name: tpl.name }));
+  };
+  const saveAsTemplate = (name: string) => {
+    // Doses of drugs in the list are left blank so they are worked out again from the next pet's weight.
+    const rx = f.prescriptions.filter((r) => r.drug.trim()).map((r) => ({ ...r, dose: findDrug(drugs, r.drug) ? '' : r.dose }));
+    saveTemplate({ name, diagnosis: f.diagnosis, treatment_notes: f.treatment_notes, prescriptions: rx }, user?.id ?? null);
+    setTplSave(null);
+    toast(t('templates.saved', { name }));
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,12 +187,16 @@ export function VisitFormPage() {
       pet_id: pet.id, vet_id: f.vet_id || null, visited_at: fromLocalInput(f.visited_at), type: f.type, complaint: ix ? ix.complaint : f.complaint,
       weight_kg: num(ix ? ix.weight_kg : f.weight_kg), temperature_c: num(ix ? ix.temperature_c : f.temperature_c), diagnosis: f.diagnosis, treatment_notes: f.treatment_notes,
       intake: ix ? { urgency: ix.urgency, history: ix.history, heart_rate: num(ix.heart_rate), resp_rate: num(ix.resp_rate), intake_notes: ix.intake_notes } : undefined,
+      // A visit recorded without a pre-diagnosis takes the heart rate here (14 Nov 2026); with one, it is part of the intake.
+      heart_rate: ix ? undefined : num(f.heart_rate ?? ''),
+      exam: examFieldsOf(f.exam),
       follow_up_at: f.follow_up_at ? fromLocalInput(f.follow_up_at) : null,
       prescriptions: f.prescriptions.map((r) => ({ ...r, duration_days: r.duration_days ? Number(r.duration_days) : null })),
       vaccinations: f.vaccinations.map((x) => ({ id: x.id, vaccine_type_id: x.vaccine_type_id, administered_at: x.administered_at, next_due_at: x.next_due_at, batch_no: x.batch_no })),
       appointment_id: appointmentId,
     };
     const id = saveVisit(input, visitId);
+    saved.current = true;
     try {
       localStorage.removeItem(key);
     } catch {
@@ -159,6 +223,7 @@ export function VisitFormPage() {
           <PetAvatar photo={pet.photo_url} species={pet.species} size="sm" />
           <div style={{ flex: 1 }}>
             <b>{pet.name}</b> <span className="muted small">· {t(`species.${pet.species}`)} · {pet.owner_name}</span>
+            <PetAlerts flags={pet.alert_flags} note={pet.alert_note} />
           </div>
         </div>
 
@@ -198,11 +263,20 @@ export function VisitFormPage() {
                 <Field label={t('visits.temperature')} optional>
                   <input type="number" step="0.1" min="30" max="45" inputMode="decimal" value={f.temperature_c} onChange={(e) => set('temperature_c', e.target.value)} />
                 </Field>
-                <div />
+                <Field label={t('intake.heartRate')} optional>
+                  <input type="number" min="0" max="400" inputMode="numeric" value={f.heart_rate ?? ''} onChange={(e) => set('heart_rate', e.target.value)} />
+                </Field>
               </>
             )}
+            <div className="span-all">
+              <ExamEditor value={f.exam} onChange={(v) => set('exam', v)} />
+            </div>
+            <div className="row span-all tpl-bar">
+              <button type="button" className="btn sm" disabled={!templates.length} onClick={() => setTplPick(true)}><Icon name="file" /> {t('templates.use')}</button>
+              <button type="button" className="btn ghost sm" disabled={!f.diagnosis.trim() && !f.prescriptions.length} onClick={() => setTplSave(f.diagnosis)}>{t('templates.saveAs')}</button>
+            </div>
             <Field label={t('visits.diagnosis')} className="span-all" optional>
-              <input type="text" value={f.diagnosis} onChange={(e) => set('diagnosis', e.target.value)} />
+              <input type="text" name="diagnosis" value={f.diagnosis} onChange={(e) => set('diagnosis', e.target.value)} />
             </Field>
             <Field label={t('visits.treatment')} className="span-all" optional>
               <textarea value={f.treatment_notes} onChange={(e) => set('treatment_notes', e.target.value)} />
@@ -217,14 +291,21 @@ export function VisitFormPage() {
               <Icon name="plus" /> {t('visits.addPrescription')}
             </button>
           </div>
+          <datalist id="drug-list">{drugs.map((d) => <option key={d.id} value={d.name} />)}</datalist>
+          {drugs.length > 0 && (
+            <p className="muted small">{kg ? t(typedKg != null ? 'dose.weightThis' : 'dose.weightLast', { kg: fmt.num(kg, 2), date: prevWeight ? fmt.date(prevWeight.visited_at) : '' }) : t('dose.noWeight')}</p>
+          )}
           {f.prescriptions.map((r, i) => (
-            <div className="repeat rx" key={i}>
-              <Field label={t('visits.drug')}><input type="text" value={r.drug} onChange={(e) => setRx(i, { drug: e.target.value })} required /></Field>
+            <div key={i}>
+            <div className="repeat rx">
+              <Field label={t('visits.drug')}><input type="text" list="drug-list" value={r.drug} onChange={(e) => setRx(i, { drug: e.target.value })} required /></Field>
               <Field label={t('visits.dose')}><input type="text" value={r.dose} onChange={(e) => setRx(i, { dose: e.target.value })} /></Field>
               <Field label={t('visits.frequency')}><input type="text" value={r.frequency} onChange={(e) => setRx(i, { frequency: e.target.value })} /></Field>
               <Field label={t('visits.durationDays')}><input type="number" min="0" value={r.duration_days} onChange={(e) => setRx(i, { duration_days: e.target.value })} /></Field>
               <Field label={t('visits.instructions')}><input type="text" value={r.instructions} onChange={(e) => setRx(i, { instructions: e.target.value })} /></Field>
               <button type="button" className="btn ghost sm" aria-label={t('common.remove')} onClick={() => set('prescriptions', f.prescriptions.filter((_, j) => j !== i))}><Icon name="x" /></button>
+            </div>
+            <DoseHint row={r} drug={findDrug(drugs, r.drug)} kg={kg} pet={pet} unitLabel={unitLabel} onUse={(d) => setRx(i, fillFromDrug(d, r))} />
             </div>
           ))}
         </div>
@@ -232,6 +313,7 @@ export function VisitFormPage() {
         <div className="form-section">
           <div className="row" style={{ marginBottom: 4 }}>
             <h2 className="spacer">💉 {t('visits.vaccinationsGiven')}</h2>
+            <datalist id="vx-batches">{vxBatches.map((b, k) => <option key={k} value={b.batch_no!}>{`${b.name_en}${b.expires_at ? ` · ${fmt.date(b.expires_at)}` : ''}`}</option>)}</datalist>
             <button
               type="button"
               className="btn sm"
@@ -253,7 +335,7 @@ export function VisitFormPage() {
               </Field>
               <Field label={t('petRecord.administered')}><input type="date" value={x.administered_at} onChange={(e) => setVx(i, { administered_at: e.target.value })} required /></Field>
               <Field label={t('visits.nextDue')}><input type="date" value={x.next_due_at} onChange={(e) => setVx(i, { next_due_at: e.target.value, dueTouched: true })} /></Field>
-              <Field label={t('visits.batch')}><input type="text" className="ltr" value={x.batch_no} onChange={(e) => setVx(i, { batch_no: e.target.value })} /></Field>
+              <Field label={t('visits.batch')}><input type="text" className="ltr" list="vx-batches" value={x.batch_no} onChange={(e) => setVx(i, { batch_no: e.target.value })} /></Field>
               {!x.id ? (
                 <button type="button" className="btn ghost sm" aria-label={t('common.remove')} onClick={() => set('vaccinations', f.vaccinations.filter((_, j) => j !== i))}><Icon name="x" /></button>
               ) : <span />}
@@ -296,6 +378,58 @@ export function VisitFormPage() {
           <p style={{ margin: 0 }}>{t('visits.savedInvoice')}</p>
         </Dialog>
       )}
+
+      {tplPick && (
+        <Dialog title={t('templates.use')} onClose={() => setTplPick(false)} footer={<button className="btn" onClick={() => setTplPick(false)}>{t('common.cancel')}</button>}>
+          <ul className="list tpl-list">
+            {templates.map((tpl) => (
+              <li key={tpl.id} className="link" onClick={() => applyTemplate(tpl)}>
+                <div className="main-col">
+                  <b>{tpl.name}</b>
+                  <div className="sub">{[tpl.diagnosis, templateRx(tpl).map((r) => r.drug).join(', ')].filter(Boolean).join(' · ')}</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Dialog>
+      )}
+      {tplSave !== null && (
+        <Dialog
+          title={t('templates.saveAs')}
+          onClose={() => setTplSave(null)}
+          footer={<><button className="btn" onClick={() => setTplSave(null)}>{t('common.cancel')}</button>
+            <button className="btn primary" disabled={!tplSave.trim()} onClick={() => saveAsTemplate(tplSave.trim())}>{t('common.save')}</button></>}
+        >
+          <Field label={t('templates.name')} hint={t('templates.saveHint')}>
+            <input type="text" value={tplSave} autoFocus onChange={(e) => setTplSave(e.target.value)} />
+          </Field>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+/** Under a prescription: the dose worked out from the weight, with its working and any warning. */
+function DoseHint({ row, drug, kg, pet, unitLabel, onUse }: {
+  row: RxRow; drug: Drug | undefined; kg: number | null;
+  pet: { species: string; alert_flags: string | null; alert_note: string | null };
+  unitLabel: (u: string, n: number) => string; onUse: (d: Drug) => void;
+}) {
+  const { t, fmt } = useApp();
+  const allergic = allergyMatch(row.drug, pet);
+  if (!drug) return allergic ? <p className="dose-hint bad">⚠️ {t('dose.allergy', { note: pet.alert_note ?? '' })}</p> : null;
+  if (!kg) return <p className="dose-hint warn">{t('dose.needWeight')}</p>;
+  const r = calcDose(drug, kg, pet);
+  const text = doseText(r, drug, unitLabel);
+  const working = t('dose.working', { kg: fmt.num(kg, 2), mgkg: fmt.num(drug.dose_mg_kg, 3), mg: fmt.num(r.mg, 1) })
+    + (r.amount != null ? ` → ${fmt.num(r.amount, 2)} ${unitLabel(drug.unit, r.amount)} (${t('drugs.per', { mg: fmt.num(drug.concentration ?? 0, 3), unit: t(`drugs.unit1.${drug.unit}`) })})` : '');
+  return (
+    <div className={`dose-hint ${r.allergy || !r.speciesOk ? 'bad' : r.capped ? 'warn' : ''}`}>
+      <span>🧮 {working}</span>
+      {r.capped && <span> · {t('dose.capped', { max: fmt.num(drug.max_mg ?? 0, 1) })}</span>}
+      {!r.speciesOk && <span> · ⚠️ {t('dose.species', { species: t(`species.${pet.species}`) })}</span>}
+      {r.allergy && <span> · ⚠️ {t('dose.allergy', { note: pet.alert_note ?? '' })}</span>}
+      {row.dose !== text && <button type="button" className="btn sm" onClick={() => onUse(drug)}>{t('dose.use')}</button>}
     </div>
   );
 }

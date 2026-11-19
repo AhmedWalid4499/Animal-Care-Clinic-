@@ -1,4 +1,4 @@
-// Vision tab (Phase 6 change request): both eyes as you face the pet — its right eye (OD) on the viewer's left.
+// Vision tab (change request, 19 Nov 2026): both eyes as you face the pet — its right eye (OD) on the viewer's left.
 // The iris takes the eye colour chosen on the pet (blue-grey in puppies and kittens); dogs have round pupils,
 // cats vertical slits. Every part can be hovered for what it is and clicked to record a finding.
 import { useId, useMemo, type ReactNode } from 'react';

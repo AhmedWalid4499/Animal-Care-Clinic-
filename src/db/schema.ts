@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 21;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -20,7 +20,20 @@ const visitIntake = `stage TEXT NOT NULL DEFAULT 'DONE' CHECK (stage IN ('WAITIN
   intake_notes TEXT,
   intake_by TEXT REFERENCES users(id),
   intake_at TEXT`;
-// Dental & Vision charts (Phase 6 change request): one row per (pet, chart, part) holding the vet's current finding.
+// Physical examination (schema v19, 14 Nov 2026, change request): recorded with the weight and temperature, at the
+// pre-diagnosis or by the vet. Choices are plain text checked by the app (MUCOUS_MEMBRANES… in types.ts), not by
+// CHECK, so a choice added later does not mean rebuilding the visits table. NULL = not examined.
+const visitExam = `bp_systolic INTEGER,
+  bp_diastolic INTEGER,
+  mucous_membrane TEXT,
+  eyes TEXT,
+  skin_coat TEXT,
+  glands TEXT,
+  glands_note TEXT,
+  anal_glands TEXT,
+  nails TEXT,
+  fleas_ticks TEXT`;
+// Dental & Vision charts (change request, 19 Nov 2026): one row per (pet, chart, part) holding the vet's current finding.
 // The id is '<pet_id>:<chart>:<part>', so two devices marking the same tooth offline merge into one row on sync.
 // part = Triadan number for teeth ('104', '508'), 'PALATE' / 'GUM_UPPER' / 'GUM_LOWER' / 'TONGUE' / 'MOUTH',
 // or '<OD|OS>.<EYELIDS|THIRD_EYELID|CONJUNCTIVA|CORNEA|IRIS|PUPIL|LENS|GLOBE>' / 'EYES'. Never deleted: reset = conditions NULL.
@@ -40,6 +53,180 @@ const chartMarks = `CREATE TABLE IF NOT EXISTS pet_chart_marks (
 CREATE UNIQUE INDEX IF NOT EXISTS pet_chart_marks_part ON pet_chart_marks(pet_id, chart, part);`;
 const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+
+// Dose calculator and treatment templates (schema v7, 6 Nov 2026). drugs: the clinic's own list, entered by the Admin;
+// the app only does the arithmetic (dose_mg_kg × weight, ÷ concentration per ml/tablet, capped at max_mg).
+// treatment_templates.prescriptions is JSON: [{ drug, drug_id?, dose, frequency, duration_days, instructions }].
+// Stock (schema v8, 6 Nov 2026): price items can be tracked; stock_moves is an append-only log (restock +, invoice −,
+// count correction ±) and the quantity on hand is its sum, so moves made on different devices simply add up.
+const stockTable = `CREATE TABLE IF NOT EXISTS stock_moves (
+  id TEXT PRIMARY KEY,
+  price_item_id TEXT NOT NULL REFERENCES price_items(id),
+  qty REAL NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('RESTOCK','INVOICE','ADJUST')),
+  invoice_id TEXT REFERENCES invoices(id),
+  note TEXT,
+  user_id TEXT REFERENCES users(id),
+  at TEXT NOT NULL,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS stock_moves_item ON stock_moves(price_item_id);
+CREATE INDEX IF NOT EXISTS stock_moves_invoice ON stock_moves(invoice_id);`;
+// Schema v10 (7 Nov 2026): a restock can say which batch arrived and when it expires (Stock → expiring soon), and the
+// clinic's own expenses (Admin) so the monthly report shows profit. Expenses are voided, never deleted.
+const stockBatchCols = `ALTER TABLE stock_moves ADD COLUMN batch_no TEXT;
+ALTER TABLE stock_moves ADD COLUMN expires_at TEXT;`;
+export const EXPENSE_CATEGORIES_SQL = "'RENT','SALARIES','SUPPLIES','UTILITIES','EQUIPMENT','MAINTENANCE','MARKETING','OTHER'";
+const expensesTable = `CREATE TABLE IF NOT EXISTS expenses (
+  id TEXT PRIMARY KEY,
+  spent_at TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN (${EXPENSE_CATEGORIES_SQL})),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  method TEXT NOT NULL DEFAULT 'CASH' CHECK (method IN ('CASH','INSTAPAY','CARD','OTHER')),
+  payee TEXT,
+  note TEXT,
+  user_id TEXT REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','VOID')),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS expenses_date ON expenses(spent_at);`;
+// Schema v11 (7 Nov 2026): lab results (one row per value, with the reference range used, so trends can be charted) and
+// signed consent forms (append-only: a signed form is never changed; the signature is a PNG data URL).
+const clinicalDocs = `CREATE TABLE IF NOT EXISTS lab_results (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  taken_at TEXT NOT NULL,
+  panel TEXT,
+  analyte TEXT NOT NULL,
+  value REAL,
+  value_text TEXT,
+  unit TEXT,
+  ref_low REAL,
+  ref_high REAL,
+  note TEXT,
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS lab_results_pet ON lab_results(pet_id, taken_at);
+CREATE TABLE IF NOT EXISTS consents (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  procedure TEXT NOT NULL,
+  anaesthesia INTEGER NOT NULL DEFAULT 1,
+  estimate INTEGER,
+  notes TEXT,
+  signer_name TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  signed_at TEXT NOT NULL,
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS consents_pet ON consents(pet_id);`;
+// Schema v12 (7 Nov 2026): the in-patient board. An admission is a pet staying in the clinic; its care tasks are
+// timed treatments (a repeating one is stored as one row per time) that anyone ticks off; the vet admits and discharges.
+// Schema v17 (14 Nov 2026): X-ray and lab requests the vet gives the owner, kept in the pet's history. items = the
+// ticked keys, comma-separated (X-ray: XRAY_MENU in src/screens/Documents.tsx; lab: src/lib/lab-tests.json). Never
+// deleted: CANCELLED instead. Admin + Doctor write them (server/rules.mjs); the owner page shows them.
+const requestTables = `CREATE TABLE IF NOT EXISTS test_requests (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  kind TEXT NOT NULL CHECK (kind IN ('XRAY','LAB')),
+  items TEXT,
+  other TEXT,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'REQUESTED' CHECK (status IN ('REQUESTED','DONE','CANCELLED')),
+  requested_by TEXT REFERENCES users(id),
+  requested_at TEXT NOT NULL,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS test_requests_pet ON test_requests(pet_id, requested_at);`;
+// Schema v20 (14 Nov 2026): a saved request's PDF (attachments.id) and what it was made from. Added after the table (not
+// in it), so an install older than v17 creates test_requests at v17 and gains these at v20 like everyone else.
+const requestPdfCols = `ALTER TABLE test_requests ADD COLUMN pdf_id TEXT;
+ALTER TABLE test_requests ADD COLUMN pdf_key TEXT;`;
+// Schema v18 (14 Nov 2026): lost & found. Someone scans a pet's collar tag (pets.tag_token) and presses Alert: the
+// clinic server writes a report (with the finder's location if they allowed it); devices only mark it handled.
+const foundTables = `CREATE TABLE IF NOT EXISTS found_reports (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  owner_id TEXT REFERENCES owners(id),
+  reported_at TEXT NOT NULL,
+  lat REAL,
+  lng REAL,
+  accuracy_m REAL,
+  finder_name TEXT,
+  finder_phone TEXT,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'NEW' CHECK (status IN ('NEW','HANDLED')),
+  handled_by TEXT REFERENCES users(id),
+  handled_at TEXT,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS found_reports_status ON found_reports(status, reported_at);`;
+const wardTables = `CREATE TABLE IF NOT EXISTS admissions (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  admitted_at TEXT NOT NULL,
+  reason TEXT,
+  cage TEXT,
+  vet_id TEXT REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'IN' CHECK (status IN ('IN','OUT')),
+  discharged_at TEXT,
+  discharge_note TEXT,
+  user_id TEXT REFERENCES users(id),
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS admissions_status ON admissions(status);
+CREATE TABLE IF NOT EXISTS care_tasks (
+  id TEXT PRIMARY KEY,
+  admission_id TEXT NOT NULL REFERENCES admissions(id),
+  task TEXT NOT NULL,
+  due_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'DUE' CHECK (status IN ('DUE','DONE','SKIPPED')),
+  done_at TEXT,
+  done_by TEXT REFERENCES users(id),
+  note TEXT,
+  ${ts}
+);
+CREATE INDEX IF NOT EXISTS care_tasks_admission ON care_tasks(admission_id, due_at);`;
+// Schema v13 (7 Nov 2026, at Ahmed's request): how many of each drug the clinic has (a plain count the Admin keeps,
+// with a "running low" level), and a short "how to use" note on treatment templates, printed for the owner.
+const v13Cols = `ALTER TABLE drugs ADD COLUMN stock_qty REAL;
+ALTER TABLE drugs ADD COLUMN stock_unit TEXT;
+ALTER TABLE drugs ADD COLUMN low_stock REAL;
+ALTER TABLE treatment_templates ADD COLUMN owner_note TEXT;`;
+// Schema v14 (10 Nov 2026, customer request): a person can hold several roles (e.g. Admin and Doctor). users.roles is
+// the comma-separated list; users.role stays the highest of them (Admin > Doctor > Assistant) and is what decides
+// permissions here and on the server, so older apps and the server rules keep working unchanged.
+const v14Cols = `ALTER TABLE users ADD COLUMN roles TEXT;`;
+const calcTables = `CREATE TABLE IF NOT EXISTS drugs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  dose_mg_kg REAL NOT NULL,
+  concentration REAL,
+  unit TEXT NOT NULL DEFAULT 'ml' CHECK (unit IN ('ml','tablet','capsule','mg')),
+  max_mg REAL,
+  frequency TEXT,
+  duration_days INTEGER,
+  species TEXT,
+  notes TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  ${ts}
+);
+CREATE TABLE IF NOT EXISTS treatment_templates (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  diagnosis TEXT,
+  treatment_notes TEXT,
+  prescriptions TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT,
+  ${ts}
+);`;
 
 export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -69,6 +256,8 @@ CREATE TABLE owners (
   national_id TEXT,
   notes TEXT,
   status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','ARCHIVED')),
+  portal_token TEXT,
+  code TEXT,
   ${ts}
 );
 CREATE INDEX owners_full_name ON owners(full_name);
@@ -85,12 +274,16 @@ CREATE TABLE pets (
   date_of_birth TEXT,
   dob_is_estimate INTEGER NOT NULL DEFAULT 0,
   color TEXT,
-  eye_color TEXT,
   microchip_no TEXT UNIQUE,
   photo_url TEXT,
   status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DECEASED','TRANSFERRED')),
   deceased_at TEXT,
   notes TEXT,
+  alert_flags TEXT,
+  alert_note TEXT,
+  recall_sent_at TEXT,
+  tag_token TEXT,
+  eye_color TEXT,
   ${ts}
 );
 CREATE INDEX pets_owner ON pets(owner_id);
@@ -103,6 +296,8 @@ CREATE TABLE price_items (
   category TEXT NOT NULL CHECK (category IN ('CONSULTATION','VACCINE','SURGERY','MEDICATION','BOARDING','GROOMING','OTHER')),
   unit_price INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
+  track_stock INTEGER NOT NULL DEFAULT 0,
+  low_stock REAL,
   ${ts}
 );
 
@@ -159,6 +354,7 @@ CREATE TABLE visits (
   follow_up_at TEXT,
   invoice_id TEXT REFERENCES invoices(id),
   ${visitIntake},
+  ${visitExam},
   ${ts}
 );
 CREATE INDEX visits_pet_date ON visits(pet_id, visited_at DESC);
@@ -246,6 +442,18 @@ CREATE TABLE clinic_settings (
   ${ts}
 );
 
+${calcTables}
+${stockTable}
+${stockBatchCols}
+${expensesTable}
+${clinicalDocs}
+${wardTables}
+${requestTables}
+${requestPdfCols}
+${foundTables}
+${v13Cols}
+${v14Cols}
+
 -- Cloud sync (docs/CLOUD-PLAN.md). Triggers (src/sync/local.ts) record every write here while sync is on.
 CREATE TABLE sync_outbox (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -305,8 +513,53 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v5 (5 Nov 2026, Phase 2): each queued change remembers who made it, so it is sent under that person's sign-in.
   5: `ALTER TABLE sync_outbox ADD COLUMN user_id TEXT;`,
-  // v6 (19 Nov 2026, Phase 6 change request): Dental and Vision tabs — eye colour on the pet, and the vet's chart findings.
+  // v6 (6 Nov 2026): patient alerts on the pet (aggressive, allergy…), shown in the queue, pre-diagnosis and visit.
   6: `
+    ALTER TABLE pets ADD COLUMN alert_flags TEXT;
+    ALTER TABLE pets ADD COLUMN alert_note TEXT;
+  `,
+  // v7 (6 Nov 2026): the drug list for the dose calculator, and treatment templates.
+  7: calcTables,
+  // v8 (6 Nov 2026): stock — tracked price items and the stock movement log.
+  8: `
+    ALTER TABLE price_items ADD COLUMN track_stock INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE price_items ADD COLUMN low_stock REAL;
+    ${stockTable}
+  `,
+  // v9 (7 Nov 2026): "not seen in a while" list — when the owner was last sent the check-up reminder.
+  9: `ALTER TABLE pets ADD COLUMN recall_sent_at TEXT;`,
+  // v10 (7 Nov 2026): stock batch + expiry, clinic expenses.
+  10: `
+    ${stockBatchCols}
+    ${expensesTable}
+  `,
+  // v11 (7 Nov 2026): lab results, signed consent forms.
+  11: clinicalDocs,
+  // v12 (7 Nov 2026): in-patient board.
+  12: wardTables,
+  // v13 (7 Nov 2026): drug counts, owner instructions on templates.
+  13: v13Cols,
+  // v14 (10 Nov 2026): several roles per person.
+  14: v14Cols,
+  // v15 (14 Nov 2026, owner page): the owner's page. The secret part of the link in the owner's QR code; NULL = no page.
+  15: `ALTER TABLE owners ADD COLUMN portal_token TEXT;`,
+  // v16 (14 Nov 2026): customer ID (AC-00001), searchable and on every document. Given by the clinic server while
+  // linked (TMP-… until synced, like invoice numbers), by this device otherwise (src/db/core.ts ownerCode).
+  16: `ALTER TABLE owners ADD COLUMN code TEXT;
+    CREATE INDEX IF NOT EXISTS owners_code ON owners(code);`,
+  // v17 (14 Nov 2026): saved X-ray and lab requests.
+  17: requestTables,
+  // v18 (14 Nov 2026): collar tags and lost & found.
+  18: `ALTER TABLE pets ADD COLUMN tag_token TEXT;
+    ${foundTables}`,
+  // v19 (14 Nov 2026): physical examination on visits (blood pressure, mucous membranes, eyes, skin and coat, glands,
+  // anal glands, nails, fleas / ticks).
+  19: visitExam.split(',\n').map((c) => `ALTER TABLE visits ADD COLUMN ${c.trim()};`).join('\n'),
+  // v20 (14 Nov 2026): a saved X-ray / lab request keeps its PDF (an attachment, so it reaches the clinic server and the
+  // owner's page) and what it was made from (items, other tests, notes), to make a new one when the vet changes them.
+  20: requestPdfCols,
+  // v21 (19 Nov 2026, change request): Dental and Vision tabs — eye colour on the pet, and the vet's chart findings.
+  21: `
     ALTER TABLE pets ADD COLUMN eye_color TEXT;
     ${chartMarks}
   `,
@@ -315,7 +568,7 @@ export const MIGRATIONS: Record<number, string> = {
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'pet_chart_marks', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'pet_chart_marks', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */

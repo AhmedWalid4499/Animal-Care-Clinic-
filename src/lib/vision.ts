@@ -1,4 +1,4 @@
-// Eye chart anatomy for dogs and cats (Phase 6 change request). OD = the pet's right eye, OS = its left eye.
+// Eye chart anatomy for dogs and cats (change request, 19 Nov 2026). OD = the pet's right eye, OS = its left eye.
 // The iris is drawn in the eye colour chosen on the pet; the vet can change each eye on its own (e.g. odd eyes).
 import type { EyeColor } from '../db/types';
 import { mixHex } from './dental';

@@ -1,0 +1,442 @@
+{
+ "_source": "The clinic's own lab request sheet (Analysis request 2023.xlsx, 14 Nov 2026). Test names are kept in English, as labs write them; group headings are translated in src/i18n (labReq.group.*). Keys are stored in test_requests.items: never rename one, add new ones instead.",
+ "groups": [
+  {
+   "key": "bloodSugar",
+   "tests": [
+    {
+     "key": "bloodSugar.glucose_fbs",
+     "label": "Glucose FBS"
+    },
+    {
+     "key": "bloodSugar.glucose_pp",
+     "label": "Glucose PP"
+    },
+    {
+     "key": "bloodSugar.glucose_rbs",
+     "label": "Glucose RBS"
+    },
+    {
+     "key": "bloodSugar.glucose_t_curve",
+     "label": "Glucose T. Curve"
+    },
+    {
+     "key": "bloodSugar.glycated_hb_hba1c",
+     "label": "Glycated Hb (HbA1c)"
+    },
+    {
+     "key": "bloodSugar.fructosamine",
+     "label": "Fructosamine"
+    }
+   ]
+  },
+  {
+   "key": "kidney",
+   "tests": [
+    {
+     "key": "kidney.urine_analysis",
+     "label": "Urine analysis"
+    },
+    {
+     "key": "kidney.urea_bun",
+     "label": "Urea (BUN)"
+    },
+    {
+     "key": "kidney.creatinine",
+     "label": "Creatinine"
+    },
+    {
+     "key": "kidney.bun_creatinine_ratio",
+     "label": "BUN/Creatinine ratio"
+    },
+    {
+     "key": "kidney.creatinine_clearance",
+     "label": "Creatinine clearance"
+    },
+    {
+     "key": "kidney.microalbumin_urea",
+     "label": "Microalbumin urea"
+    },
+    {
+     "key": "kidney.uric_acid",
+     "label": "Uric acid"
+    },
+    {
+     "key": "kidney.albumin_in_urine",
+     "label": "Albumin in urine"
+    },
+    {
+     "key": "kidney.ammonia",
+     "label": "Ammonia"
+    }
+   ]
+  },
+  {
+   "key": "liver",
+   "tests": [
+    {
+     "key": "liver.alt_gpt",
+     "label": "ALT (GPT)"
+    },
+    {
+     "key": "liver.ast_got",
+     "label": "AST (GOT)"
+    },
+    {
+     "key": "liver.bilirubin_total",
+     "label": "Bilirubin (total)"
+    },
+    {
+     "key": "liver.bilirubin_direct",
+     "label": "Bilirubin (direct)"
+    },
+    {
+     "key": "liver.alkaline_phosphatase",
+     "label": "Alkaline phosphatase"
+    },
+    {
+     "key": "liver.total_protein",
+     "label": "Total protein"
+    },
+    {
+     "key": "liver.albumin",
+     "label": "Albumin"
+    },
+    {
+     "key": "liver.globulin",
+     "label": "Globulin"
+    },
+    {
+     "key": "liver.a_g_ratio",
+     "label": "A/G ratio"
+    },
+    {
+     "key": "liver.ggt",
+     "label": "GGT"
+    }
+   ]
+  },
+  {
+   "key": "lipid",
+   "tests": [
+    {
+     "key": "lipid.cholesterol",
+     "label": "Cholesterol"
+    },
+    {
+     "key": "lipid.triglycerides",
+     "label": "Triglycerides"
+    },
+    {
+     "key": "lipid.hdl",
+     "label": "HDL"
+    },
+    {
+     "key": "lipid.ldl",
+     "label": "LDL"
+    },
+    {
+     "key": "lipid.vldl",
+     "label": "VLDL"
+    }
+   ]
+  },
+  {
+   "key": "heart",
+   "tests": [
+    {
+     "key": "heart.cpk_total",
+     "label": "CPK (total)"
+    },
+    {
+     "key": "heart.cpk_mb",
+     "label": "CPK (MB)"
+    },
+    {
+     "key": "heart.ldh",
+     "label": "LDH"
+    },
+    {
+     "key": "heart.troponin_qualitative",
+     "label": "Troponin (qualitative)"
+    },
+    {
+     "key": "heart.troponin_quantitative",
+     "label": "Troponin (quantitative)"
+    }
+   ]
+  },
+  {
+   "key": "haematology",
+   "tests": [
+    {
+     "key": "haematology.cbc",
+     "label": "CBC"
+    },
+    {
+     "key": "haematology.hb",
+     "label": "Hb"
+    },
+    {
+     "key": "haematology.wbcs_total_diff",
+     "label": "WBCs (total & diff)"
+    }
+   ]
+  },
+  {
+   "key": "infectious",
+   "tests": [
+    {
+     "key": "infectious.toxo_igm",
+     "label": "Toxo IgM"
+    },
+    {
+     "key": "infectious.toxo_igg",
+     "label": "Toxo IgG"
+    },
+    {
+     "key": "infectious.blood_parasites",
+     "label": "Blood parasites"
+    },
+    {
+     "key": "infectious.helicobacter_pylori_ag",
+     "label": "Helicobacter pylori Ag"
+    },
+    {
+     "key": "infectious.helicobacter_pylori_ab",
+     "label": "Helicobacter pylori Ab"
+    },
+    {
+     "key": "infectious.brucella",
+     "label": "Brucella"
+    }
+   ]
+  },
+  {
+   "key": "hormones",
+   "tests": [
+    {
+     "key": "hormones.lh",
+     "label": "LH"
+    },
+    {
+     "key": "hormones.fsh",
+     "label": "FSH"
+    },
+    {
+     "key": "hormones.anti_mullerian_amh",
+     "label": "Anti-Mullerian (AMH)"
+    },
+    {
+     "key": "hormones.e2",
+     "label": "E2"
+    },
+    {
+     "key": "hormones.testosterone_t",
+     "label": "Testosterone (T)"
+    },
+    {
+     "key": "hormones.testosterone_f",
+     "label": "Testosterone (F)"
+    },
+    {
+     "key": "hormones.acth",
+     "label": "ACTH"
+    },
+    {
+     "key": "hormones.aldosterone",
+     "label": "Aldosterone"
+    },
+    {
+     "key": "hormones.growth_hormone",
+     "label": "Growth hormone"
+    },
+    {
+     "key": "hormones.progesterone",
+     "label": "Progesterone"
+    },
+    {
+     "key": "hormones.cortisol",
+     "label": "Cortisol"
+    },
+    {
+     "key": "hormones.prolactin",
+     "label": "Prolactin"
+    },
+    {
+     "key": "hormones.insulin_f",
+     "label": "Insulin (F)"
+    },
+    {
+     "key": "hormones.t3",
+     "label": "T3"
+    },
+    {
+     "key": "hormones.t4",
+     "label": "T4"
+    },
+    {
+     "key": "hormones.ft3",
+     "label": "FT3"
+    },
+    {
+     "key": "hormones.ft4",
+     "label": "FT4"
+    },
+    {
+     "key": "hormones.tsh",
+     "label": "TSH"
+    }
+   ]
+  },
+  {
+   "key": "immunology",
+   "tests": [
+    {
+     "key": "immunology.igg_igm_ige",
+     "label": "IgG / IgM / IgE"
+    },
+    {
+     "key": "immunology.anti_thyroid_ab",
+     "label": "Anti-thyroid Ab"
+    }
+   ]
+  },
+  {
+   "key": "tumour",
+   "tests": [
+    {
+     "key": "tumour.alpha_fetoprotein_afp",
+     "label": "Alpha-fetoprotein (AFP)"
+    },
+    {
+     "key": "tumour.psa_total",
+     "label": "PSA (total)"
+    },
+    {
+     "key": "tumour.cea",
+     "label": "CEA"
+    },
+    {
+     "key": "tumour.ca_15_3",
+     "label": "CA 15.3"
+    },
+    {
+     "key": "tumour.ca_19_9",
+     "label": "CA 19.9"
+    },
+    {
+     "key": "tumour.ca_125",
+     "label": "CA 125"
+    },
+    {
+     "key": "tumour.cd3",
+     "label": "CD3"
+    },
+    {
+     "key": "tumour.cd20",
+     "label": "CD20"
+    }
+   ]
+  },
+  {
+   "key": "micro",
+   "tests": [
+    {
+     "key": "micro.urine_analysis_micro",
+     "label": "Urine analysis"
+    },
+    {
+     "key": "micro.stool_analysis",
+     "label": "Stool analysis"
+    },
+    {
+     "key": "micro.culture_and_sensitivity",
+     "label": "Culture and sensitivity"
+    },
+    {
+     "key": "micro.fungal_culture",
+     "label": "Fungal culture"
+    },
+    {
+     "key": "micro.external_parasites",
+     "label": "External parasites"
+    }
+   ]
+  },
+  {
+   "key": "minerals",
+   "tests": [
+    {
+     "key": "minerals.calcium_total",
+     "label": "Calcium (total)"
+    },
+    {
+     "key": "minerals.calcium_ionized",
+     "label": "Calcium (ionized)"
+    },
+    {
+     "key": "minerals.phosphorus",
+     "label": "Phosphorus"
+    },
+    {
+     "key": "minerals.potassium",
+     "label": "Potassium"
+    },
+    {
+     "key": "minerals.sodium",
+     "label": "Sodium"
+    },
+    {
+     "key": "minerals.iron",
+     "label": "Iron"
+    },
+    {
+     "key": "minerals.tibc",
+     "label": "TIBC"
+    },
+    {
+     "key": "minerals.magnesium",
+     "label": "Magnesium"
+    },
+    {
+     "key": "minerals.zinc",
+     "label": "Zinc"
+    },
+    {
+     "key": "minerals.chloride",
+     "label": "Chloride"
+    },
+    {
+     "key": "minerals.amylase",
+     "label": "Amylase"
+    },
+    {
+     "key": "minerals.lipase",
+     "label": "Lipase"
+    },
+    {
+     "key": "minerals.ferritin",
+     "label": "Ferritin"
+    },
+    {
+     "key": "minerals.transferrin",
+     "label": "Transferrin"
+    }
+   ]
+  },
+  {
+   "key": "other",
+   "tests": [
+    {
+     "key": "other.semen_analysis",
+     "label": "Semen analysis"
+    },
+    {
+     "key": "other.histopathology",
+     "label": "Histopathology"
+    }
+   ]
+  }
+ ]
+}

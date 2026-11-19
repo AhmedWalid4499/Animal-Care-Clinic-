@@ -1,4 +1,4 @@
-// Shared pieces of the Dental and Vision tabs (Phase 6): the vet's draft finding for the selected part, the hover
+// Shared pieces of the Dental and Vision tabs (change request 19 Nov): the vet's draft finding for the selected part, the hover
 // card, and the inspector where a Doctor/Admin records a finding, changes how the part looks and adds notes.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useApp, useQuery } from '../lib/app';

@@ -29,8 +29,10 @@ fs.mkdirSync(path.join(out, 'rtl'), { recursive: true });
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-data-'));
 const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-acc-export-'));
 const dbFile = path.join(dataDir, 'clinic.sqlite');
-const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'pet_chart_marks', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log'];
+const TABLES = ['clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations', 'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'pet_chart_marks', 'audit_log'];
 const SQL = await initSqlJs();
+// The schema version a fresh or upgraded database must reach (src/db/schema.ts).
+const CURRENT_SCHEMA = fs.readFileSync('src/db/schema.ts', 'utf8').match(/SCHEMA_VERSION = (\d+)/)[1];
 
 const results = [];
 function check(id, criterion, pass, evidence) {
@@ -313,22 +315,24 @@ check('S4-template', 'Spreadsheet template matches import/TEMPLATE.md', JSON.str
 }
 
 // ------------------------------------------------------------------ 6. A5 PDFs
-async function pdfOf(hash, name) {
+async function pdfOf(hash, name, size = 'A5', sel) {
   await go(win, hash);
-  await win.waitForSelector('.sheet.a5');
+  await win.waitForSelector(sel ?? (size === 'A4' ? '.sheet.a4' : '.sheet.a5'));
   await sleep(400);
-  const b64 = await app.evaluate(async ({ BrowserWindow }) => {
+  const b64 = await app.evaluate(async ({ BrowserWindow }, pageSize) => {
     const w = BrowserWindow.getAllWindows()[0];
-    const pdf = await w.webContents.printToPDF({ pageSize: 'A5', printBackground: true, preferCSSPageSize: true });
+    const pdf = await w.webContents.printToPDF({ pageSize, printBackground: true, preferCSSPageSize: true });
     return pdf.toString('base64');
-  });
+  }, size);
   const buf = Buffer.from(b64, 'base64');
   fs.writeFileSync(path.join(out, name), buf);
   const text = buf.toString('latin1');
   const pages = (text.match(/\/Type\s*\/Page(?!s)/g) || []).length;
   const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
   const a5 = box && Math.abs(Number(box[1]) - 419.5) < 3 && Math.abs(Number(box[2]) - 595.3) < 3;
-  return { pages, a5, size: box ? `${Math.round(box[1])}×${Math.round(box[2])} pt` : 'unknown' };
+  const a4 = box && Math.abs(Number(box[1]) - 595.3) < 3 && Math.abs(Number(box[2]) - 841.9) < 3;
+  const a4land = box && Math.abs(Number(box[1]) - 841.9) < 3 && Math.abs(Number(box[2]) - 595.3) < 3;
+  return { pages, a5, a4, a4land, size: box ? `${Math.round(box[1])}×${Math.round(box[2])} pt` : 'unknown' };
 }
 {
   const db = openDbFile();
@@ -339,6 +343,72 @@ async function pdfOf(hash, name) {
   check('S7.5-receipt', 'A5 receipt prints on one A5 page', r.pages === 1 && r.a5, `receipt-A5.pdf: ${r.pages} page, ${r.size} (A5 = 420×595 pt)`);
   const s = await pdfOf(`#/pets/${pet}/print`, 'pet-summary-A5.pdf');
   check('S4-summary', 'Pet summary prints / saves as PDF', s.pages >= 1 && s.a5, `pet-summary-A5.pdf: ${s.pages} page(s), ${s.size}`);
+  // Phase 6: any past prescription can be found again and reprinted.
+  const rxVisit = db.exec('SELECT visit_id FROM prescriptions LIMIT 1')[0]?.values[0][0];
+  if (rxVisit) {
+    const p = await pdfOf(`#/visits/${rxVisit}/prescription`, 'prescription-A5.pdf');
+    const rxQr = await win.locator('.sheet .sheet-qr svg').count();
+    check('rx-print', 'A past prescription reprints on one A5 page, with the clinic QR at the bottom left', p.pages === 1 && p.a5 && rxQr === 1, `prescription-A5.pdf: ${p.pages} page, ${p.size}; clinic QR: ${rxQr}`);
+  }
+  // 14 Nov 2026: lab report and X-ray request (A5, one page each), case report (A4).
+  const labDay = db.exec(`SELECT taken_at FROM lab_results WHERE pet_id = '${pet}' ORDER BY taken_at DESC LIMIT 1`)[0]?.values[0][0];
+  if (labDay) {
+    const l = await pdfOf(`#/pets/${pet}/labs/${labDay}`, 'lab-report-A5.pdf');
+    check('lab-print', 'A lab report prints on one A5 page with the customer ID', l.pages === 1 && l.a5 && (await win.locator('.lab-sheet').innerText()).includes('AC-'), `lab-report-A5.pdf: ${l.pages} page, ${l.size}`);
+  }
+  const x = await pdfOf(`#/pets/${pet}/xray-request`, 'xray-request-A5.pdf');
+  check('xray-print', 'The X-ray request (every view in the menu) prints on one A5 page', x.pages === 1 && x.a5, `xray-request-A5.pdf: ${x.pages} page, ${x.size}`);
+  // The health record booklet (14 Nov 2026): one A4 sheet, landscape, both sides, to fold in three.
+  const hr = await pdfOf(`#/pets/${pet}/health-record`, 'health-record-A4.pdf', 'A4', '.hr-page');
+  const stickers = await win.locator('.hr-sticker').count();
+  check('health-record', 'The pet health record booklet prints on both sides of one A4 sheet (landscape) with a sticker box per vaccination',
+    hr.pages === 2 && hr.a4land && stickers >= 6, `health-record-A4.pdf: ${hr.pages} pages, ${hr.size}; ${stickers} sticker boxes`);
+  const lr = await pdfOf(`#/pets/${pet}/lab-request`, 'lab-request-A4.pdf', 'A4');
+  check('lab-request-print', 'The lab request (the clinic\'s whole test list) prints on one A4 page', lr.pages === 1 && lr.a4, `lab-request-A4.pdf: ${lr.pages} page, ${lr.size}`);
+  const c = await pdfOf(`#/pets/${pet}/report`, 'case-report-A4.pdf', 'A4');
+  check('case-report', 'The case report prints on A4 with the owner, the history and the diagnoses', c.pages >= 1 && c.a4 && (await win.locator('.case-report').innerText()).includes('AC-'), `case-report-A4.pdf: ${c.pages} page(s), ${c.size}`);
+
+  // "Save As PDF" on every printed document: the save dialog suggests "<client> - <pet> - <document>.pdf" and the saved
+  // file has the document's page size (A5, A4, or the health record's A4 landscape).
+  const pdfOut = path.join(out, 'save-as-pdf');
+  fs.mkdirSync(pdfOut, { recursive: true });
+  await app.evaluate(({ dialog }, dir) => {
+    globalThis.__suggested = [];
+    dialog.showSaveDialog = async (_w, opts) => {
+      const name = String(opts.defaultPath).split(/[\\/]/).pop();
+      globalThis.__suggested.push(name);
+      return { canceled: false, filePath: `${dir}/${name}` };
+    };
+  }, pdfOut);
+  const row = (sql) => db.exec(sql)[0].values[0];
+  const [invOwner, invPet, invNo] = row(`SELECT o.full_name, p.name, i.number FROM invoices i JOIN owners o ON o.id = i.owner_id LEFT JOIN pets p ON p.id = i.pet_id WHERE i.id = '${inv}'`);
+  const [petName, petOwner] = row(`SELECT p.name, o.full_name FROM pets p JOIN owners o ON o.id = p.owner_id WHERE p.id = '${pet}'`);
+  const rxRow = db.exec("SELECT v.id, p.name, o.full_name FROM visits v JOIN pets p ON p.id = v.pet_id JOIN owners o ON o.id = p.owner_id WHERE EXISTS (SELECT 1 FROM prescriptions r WHERE r.visit_id = v.id) LIMIT 1")[0]?.values[0];
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const docs = [
+    ['S7.5-save-pdf', 'receipt', `#/invoices/${inv}/print`, `${[invOwner, invPet, `Receipt ${invNo}`].filter(Boolean).join(' - ')}.pdf`, '.sheet.a5', 'a5'],
+    ['S4-save-pdf', 'pet summary', `#/pets/${pet}/print`, `${petOwner} - ${petName} - Patient summary.pdf`, '.sheet.a5', 'a5'],
+    ['case-report-save-pdf', 'case report', `#/pets/${pet}/report`, `${petOwner} - ${petName} - Medical case report.pdf`, '.sheet.a4', 'a4'],
+    ['health-record-save-pdf', 'health record', `#/pets/${pet}/health-record`, `${petOwner} - ${petName} - Pet Health Record.pdf`, '.hr-page', 'a4land'],
+  ];
+  if (rxRow) docs.push(['rx-save-pdf', 'prescription', `#/visits/${rxRow[0]}/prescription`, new RegExp(`^${esc(`${rxRow[2]} - ${rxRow[1]} - Prescription `)}\\d{1,2} \\w{3} \\d{4}\\.pdf$`), '.rx-sheet', 'a5']);
+  for (const [id, what, hash, expectName, sel, size] of docs) {
+    await go(win, hash);
+    await win.waitForSelector(sel);
+    await sleep(300);
+    await win.getByRole('button', { name: 'Save As PDF' }).click();
+    await win.getByRole('button', { name: 'Show in folder' }).waitFor({ timeout: 15000 });
+    const suggested = (await app.evaluate(() => globalThis.__suggested)).pop();
+    const file = path.join(pdfOut, suggested);
+    const text = fs.existsSync(file) ? fs.readFileSync(file).toString('latin1') : '';
+    const box = text.match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/);
+    const [w, h] = box ? [Number(box[1]), Number(box[2])] : [0, 0];
+    const near = (a, b) => Math.abs(a - b) < 3;
+    const sized = { a5: near(w, 419.5) && near(h, 595.3), a4: near(w, 595.3) && near(h, 841.9), a4land: near(w, 841.9) && near(h, 595.3) }[size];
+    const named = typeof expectName === 'string' ? suggested === expectName : expectName.test(suggested);
+    check(id, `"Save As PDF" on the ${what} saves it named after the client, pet and document`, named && text.startsWith('%PDF') && sized,
+      `suggested "${suggested}" (expected ${typeof expectName === 'string' ? `"${expectName}"` : expectName}), ${text.length} bytes, ${box ? `${Math.round(w)}×${Math.round(h)} pt` : 'no page'} (${size})`);
+  }
 }
 
 // ------------------------------------------------------------------ 7. Arabic RTL pass
@@ -355,10 +425,14 @@ async function pdfOf(hash, name) {
     ['dashboard', '#/'], ['owners', '#/owners'], ['owner-new', '#/owners/new'], ['owner-detail', `#/owners/${ownerId}`],
     ['pet-new', `#/owners/${ownerId}/pets/new`], ['pet-timeline', `#/pets/${petId}?tab=timeline`], ['pet-vaccinations', `#/pets/${petId}?tab=vaccinations`],
     ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-dental', `#/pets/${petId}?tab=dental`], ['pet-vision', `#/pets/${petId}?tab=vision`], ['pet-edit', `#/pets/${petId}/edit`],
+    ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
+    ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`],
+    ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`],
+    ['lost-found', '#/lost-found'], ['pet-exam', `#/pets/${petId}?tab=exam`], ['pet-tag', `#/pets/${petId}/tag`], ['health-record', `#/pets/${petId}/health-record`], ['prescription-print', `#/visits/${visitId}/prescription`], ['owner-card', `#/owners/${ownerId}/card`],
     ['pet-summary', `#/pets/${petId}/print`], ['visit-pick', '#/visits/new'], ['visit-new', `#/pets/${petId}/visits/new`], ['visit-edit', `#/visits/${visitId}/edit`],
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
-    ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/settings?tab=prices'], ['settings-vaccines', '#/settings?tab=vaccines'],
+    ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/prices'], ['settings-vaccines', '#/stock/vaccines'],
     ['settings-users', '#/settings?tab=users'], ['settings-data', '#/settings?tab=data'],
   ];
   const problems = [];
@@ -406,7 +480,35 @@ await app.close();
   // Version 0.1 visits had no pre-diagnosis columns (schema v4).
   db.run('DROP INDEX IF EXISTS visits_stage');
   for (const c of ['stage', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', 'intake_by', 'intake_at']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
-  // Version 0.1 had no Dental / Vision charts (schema v6).
+  // …nor patient alerts (schema v6).
+  for (const c of ['alert_flags', 'alert_note']) db.run(`ALTER TABLE pets DROP COLUMN ${c}`);
+  // …nor the drug list and treatment templates (schema v7).
+  db.run('DROP TABLE drugs');
+  db.run('DROP TABLE treatment_templates');
+  // …nor stock (schema v8).
+  db.run('DROP TABLE stock_moves');
+  for (const c of ['track_stock', 'low_stock']) db.run(`ALTER TABLE price_items DROP COLUMN ${c}`);
+  // …nor the check-up reminder stamp (schema v9).
+  db.run('ALTER TABLE pets DROP COLUMN recall_sent_at');
+  // …nor expenses (schema v10; stock batches went with stock_moves above).
+  db.run('DROP TABLE expenses');
+  // …nor lab results and consent forms (schema v11).
+  db.run('DROP TABLE lab_results');
+  db.run('DROP TABLE consents');
+  // …nor the in-patient board (schema v12).
+  db.run('DROP TABLE care_tasks');
+  db.run('DROP TABLE admissions');
+  // …nor the owner page link (schema v15), nor customer IDs (schema v16).
+  db.run('ALTER TABLE owners DROP COLUMN portal_token');
+  db.run('DROP INDEX IF EXISTS owners_code');
+  db.run('ALTER TABLE owners DROP COLUMN code');
+  // …nor saved X-ray / lab requests (schema v17), nor collar tags and lost & found (v18).
+  db.run('DROP TABLE test_requests');
+  db.run('DROP TABLE found_reports');
+  db.run('ALTER TABLE pets DROP COLUMN tag_token');
+  // …nor the physical examination on visits (v19).
+  for (const c of ['bp_systolic', 'bp_diastolic', 'mucous_membrane', 'eyes', 'skin_coat', 'glands', 'glands_note', 'anal_glands', 'nails', 'fleas_ticks']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
+  // …nor the Dental / Vision charts (v21).
   db.run('DROP TABLE pet_chart_marks');
   db.run('ALTER TABLE pets DROP COLUMN eye_color');
   db.run('DROP TABLE sync_outbox');
@@ -427,10 +529,13 @@ const afterRelaunch = counts(openDbFile());
     const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
     const roles = db2.exec('SELECT role, COUNT(*) FROM users GROUP BY role')[0].values.map((r) => `${r[0]}×${r[1]}`).join(', ');
     const settingsLink = await win.locator('.nav a[href="#/settings"]').count();
-    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '6' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
+    const noId = db2.exec("SELECT COUNT(*) FROM owners WHERE code IS NULL OR code NOT LIKE 'AC-%'")[0].values[0][0];
+    const ids = db2.exec('SELECT COUNT(*), COUNT(DISTINCT code) FROM owners')[0].values[0];
+    check('upgrade-codes', 'Updating gives every existing owner a customer ID, all different', noId === 0 && ids[0] === ids[1], `owners without an ID: ${noId}; ${ids[1]} different IDs for ${ids[0]} owners`);
+    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === CURRENT_SCHEMA && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
       `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
   }
-  check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',
+  check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === '23 Montasser St, Al Huwaiteyah, Agouza, Giza Governorate 3753701' && row[3] === 'Where pets are people · شكراً لثقتكم',
     `0.1-style database (no logo, phone, address) reopened: logo on login ${loginLogo ? 'shown' : 'MISSING'}, in the sidebar ${sideLogo ? 'shown' : 'MISSING'}; stored logo ${String(row[0]).slice(0, 22)}…; phone ${row[1]}; address ${row[2]}; receipt footer "${row[3]}"`);
 }
 // Version 0.1.x stored the logo as a link into the install folder. Opening such a database must swap in the image.

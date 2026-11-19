@@ -1,4 +1,4 @@
-// Dental chart anatomy for dogs and cats (Phase 6 change request).
+// Dental chart anatomy for dogs and cats (change request, 19 Nov 2026).
 // Teeth use the modified Triadan system: quadrant 1 upper right, 2 upper left, 3 lower left, 4 lower right
 // (5–8 the same for baby teeth); position 01–03 incisors, 04 canine, 05–08 premolars, 09–11 molars.
 // Which teeth are drawn, and how far they have come in, depends on the pet's age.

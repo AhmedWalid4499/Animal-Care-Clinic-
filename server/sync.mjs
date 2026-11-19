@@ -1,5 +1,5 @@
 // Applying device changes on the server: role checks, per-column last-writer-wins, invoice numbers.
-import { inTx } from './db.mjs';
+import { inTx, numberingLock, pullLock } from './db.mjs';
 import { refuse } from './rules.mjs';
 import { createNotifications } from './notify.mjs';
 import { SYNC_TABLES } from './tables.mjs';
@@ -19,6 +19,7 @@ const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
  */
 export async function applyChanges(pool, { clinicId, user, deviceId, changes, seenSeq = null }) {
   return inTx(pool, async (c) => {
+    await numberingLock(c, clinicId);
     const rejected = [];
     const reverts = [];
     const events = [];
@@ -104,6 +105,11 @@ export async function applyChanges(pool, { clinicId, user, deviceId, changes, se
           data.number = await nextInvoiceNumber(c, clinicId, data.issued_at);
           versions.number = stamp(new Date().toISOString(), 'server');
         }
+        // Customer ID: a new owner from a device (TMP-…), or from an app too old to make one, gets the next AC-number.
+        if (ch.tbl === 'owners' && !deleted && (typeof data.code !== 'string' || !data.code || data.code.startsWith('TMP-'))) {
+          data.code = await nextOwnerCode(c, clinicId);
+          versions.code = stamp(new Date().toISOString(), 'server');
+        }
       }
       const seq = (await c.query("SELECT nextval('change_seq') AS s")).rows[0].s;
       await c.query(
@@ -133,12 +139,50 @@ async function nextInvoiceNumber(c, clinicId, issuedAt) {
   return `INV-${year}-${String(n).padStart(4, '0')}`;
 }
 
+/** Customer IDs: AC-00001, sequential per clinic, never reused (the counter only goes up). */
+async function nextOwnerCode(c, clinicId) {
+  const cl = (await c.query('SELECT invoice_counters FROM clinics WHERE id = $1 FOR UPDATE', [clinicId])).rows[0];
+  const counters = cl?.invoice_counters ?? {};
+  const maxExisting = (await c.query(
+    "SELECT COALESCE(MAX(substr(data->>'code', 4)::int), 0) AS m FROM rows WHERE clinic_id = $1 AND tbl = 'owners' AND data->>'code' ~ '^AC-[0-9]+$'",
+    [clinicId],
+  )).rows[0].m;
+  const n = Math.max(Number(counters.owner ?? 0), Number(maxExisting)) + 1;
+  counters.owner = n;
+  await c.query('UPDATE clinics SET invoice_counters = $2 WHERE id = $1', [clinicId, counters]);
+  return `AC-${String(n).padStart(5, '0')}`;
+}
+
+/**
+ * Owners without a customer ID (made before IDs existed, or uploaded by an older app) get one, oldest first.
+ * Runs at start-up and after a first upload; devices receive the IDs with their next pull.
+ */
+export async function assignOwnerCodes(pool, clinicId) {
+  return inTx(pool, async (c) => {
+    await numberingLock(c, clinicId);
+    const missing = (await c.query(
+      `SELECT id, versions FROM rows WHERE clinic_id = $1 AND tbl = 'owners' AND NOT deleted
+         AND (data->>'code' IS NULL OR data->>'code' = '' OR data->>'code' LIKE 'TMP-%')
+       ORDER BY data->>'created_at', id FOR UPDATE`,
+      [clinicId],
+    )).rows;
+    for (const r of missing) {
+      const code = await nextOwnerCode(c, clinicId);
+      const versions = { ...r.versions, code: stamp(new Date().toISOString(), 'server') };
+      await c.query("UPDATE rows SET data = data || jsonb_build_object('code', $3::text), versions = $4, seq = nextval('change_seq') WHERE clinic_id = $1 AND tbl = 'owners' AND id = $2",
+        [clinicId, r.id, code, versions]);
+    }
+    return missing.length;
+  });
+}
+
 /** Rows changed after `since`, oldest first. */
 export async function pullSince(pool, clinicId, since, limit = 1000) {
-  const r = await pool.query(
-    'SELECT tbl, id, data, deleted, seq FROM rows WHERE clinic_id = $1 AND seq > $2 ORDER BY seq LIMIT $3',
-    [clinicId, since, limit + 1],
-  );
+  // Waits for writes in progress (numberingLock in server/db.mjs), so nothing numbered below what this returns is still uncommitted.
+  const r = await inTx(pool, async (c) => {
+    await pullLock(c, clinicId);
+    return c.query('SELECT tbl, id, data, deleted, seq FROM rows WHERE clinic_id = $1 AND seq > $2 ORDER BY seq LIMIT $3', [clinicId, since, limit + 1]);
+  });
   const more = r.rows.length > limit;
   const rows = r.rows.slice(0, limit).map((x) => ({ tbl: x.tbl, id: x.id, data: x.deleted ? null : x.data, deleted: x.deleted, seq: Number(x.seq) }));
   return { rows, more, seq: rows.length ? rows[rows.length - 1].seq : since };
@@ -150,6 +194,7 @@ export async function pullSince(pool, clinicId, since, limit = 1000) {
  */
 export async function bootstrapRows(pool, { clinicId, deviceId, rows, done }) {
   return inTx(pool, async (c) => {
+    await numberingLock(c, clinicId);
     const cl = (await c.query('SELECT bootstrapped FROM clinics WHERE id = $1 FOR UPDATE', [clinicId])).rows[0];
     if (!cl || cl.bootstrapped) return { error: 'this clinic already has data' };
     const now = stamp(new Date().toISOString(), deviceId);

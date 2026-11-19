@@ -1,4 +1,4 @@
-// Dental tab (Phase 6 change request): an occlusal view of the pet's mouth — upper jaw on top, lower jaw below,
+// Dental tab (change request, 19 Nov 2026): an occlusal view of the pet's mouth — upper jaw on top, lower jaw below,
 // the pet's right on the viewer's left (as on a veterinary dental chart). Teeth come from the pet's age.
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import { useApp } from '../lib/app';

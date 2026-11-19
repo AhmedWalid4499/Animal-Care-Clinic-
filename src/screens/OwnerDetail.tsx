@@ -4,8 +4,10 @@ import { useApp, useQuery } from '../lib/app';
 import { getOwner, getSettings, ownerBalance, ownerInvoices, ownerPets, setOwnerStatus } from '../db/repo';
 import { ageParts } from '../lib/dates';
 import { telUrl } from '../lib/whatsapp';
-import { Confirm, Icon, PetAvatar, StatusBadge, WaButton } from '../components/ui';
+import { Confirm, Icon, OwnerCode, PetAvatar, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
+import { OwnerPageSection } from '../components/OwnerPage';
+import { RxArchive } from '../components/RxArchive';
 
 export function OwnerDetail() {
   const { id = '' } = useParams();
@@ -30,6 +32,7 @@ export function OwnerDetail() {
       </PageHead>
 
       <div className="facts" style={{ marginTop: 0 }}>
+        <div><span>{t('owners.code')}</span><b><OwnerCode code={owner.code} plain /></b></div>
         <div><span>{t('owners.phone')}</span><b className="ltr">{owner.phone}</b></div>
         <div><span>{t('owners.whatsapp')}</span><b className="ltr">{owner.whatsapp || owner.phone}</b></div>
         {owner.email && <div><span>{t('owners.email')}</span><b className="ltr">{owner.email}</b></div>}
@@ -92,6 +95,16 @@ export function OwnerDetail() {
           )}
         </section>
       </div>
+
+      <OwnerPageSection owner={owner} />
+
+      <section className="section rx-archive-section">
+        <header>
+          <h2>{t('rxArchive.title')}</h2>
+        </header>
+        <p className="faint small" style={{ margin: '8px 0 0' }}>{t('rxArchive.hint')}</p>
+        <RxArchive ownerId={id} />
+      </section>
 
       {isAdmin && (
         <div style={{ marginTop: 32 }}>
