@@ -384,9 +384,9 @@ function DataTab() {
   };
   const template = async () => {
     const ws = XLSX.utils.aoa_to_sheet([
-      ['owner_full_name', 'owner_phone', 'owner_whatsapp', 'owner_email', 'owner_address', 'owner_notes', 'pet_name', 'species', 'breed', 'sex', 'is_neutered', 'date_of_birth', 'dob_is_estimate', 'color', 'microchip_no', 'pet_notes'],
-      ['Mona Hassan', '01012345678', '', 'mona@example.com', 'Heliopolis', '', 'Luna', 'CAT', 'Persian', 'FEMALE', 'yes', '2022-05-14', 'no', 'White', '', ''],
-      ['Mona Hassan', '01012345678', '', '', '', '', 'Max', 'DOG', 'Golden Retriever', 'MALE', 'no', '2020-01-01', 'yes', 'Golden', '', ''],
+      ['owner_full_name', 'owner_phone', 'owner_whatsapp', 'owner_email', 'owner_address', 'owner_notes', 'pet_name', 'species', 'breed', 'sex', 'is_neutered', 'date_of_birth', 'dob_is_estimate', 'color', 'eye_color', 'microchip_no', 'pet_notes'],
+      ['Mona Hassan', '01012345678', '', 'mona@example.com', 'Heliopolis', '', 'Luna', 'CAT', 'Persian', 'FEMALE', 'yes', '2022-05-14', 'no', 'White', 'BLUE', '', ''],
+      ['Mona Hassan', '01012345678', '', '', '', '', 'Max', 'DOG', 'Golden Retriever', 'MALE', 'no', '2020-01-01', 'yes', 'Golden', 'DARK_BROWN', '', ''],
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'owners-pets');
@@ -399,7 +399,7 @@ function DataTab() {
     const wb = XLSX.read(f.bytes, { type: 'array' });
     const rows = XLSX.utils.sheet_to_json<ImportRow>(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });
     const r = importOwnersPets(rows);
-    setResult(`${t('settings.importResult', { owners: r.owners, pets: r.pets, skipped: r.skipped.length })}${r.skipped.length ? `\n${r.skipped.map((s) => `#${s.row}: ${s.reason}`).join('\n')}` : ''}`);
+    setResult(`${t('settings.importResult', { owners: r.owners, pets: r.pets, skipped: r.skipped.length })}${r.skipped.length ? `\n${r.skipped.map((s) => `#${s.row}: ${s.reason}`).join('\n')}` : ''}${r.notes.length ? `\n${t('settings.importNotes')}\n${r.notes.map((s) => `#${s.row}: ${s.reason}`).join('\n')}` : ''}`);
   };
 
   return (
