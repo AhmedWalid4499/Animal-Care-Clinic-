@@ -28,6 +28,8 @@ import { CaseReport, LabReportPrint, RequestForm } from './screens/Documents';
 import { LostFound, PetTag } from './screens/LostFound';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
+import { PackagesPage } from './screens/Packages';
+import { SupplierDetail, SuppliersPage } from './screens/Suppliers';
 
 function AdminOnly({ children }: { children: ReactNode }) {
   const { isAdmin, t } = useApp();
@@ -99,7 +101,10 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="stock" element={<StockPage />} />
           <Route path="stock/vaccines" element={<AdminOnly><VaccinesPage /></AdminOnly>} />
           <Route path="stock/drugs" element={<AdminOnly><DrugsPage /></AdminOnly>} />
+          <Route path="stock/suppliers" element={<AdminOnly><SuppliersPage /></AdminOnly>} />
+          <Route path="stock/suppliers/:id" element={<AdminOnly><SupplierDetail /></AdminOnly>} />
           <Route path="prices" element={<AdminOnly><PricesPage /></AdminOnly>} />
+          <Route path="packages" element={<AdminOnly><PackagesPage /></AdminOnly>} />
           <Route path="templates" element={<ClinicalOnly><TemplatesPage /></ClinicalOnly>} />
           <Route path="templates/:id/print" element={<ClinicalOnly><TemplatePrint /></ClinicalOnly>} />
           <Route path="settings" element={<AdminOnly><Settings /></AdminOnly>} />

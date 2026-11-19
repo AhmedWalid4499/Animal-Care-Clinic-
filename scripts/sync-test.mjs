@@ -6,6 +6,7 @@
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
+import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -95,6 +96,26 @@ const pushService = https.createServer({ key: fs.readFileSync(path.join(certDir,
   });
 });
 await new Promise((r) => pushService.listen(PUSH_PORT, '127.0.0.1', r));
+
+// A fake WhatsApp Business Cloud API (graph.facebook.com) for the automatic reminders (schema v22). Every server this
+// test starts knows it; nothing is sent until an Admin switches the reminders on. Numbers ending in 9999 are refused.
+const WA_PORT = 8792;
+const waSent = [];
+const waService = http.createServer((req, res) => {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+    waSent.push({ path: req.url, auth: req.headers.authorization, body });
+    const refuse = String(body.to ?? '').endsWith('9999');
+    res.writeHead(refuse ? 400 : 200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(refuse ? { error: { message: '(#131026) Message undeliverable' } } : { messages: [{ id: `wamid.${waSent.length}` }] }));
+  });
+});
+await new Promise((r) => waService.listen(WA_PORT, '127.0.0.1', r));
+Object.assign(process.env, {
+  WHATSAPP_TOKEN: 'test-token', WHATSAPP_PHONE_NUMBER_ID: '1234567890', WHATSAPP_API_BASE: `http://127.0.0.1:${WA_PORT}/v21.0`, WHATSAPP_DISPLAY_NUMBER: '+20 122 700 7428',
+});
 let server = null;
 function startServer(extraEnv = {}, entry = 'server/index.mjs') {
   server = spawn(process.execPath, [entry], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -693,6 +714,106 @@ await step('expenses: admin only', async () => {
   check('expenses-rules', 'Only the Admin records the clinic\'s expenses',
     desk.rejected.length === 1 && doc.rejected.length === 1 && admin.rejected.length === 0,
     `assistant: ${desk.rejected[0]?.reason ?? 'ACCEPTED'}; doctor: ${doc.rejected[0]?.reason ?? 'ACCEPTED'}; admin: ${admin.rejected.length ? 'REFUSED' : 'accepted'}`);
+});
+
+// ---------------------------------------------------------------- schema v22: packages, suppliers, automatic WhatsApp
+await step('packages and suppliers: who may change them', async () => {
+  // The package list and everything about suppliers is the Admin's. Anyone sells a package and records a session used;
+  // a sold package then changes only by an Admin (cancel); a used session only to VOID, by a Doctor or Admin.
+  const at = nowIso();
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const row = (tbl, id, cols) => ({ tbl, id, op: 'upsert', at, cols: { id, created_at: at, updated_at: at, ...cols } });
+  const later = () => new Date(Date.now() + 1000).toISOString();
+  const deskType = await push(row('package_types', crypto.randomUUID(), { name: 'Puppy', price: 100000, items: '[]', is_active: 1 }), 'desk');
+  const pkg = crypto.randomUUID();
+  const deskSell = await push(row('pet_packages', pkg, { pet_id: crypto.randomUUID(), owner_id: crypto.randomUUID(), name: 'Puppy', items: '[{"key":"a","label":"Rabies","qty":3}]', price: 100000, started_at: at.slice(0, 10), status: 'ACTIVE' }), 'desk');
+  const deskCancel = await push({ tbl: 'pet_packages', id: pkg, op: 'upsert', at: later(), cols: { status: 'CANCELLED', updated_at: later() } }, 'desk');
+  const use = crypto.randomUUID();
+  const deskUse = await push(row('package_uses', use, { pet_package_id: pkg, item_key: 'a', used_at: at, status: 'ACTIVE' }), 'desk');
+  const deskUndo = await push({ tbl: 'package_uses', id: use, op: 'upsert', at: later(), cols: { status: 'VOID', updated_at: later() } }, 'desk');
+  const docRekey = await push({ tbl: 'package_uses', id: use, op: 'upsert', at: later(), cols: { item_key: 'b', updated_at: later() } }, 'doctor');
+  const docUndo = await push({ tbl: 'package_uses', id: use, op: 'upsert', at: later(), cols: { status: 'VOID', updated_at: later() } }, 'doctor');
+  const adminCancel = await push({ tbl: 'pet_packages', id: pkg, op: 'upsert', at: later(), cols: { status: 'CANCELLED', updated_at: later() } }, 'admin');
+  check('package-rules', 'Admins keep the package list; anyone sells a package and records a session; only an Admin cancels; a Doctor or Admin undoes a session',
+    deskType.rejected.length === 1 && deskSell.rejected.length === 0 && deskCancel.rejected.length === 1 && deskUse.rejected.length === 0
+      && deskUndo.rejected.length === 1 && docRekey.rejected.length === 1 && docUndo.rejected.length === 0 && adminCancel.rejected.length === 0,
+    `assistant edits the list: ${deskType.rejected[0]?.reason ?? 'ACCEPTED'}; sells: ${deskSell.rejected.length ? 'REFUSED' : 'accepted'}; cancels: ${deskCancel.rejected[0]?.reason ?? 'ACCEPTED'}; uses a session: ${deskUse.rejected.length ? 'REFUSED' : 'accepted'}; undoes it: ${deskUndo.rejected[0]?.reason ?? 'ACCEPTED'}; doctor changes the line: ${docRekey.rejected[0]?.reason ?? 'ACCEPTED'}; doctor undoes: ${docUndo.rejected.length ? 'REFUSED' : 'accepted'}; admin cancels: ${adminCancel.rejected.length ? 'REFUSED' : 'accepted'}`);
+
+  const sup = crypto.randomUUID();
+  const docSupplier = await push(row('suppliers', crypto.randomUUID(), { name: 'Pharma', is_active: 1 }), 'doctor');
+  const adminSupplier = await push(row('suppliers', sup, { name: 'Pharma', is_active: 1 }), 'admin');
+  const pur = crypto.randomUUID();
+  const adminPurchase = await push(row('purchases', pur, { supplier_id: sup, purchased_at: at.slice(0, 10), total: 5000, status: 'ACTIVE' }), 'admin');
+  const line = crypto.randomUUID();
+  await push(row('purchase_items', line, { purchase_id: pur, description: 'Gloves', qty: 1, unit_cost: 5000, line_total: 5000 }), 'admin');
+  const lineDelete = await push({ tbl: 'purchase_items', id: line, op: 'delete', at: later(), cols: {} }, 'admin');
+  const deskPay = await push(row('supplier_payments', crypto.randomUUID(), { supplier_id: sup, paid_at: at.slice(0, 10), amount: 5000, method: 'CASH', status: 'ACTIVE' }), 'desk');
+  const purchaseDelete = await push({ tbl: 'purchases', id: pur, op: 'delete', at: later(), cols: {} }, 'admin');
+  check('supplier-rules', 'Only the Admin records suppliers, purchases and payments to them; a purchase is voided, never deleted (its lines are replaced on edit)',
+    docSupplier.rejected.length === 1 && adminSupplier.rejected.length === 0 && adminPurchase.rejected.length === 0 && lineDelete.rejected.length === 0 && deskPay.rejected.length === 1 && purchaseDelete.rejected.length === 1,
+    `doctor adds a supplier: ${docSupplier.rejected[0]?.reason ?? 'ACCEPTED'}; admin: ${adminSupplier.rejected.length || adminPurchase.rejected.length ? 'REFUSED' : 'accepted'}; admin replaces a line: ${lineDelete.rejected.length ? 'REFUSED' : 'accepted'}; assistant pays: ${deskPay.rejected[0]?.reason ?? 'ACCEPTED'}; admin deletes a purchase: ${purchaseDelete.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('whatsapp: automatic reminders', async () => {
+  // The clinic server sends due reminders itself through the WhatsApp Business Cloud API (here: the fake above),
+  // only once switched on, once per reminder, never to an owner who opted out; devices only read the log.
+  const at = nowIso();
+  const cairo = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const today = cairo(new Date());
+  const inDays = (n) => cairo(new Date(Date.now() + n * 86400_000));
+  const push = (changes, who = 'admin') => api('/api/sync/push', { changes }, tokens[who]).then((r) => r.body);
+  const row = (tbl, id, cols) => ({ tbl, id, op: 'upsert', at, cols: { id, created_at: at, updated_at: at, ...cols } });
+  const ids = { owner: crypto.randomUUID(), out: crypto.randomUUID(), bad: crypto.randomUUID(), pet: crypto.randomUUID(), petOut: crypto.randomUUID(), petBad: crypto.randomUUID(), vt: crypto.randomUUID(), vx: crypto.randomUUID(), vxOld: crypto.randomUUID(), appt: crypto.randomUUID(), apptOut: crypto.randomUUID(), apptBad: crypto.randomUUID() };
+  // Tomorrow 18:00 in Cairo, as a moment.
+  const tomorrow18 = new Date(`${inDays(1)}T18:00:00+02:00`).toISOString();
+  const pushed0 = await push([
+    row('owners', ids.owner, { full_name: 'Wa Owner', phone: '01055501234', status: 'ACTIVE', code: 'AC-90001' }),
+    row('owners', ids.out, { full_name: 'Opted Out', phone: '01055505678', status: 'ACTIVE', wa_opt_out: 1, code: 'AC-90002' }),
+    row('owners', ids.bad, { full_name: 'Bad Number', phone: '01055509999', status: 'ACTIVE', code: 'AC-90003' }),
+    row('pets', ids.pet, { owner_id: ids.owner, name: 'Wa Luna', species: 'CAT', sex: 'FEMALE', status: 'ACTIVE' }),
+    row('pets', ids.petOut, { owner_id: ids.out, name: 'Quiet Max', species: 'DOG', sex: 'MALE', status: 'ACTIVE' }),
+    row('pets', ids.petBad, { owner_id: ids.bad, name: 'Bad Bella', species: 'DOG', sex: 'FEMALE', status: 'ACTIVE' }),
+    row('vaccine_types', ids.vt, { name: 'Rabies WA', species: 'CAT', interval_days: 365, is_active: 1 }),
+    // An older dose superseded by a newer one is never reminded.
+    row('vaccinations', ids.vxOld, { pet_id: ids.pet, vaccine_type_id: ids.vt, administered_at: inDays(-400), next_due_at: inDays(-35) }),
+    row('vaccinations', ids.vx, { pet_id: ids.pet, vaccine_type_id: ids.vt, administered_at: inDays(-362), next_due_at: inDays(3) }),
+    row('appointments', ids.appt, { pet_id: ids.pet, owner_id: ids.owner, scheduled_at: tomorrow18, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED' }),
+    row('appointments', ids.apptOut, { pet_id: ids.petOut, owner_id: ids.out, scheduled_at: tomorrow18, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED' }),
+    row('appointments', ids.apptBad, { pet_id: ids.petBad, owner_id: ids.bad, scheduled_at: tomorrow18, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED' }),
+  ]);
+  if (pushed0.rejected.length) throw new Error(`setup refused: ${JSON.stringify(pushed0.rejected)}`);
+  const status = (await api('/api/whatsapp/status', null, tokens.admin)).body;
+  const deskRun = await api('/api/whatsapp/run', {}, tokens.desk);
+  const deskLog = await push([row('wa_messages', crypto.randomUUID(), { kind: 'VACCINE', status: 'SENT', sent_at: at })], 'admin');
+  // The schedule waits for the Admin's switch; "Send due reminders now" sends what is due.
+  const before = waSent.length;
+  const run1 = (await api('/api/whatsapp/run', {}, tokens.admin)).body;
+  const mine = waSent.slice(before);
+  const to = (n) => mine.filter((m) => m.body.to === n);
+  const vxMsg = to('201055501234').find((m) => m.body.template.name === 'vaccine_reminder');
+  const apMsg = to('201055501234').find((m) => m.body.template.name === 'appointment_reminder');
+  const params = (m) => m?.body.template.components?.[0]?.parameters.map((p) => p.text) ?? [];
+  const run2 = (await api('/api/whatsapp/run', {}, tokens.admin)).body;
+  const rows = (await api('/api/sync/pull?since=0&limit=20000', null, tokens.admin)).body.rows;
+  const data = (tbl, id) => rows.find((r) => r.tbl === tbl && r.id === id)?.data ?? {};
+  const log = rows.filter((r) => r.tbl === 'wa_messages').map((r) => r.data);
+  const failed = log.find((m) => m.owner_id === ids.bad);
+  const ok =
+    status.configured === true && status.number === '+20 122 700 7428' && deskRun.status === 403 && deskLog.rejected.length === 1 &&
+    vxMsg && apMsg && vxMsg.auth === 'Bearer test-token' && vxMsg.path === '/v21.0/1234567890/messages' &&
+    params(vxMsg)[0] === 'Wa Owner' && params(vxMsg)[1] === 'Wa Luna' && params(vxMsg)[2] === 'Rabies WA' && params(apMsg).length === 5 &&
+    to('201055505678').length === 0 && to('201055509999').length === 1 && to('201055501234').length === 2 &&
+    !!data('vaccinations', ids.vx).reminder_sent_at && !!data('appointments', ids.appt).reminder_sent_at && !data('appointments', ids.apptBad).reminder_sent_at &&
+    !data('vaccinations', ids.vxOld).reminder_sent_at && failed?.status === 'FAILED' && /undeliverable/.test(failed?.error ?? '') &&
+    log.some((m) => m.ref_id === ids.vx && m.status === 'SENT' && m.wa_id) &&
+    waSent.slice(before + mine.length).filter((m) => m.body.to === '201055501234').length === 0 && run2.failed >= 1;
+  check('whatsapp-auto', 'The clinic server sends due vaccination and appointment reminders through WhatsApp once, skips opted-out owners, logs failures, and only Admins run it',
+    ok,
+    `configured: ${status.configured}; assistant runs it: ${deskRun.status}; device writes the log: ${deskLog.rejected[0]?.reason ?? 'ACCEPTED'}; first run sent ${run1.sent}, failed ${run1.failed}; to the owner: ${to('201055501234').map((m) => m.body.template.name).join(', ')}; params ${JSON.stringify(params(vxMsg))}; opted out: ${to('201055505678').length}; second run sent ${run2.sent} (none again to the owner); stamped: ${!!data('vaccinations', ids.vx).reminder_sent_at}/${!!data('appointments', ids.appt).reminder_sent_at}; failed logged: ${failed?.status} ${failed?.error ?? ''}; today ${today}`);
+  // Out of the way of later steps, which pick active owners and pets: archived owners, transferred pets.
+  const gone = new Date(Date.now() + 2000).toISOString();
+  await push([ids.owner, ids.out, ids.bad].map((id) => ({ tbl: 'owners', id, op: 'upsert', at: gone, cols: { status: 'ARCHIVED', updated_at: gone } }))
+    .concat([ids.pet, ids.petOut, ids.petBad].map((id) => ({ tbl: 'pets', id, op: 'upsert', at: gone, cols: { status: 'TRANSFERRED', updated_at: gone } }))));
 });
 
 // ---------------------------------------------------------------- Phase 6: owner page (QR) and prescription archive
@@ -1637,6 +1758,7 @@ await step('admin password recovery', async () => {
 await B.app.close().catch(() => {});
 await stopServer().catch(() => {});
 pushService.close();
+waService.close();
 await s3.close().catch(() => {});
 await pool.end();
 

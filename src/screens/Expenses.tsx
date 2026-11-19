@@ -1,19 +1,23 @@
 // Reports → Expenses (Admin; 7 Nov 2026 change request): the clinic's own spending — rent, salaries, supplies… — so the
 // monthly report can show profit (money collected − money spent). Expenses are voided, never deleted.
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { expensesBetween, monthAdd, saveExpense, voidExpense, type ExpenseRow } from '../db/repo';
+import { expensesBetween, monthAdd, saveExpense, supplierPaymentsBetween, voidExpense, type ExpenseRow } from '../db/repo';
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS, type ExpenseCategory, type PaymentMethod } from '../db/types';
 import { today } from '../lib/dates';
 import { Confirm, Dialog, Field, Icon } from '../components/ui';
 
 export function ExpensesReport({ Stepper }: { Stepper: (p: { label: string; onPrev: () => void; onNext: () => void; children: React.ReactNode }) => JSX.Element }) {
   const { t, fmt, locale } = useApp();
+  const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
   const month = sp.get('month') || today().slice(0, 7);
   const go = (m: string) => setSp({ view: 'expenses', month: m }, { replace: true });
   const rows = useQuery(() => expensesBetween(`${month}-01`, `${monthAdd(month, 1)}-01`), [month]);
+  // Payments to suppliers (schema v22) are money spent too: shown here, entered under Stock → Suppliers.
+  const supplierPaid = useQuery(() => supplierPaymentsBetween(`${month}-01`, `${monthAdd(month, 1)}-01`), [month]);
+  const supplierTotal = supplierPaid.reduce((s, r) => s + r.amount, 0);
   const [edit, setEdit] = useState<Partial<ExpenseRow> | null>(null);
   const label = new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG-u-nu-latn' : 'en-GB', { month: 'long', year: 'numeric' }).format(new Date(`${month}-01T12:00:00`));
   const total = rows.reduce((s, r) => s + r.amount, 0);
@@ -27,6 +31,7 @@ export function ExpensesReport({ Stepper }: { Stepper: (p: { label: string; onPr
       <div className="row" style={{ margin: '12px 0' }}>
         <div className="tiles spacer" style={{ margin: 0 }}>
           <div className="tile main"><span>{t('expenses.total')}</span><b className="num">{fmt.money(total)}</b><small>{t('expenses.count', { n: rows.length })}</small></div>
+          {supplierTotal > 0 && <div className="tile"><span>{t('suppliers.paidThisMonth')}</span><b className="num">{fmt.money(supplierTotal)}</b><small>{t('suppliers.paidThisMonthHint')}</small></div>}
         </div>
         <button className="btn primary no-print" onClick={() => setEdit({ spent_at: month === today().slice(0, 7) ? today() : `${month}-01`, category: 'SUPPLIES', method: 'CASH' })}>
           <Icon name="plus" /> {t('expenses.add')}
@@ -67,6 +72,20 @@ export function ExpensesReport({ Stepper }: { Stepper: (p: { label: string; onPr
               ))}
             </tbody>
           </table>
+          {supplierPaid.length > 0 && (
+            <>
+              <header style={{ marginTop: 18 }}><h2>{t('suppliers.paidThisMonth')}</h2><span className="count">{supplierPaid.length}</span></header>
+              <table className="t">
+                <tbody>
+                  {supplierPaid.map((p) => (
+                    <tr key={p.id} className="link" onClick={() => nav(`/stock/suppliers/${p.supplier_id}`)}>
+                      <td>{fmt.date(p.paid_at)}</td><td>{p.supplier_name}</td><td className="r num"><b>{fmt.money(p.amount)}</b></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </section>
       </div>
       {edit && <ExpenseDialog item={edit} onClose={() => setEdit(null)} />}

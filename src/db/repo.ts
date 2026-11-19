@@ -4,7 +4,7 @@ import { all, audit, get, getActor, insert, nowIso, run, tx, update, uuid } from
 import { addDays, localDateOf, today, toDateStr } from '../lib/dates';
 import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ChartKind, ChartMark, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
-  Admission, CareTask, CareTaskStatus, Consent, Drug, ExamFields, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
+  Admission, CareTask, CareTaskStatus, Consent, PackageItem, PackageType, PetPackage, PackageUse, Purchase, PurchaseItem, Supplier, SupplierPayment, WaMessage, Drug, ExamFields, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
 import { EXAM_KEYS, ROLES, highestRole, userRoles } from './types';
 import { CLINIC, OLD_ADDRESS } from './seed';
@@ -177,9 +177,11 @@ export function quickPatient(d: { owner_name: string; phone: string; pet_name: s
     return { petId, ownerId, existingOwner: !!found };
   });
 }
-export type OwnerInput = Pick<Owner, 'full_name' | 'phone' | 'whatsapp' | 'email' | 'address' | 'national_id' | 'notes'>;
+export type OwnerInput = Pick<Owner, 'full_name' | 'phone' | 'whatsapp' | 'email' | 'address' | 'national_id' | 'notes'> & { wa_opt_out?: boolean };
 export function saveOwner(d: OwnerInput, id?: string): string {
-  const values = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, blank(v)]));
+  const { wa_opt_out, ...rest } = d;
+  const values: Record<string, unknown> = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, blank(v)]));
+  if (wa_opt_out !== undefined) values.wa_opt_out = wa_opt_out ? 1 : 0;
   return tx(() => (id ? (update('owners', id, values), id) : insert('owners', values)));
 }
 export function setOwnerStatus(id: string, status: 'ACTIVE' | 'ARCHIVED') {
@@ -423,6 +425,8 @@ export interface VisitInput {
   exam?: ExamFields;
   /** Heart rate (/min) of a visit recorded without a pre-diagnosis; with one, it comes in `intake`. */
   heart_rate?: number | null;
+  /** Prepaid package sessions used at this visit (schema v22). */
+  package_uses?: { pet_package_id: string; item_key: string }[];
 }
 
 // ---------------------------------------------------------------- physical examination (schema v19)
@@ -536,6 +540,9 @@ export function saveVisit(d: VisitInput, id?: string): string {
       if (existing) update('appointments', existing.id, { scheduled_at: d.follow_up_at });
       else insert('appointments', { pet_id: d.pet_id, owner_id: pet.owner_id, scheduled_at: d.follow_up_at, duration_min: 20, type: 'FOLLOW_UP', status: 'SCHEDULED' });
     }
+
+    // Prepaid package sessions used at this visit (schema v22).
+    for (const u of d.package_uses ?? []) recordPackageUse(u.pet_package_id, u.item_key, visitId, getActor(), d.visited_at);
 
     if (d.appointment_id) update('appointments', d.appointment_id, { status: 'DONE', visit_id: visitId });
     // Completing a visit that started as a pre-diagnosis: its appointment (if any) is done now.
@@ -856,6 +863,11 @@ export function revenueByMonth(month: string, n = 12): { month: string; invoiced
     const r = at.get(e.spent_at.slice(0, 7));
     if (r) r.spent += e.amount;
   }
+  // Payments to suppliers (schema v22) are money spent too, dated by local day like expenses.
+  for (const e of all<{ paid_at: string; amount: number }>("SELECT paid_at, amount FROM supplier_payments WHERE status = 'ACTIVE' AND paid_at >= ? AND paid_at < ?", [`${first}-01`, `${monthAdd(month, 1)}-01`])) {
+    const r = at.get(e.paid_at.slice(0, 7));
+    if (r) r.spent += e.amount;
+  }
   return out;
 }
 /** Finished visits in a period, by type. */
@@ -992,9 +1004,9 @@ export const ACTIVITY_GROUPS: Record<string, string[]> = {
   patients: ['owners', 'pets', 'attachments'],
   clinical: ['visits', 'prescriptions', 'vaccinations'],
   appointments: ['appointments'],
-  money: ['invoices', 'invoice_items', 'payments'],
-  stock: ['stock_moves'],
-  settings: ['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'treatment_templates'],
+  money: ['invoices', 'invoice_items', 'payments', 'pet_packages', 'package_uses'],
+  stock: ['stock_moves', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments'],
+  settings: ['users', 'clinic_settings', 'price_items', 'vaccine_types', 'drugs', 'treatment_templates', 'package_types'],
 };
 export interface ActivityRow {
   id: string; at: string; action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN'; table_name: string; record_id: string | null; diff: string | null;
@@ -1309,4 +1321,251 @@ export function openBalance(): { n: number; due: number } {
     `SELECT COUNT(*) n, COALESCE(SUM(i.total - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0)), 0) due
      FROM invoices i WHERE i.status IN ('UNPAID','PARTIAL')`,
   ) ?? { n: 0, due: 0 };
+}
+
+
+// ---------------------------------------------------------------- prepaid packages (schema v22, 16 Nov 2026 change request)
+/** A package's lines from its JSON; bad or missing JSON = no lines. */
+export function packageItems(json: string | null | undefined): PackageItem[] {
+  try {
+    const v = JSON.parse(json || '[]');
+    return Array.isArray(v) ? v.filter((x) => x && typeof x.key === 'string').map((x) => ({ key: x.key, label: String(x.label ?? ''), qty: Math.max(0, Math.round(Number(x.qty) || 0)), vaccine_type_id: x.vaccine_type_id ?? null })) : [];
+  } catch {
+    return [];
+  }
+}
+export const listPackageTypes = (activeOnly = false) =>
+  all<PackageType>(`SELECT * FROM package_types ${activeOnly ? 'WHERE is_active = 1' : ''} ORDER BY is_active DESC, name COLLATE NOCASE`);
+/** Package types that suit this species (no species = any). */
+export const packageTypesFor = (species: string) =>
+  listPackageTypes(true).filter((p) => !p.species || p.species.split(',').includes(species));
+export interface PackageTypeInput { name: string; species: string; price: number; valid_days: number | null; notes: string; items: { key?: string; label: string; qty: number; vaccine_type_id?: string | null }[]; is_active: boolean }
+export function savePackageType(d: PackageTypeInput, id?: string): string {
+  const items = d.items.filter((i) => i.label.trim() && i.qty > 0)
+    .map((i) => ({ key: i.key || uuid().slice(0, 8), label: i.label.trim(), qty: Math.round(i.qty), vaccine_type_id: i.vaccine_type_id || null }));
+  if (!d.name.trim()) throw new Error('NAME_REQUIRED');
+  if (!items.length) throw new Error('ITEMS_REQUIRED');
+  const values = {
+    name: d.name.trim(), species: blank(d.species), price: Math.max(0, Math.round(d.price)), valid_days: d.valid_days && d.valid_days > 0 ? Math.round(d.valid_days) : null,
+    notes: blank(d.notes), items: JSON.stringify(items), is_active: d.is_active ? 1 : 0,
+  };
+  return tx(() => (id ? (update('package_types', id, values), id) : insert('package_types', values)));
+}
+
+export interface PackageLine extends PackageItem { used: number; left: number }
+export interface PetPackageRow extends PetPackage {
+  lines: PackageLine[]; left: number; expired: boolean; done: boolean; invoice_number: string | null; invoice_status: string | null;
+  uses: (PackageUse & { user_name: string | null; label: string })[];
+}
+function packageRow(p: PetPackage & { invoice_number: string | null; invoice_status: string | null }): PetPackageRow {
+  const uses = all<PackageUse & { user_name: string | null }>(
+    'SELECT u.*, us.name user_name FROM package_uses u LEFT JOIN users us ON us.id = u.user_id WHERE u.pet_package_id = ? ORDER BY u.used_at DESC, u.created_at DESC', [p.id]);
+  const items = packageItems(p.items);
+  const lines = items.map((i) => {
+    const used = uses.filter((u) => u.status === 'ACTIVE' && u.item_key === i.key).length;
+    return { ...i, used, left: Math.max(0, i.qty - used) };
+  });
+  const left = lines.reduce((s, l) => s + l.left, 0);
+  return {
+    ...p, lines, left, expired: !!p.expires_at && p.expires_at < today(), done: left === 0,
+    uses: uses.map((u) => ({ ...u, label: items.find((i) => i.key === u.item_key)?.label ?? u.item_key })),
+  };
+}
+const petPackageSql = `SELECT pp.*, i.number invoice_number, i.status invoice_status FROM pet_packages pp LEFT JOIN invoices i ON i.id = pp.invoice_id`;
+/** All of a pet's packages, newest first. */
+export const petPackages = (petId: string) =>
+  all<PetPackage & { invoice_number: string | null; invoice_status: string | null }>(`${petPackageSql} WHERE pp.pet_id = ? ORDER BY pp.started_at DESC, pp.created_at DESC`, [petId]).map(packageRow);
+/** Packages that can still be used: active, not expired, sessions left. */
+export const usablePackages = (petId: string) => petPackages(petId).filter((p) => p.status === 'ACTIVE' && !p.expired && p.left > 0);
+export const getPetPackage = (id: string) => {
+  const p = get<PetPackage & { invoice_number: string | null; invoice_status: string | null }>(`${petPackageSql} WHERE pp.id = ?`, [id]);
+  return p ? packageRow(p) : undefined;
+};
+/** Sessions of packages used at one visit. */
+export const visitPackageUses = (visitId: string) =>
+  all<PackageUse & { name: string; items: string }>(
+    "SELECT u.*, pp.name, pp.items FROM package_uses u JOIN pet_packages pp ON pp.id = u.pet_package_id WHERE u.visit_id = ? AND u.status = 'ACTIVE'", [visitId],
+  ).map((u) => ({ ...u, label: packageItems(u.items).find((i) => i.key === u.item_key)?.label ?? u.item_key }));
+
+/**
+ * Sell a package to a pet: copies the package's lines and price, and makes the owner's invoice for the price (paid up
+ * front: the payment is taken on that invoice as usual). Returns the new package and invoice.
+ */
+export function sellPackage(petId: string, typeId: string, startedAt: string, userId: string | null): { packageId: string; invoiceId: string } {
+  return tx(() => {
+    const pet = get<Pet>('SELECT * FROM pets WHERE id = ?', [petId]);
+    const type = get<PackageType>('SELECT * FROM package_types WHERE id = ?', [typeId]);
+    if (!pet || !type) throw new Error('NOT_FOUND');
+    const invoiceId = insert('invoices', { owner_id: pet.owner_id, pet_id: petId, visit_id: null, discount: 0, notes: null, number: nextInvoiceNumber(), issued_at: nowIso(), status: 'UNPAID', created_by: userId });
+    insert('invoice_items', { invoice_id: invoiceId, price_item_id: null, description: type.name, qty: 1, unit_price: type.price, line_total: type.price });
+    recomputeInvoice(invoiceId);
+    const packageId = insert('pet_packages', {
+      pet_id: petId, owner_id: pet.owner_id, package_type_id: type.id, name: type.name, items: type.items, price: type.price,
+      started_at: startedAt, expires_at: type.valid_days ? addDays(startedAt, type.valid_days) : null, invoice_id: invoiceId, status: 'ACTIVE', sold_by: userId, notes: null,
+    });
+    return { packageId, invoiceId };
+  });
+}
+/** One session used (inside a caller's tx). Refuses when none is left, the package is cancelled or the line is unknown. */
+function recordPackageUse(packageId: string, itemKey: string, visitId: string | null, userId: string | null, usedAt?: string, note?: string) {
+  const p = getPetPackage(packageId);
+  const line = p?.lines.find((l) => l.key === itemKey);
+  if (!p || p.status !== 'ACTIVE' || !line) throw new Error('PACKAGE_NOT_USABLE');
+  if (line.left <= 0) throw new Error('PACKAGE_NONE_LEFT');
+  insert('package_uses', { pet_package_id: packageId, item_key: itemKey, visit_id: visitId, used_at: usedAt ?? nowIso(), user_id: userId, note: blank(note ?? null), status: 'ACTIVE' });
+}
+export function usePackageSession(packageId: string, itemKey: string, userId: string | null, opts: { visitId?: string | null; note?: string } = {}) {
+  tx(() => recordPackageUse(packageId, itemKey, opts.visitId ?? null, userId, undefined, opts.note));
+}
+export function voidPackageUse(id: string) {
+  tx(() => update('package_uses', id, { status: 'VOID' }));
+}
+/** Cancel a sold package (Admin). Its invoice is left as it is: refunding or voiding it is a separate decision. */
+export function cancelPetPackage(id: string, note: string) {
+  tx(() => update('pet_packages', id, { status: 'CANCELLED', notes: blank(note) }));
+}
+
+// ---------------------------------------------------------------- suppliers and purchases (schema v22, Admin)
+export const listSuppliers = (activeOnly = false) =>
+  all<Supplier>(`SELECT * FROM suppliers ${activeOnly ? 'WHERE is_active = 1' : ''} ORDER BY is_active DESC, name COLLATE NOCASE`);
+export const getSupplier = (id: string) => get<Supplier>('SELECT * FROM suppliers WHERE id = ?', [id]);
+export function saveSupplier(d: { name: string; phone: string; notes: string; is_active: boolean }, id?: string): string {
+  if (!d.name.trim()) throw new Error('NAME_REQUIRED');
+  const values = { name: d.name.trim(), phone: blank(d.phone), notes: blank(d.notes), is_active: d.is_active ? 1 : 0 };
+  return tx(() => (id ? (update('suppliers', id, values), id) : insert('suppliers', values)));
+}
+export interface SupplierRow extends Supplier { bought: number; paid: number; owed: number; last_purchase: string | null }
+/** Every supplier with what was bought and paid (active rows only) and what the clinic still owes them. */
+export function supplierBalances(): SupplierRow[] {
+  return all<SupplierRow>(
+    `SELECT s.*,
+       COALESCE((SELECT SUM(total) FROM purchases WHERE supplier_id = s.id AND status = 'ACTIVE'), 0) bought,
+       COALESCE((SELECT SUM(amount) FROM supplier_payments WHERE supplier_id = s.id AND status = 'ACTIVE'), 0) paid,
+       (SELECT MAX(purchased_at) FROM purchases WHERE supplier_id = s.id AND status = 'ACTIVE') last_purchase
+     FROM suppliers s ORDER BY s.is_active DESC, s.name COLLATE NOCASE`,
+  ).map((r) => ({ ...r, owed: r.bought - r.paid }));
+}
+export interface PurchaseRow extends Purchase { paid: number; lines: number; user_name: string | null }
+export const supplierPurchases = (supplierId: string) =>
+  all<PurchaseRow>(
+    `SELECT p.*, u.name user_name, (SELECT COUNT(*) FROM purchase_items WHERE purchase_id = p.id) lines,
+       COALESCE((SELECT SUM(amount) FROM supplier_payments WHERE purchase_id = p.id AND status = 'ACTIVE'), 0) paid
+     FROM purchases p LEFT JOIN users u ON u.id = p.user_id WHERE p.supplier_id = ? ORDER BY p.purchased_at DESC, p.created_at DESC`,
+    [supplierId],
+  );
+export const supplierPaymentsOf = (supplierId: string) =>
+  all<SupplierPayment & { user_name: string | null; purchase_ref: string | null; purchase_date: string | null }>(
+    `SELECT sp.*, u.name user_name, p.reference purchase_ref, p.purchased_at purchase_date FROM supplier_payments sp
+     LEFT JOIN users u ON u.id = sp.user_id LEFT JOIN purchases p ON p.id = sp.purchase_id
+     WHERE sp.supplier_id = ? ORDER BY sp.paid_at DESC, sp.created_at DESC`,
+    [supplierId],
+  );
+export function getPurchase(id: string) {
+  const p = get<Purchase>('SELECT * FROM purchases WHERE id = ?', [id]);
+  if (!p) return undefined;
+  return { ...p, items: all<PurchaseItem>('SELECT * FROM purchase_items WHERE purchase_id = ? ORDER BY created_at, rowid', [id]) };
+}
+export interface PurchaseInput {
+  supplier_id: string; purchased_at: string; reference: string; notes: string;
+  items: { price_item_id: string | null; description: string; qty: number; unit_cost: number; batch_no: string; expires_at: string }[];
+  /** Paid now (piastres), recorded as a supplier payment for this purchase. */
+  paid_now?: { amount: number; method: PaymentMethod } | null;
+}
+/**
+ * Save a purchase: its lines are replaced (like an invoice's), the total recomputed, and the stock of tracked items
+ * reconciled with its RESTOCK moves (syncPurchaseStock). Returns the purchase id.
+ */
+export function savePurchase(d: PurchaseInput, userId: string | null, id?: string): string {
+  return tx(() => {
+    const lines = d.items.filter((i) => i.description.trim() && i.qty > 0);
+    if (!lines.length) throw new Error('ITEMS_REQUIRED');
+    const base = { supplier_id: d.supplier_id, purchased_at: d.purchased_at, reference: blank(d.reference), notes: blank(d.notes) };
+    let purchaseId = id;
+    if (purchaseId) {
+      update('purchases', purchaseId, base);
+      const old = all('SELECT * FROM purchase_items WHERE purchase_id = ?', [purchaseId]);
+      if (old.length) audit('purchase_items', purchaseId, 'DELETE', old);
+      run('DELETE FROM purchase_items WHERE purchase_id = ?', [purchaseId]);
+    } else {
+      purchaseId = insert('purchases', { ...base, total: 0, status: 'ACTIVE', user_id: userId });
+    }
+    let total = 0;
+    for (const it of lines) {
+      const line = Math.round(it.qty * it.unit_cost);
+      total += line;
+      insert('purchase_items', {
+        purchase_id: purchaseId, price_item_id: it.price_item_id, description: it.description.trim(), qty: it.qty, unit_cost: Math.round(it.unit_cost),
+        line_total: line, batch_no: blank(it.batch_no), expires_at: blank(it.expires_at),
+      });
+    }
+    update('purchases', purchaseId, { total });
+    if (d.paid_now && d.paid_now.amount > 0) {
+      insert('supplier_payments', { supplier_id: d.supplier_id, purchase_id: purchaseId, paid_at: d.purchased_at, amount: Math.round(d.paid_now.amount), method: d.paid_now.method, status: 'ACTIVE', user_id: userId });
+    }
+    syncPurchaseStock(purchaseId, userId);
+    return purchaseId;
+  });
+}
+/** Void a purchase: its restocks are taken back out of stock, and it no longer counts in what is owed. */
+export function voidPurchase(id: string) {
+  tx(() => {
+    update('purchases', id, { status: 'VOID' });
+    syncPurchaseStock(id, getActor());
+  });
+}
+/**
+ * Bring a purchase's RESTOCK moves in line with its lines for tracked price items, per item and batch: append the
+ * difference (stock_moves is append-only), so a purchase edited or voided on another device adds up correctly too.
+ */
+function syncPurchaseStock(purchaseId: string, userId: string | null) {
+  const p = get<Purchase>('SELECT * FROM purchases WHERE id = ?', [purchaseId]);
+  if (!p) return;
+  const keyOf = (item: string, batch: string | null, exp: string | null) => JSON.stringify([item, batch ?? null, exp ?? null]);
+  const want = new Map<string, number>();
+  if (p.status === 'ACTIVE') {
+    for (const r of all<{ id: string; batch_no: string | null; expires_at: string | null; q: number }>(
+      `SELECT pi.price_item_id id, pi.batch_no, pi.expires_at, SUM(pi.qty) q FROM purchase_items pi JOIN price_items it ON it.id = pi.price_item_id AND it.track_stock = 1
+       WHERE pi.purchase_id = ? GROUP BY pi.price_item_id, pi.batch_no, pi.expires_at`, [purchaseId])) want.set(keyOf(r.id, r.batch_no, r.expires_at), r.q);
+  }
+  const have = new Map(all<{ id: string; batch_no: string | null; expires_at: string | null; q: number }>(
+    "SELECT price_item_id id, batch_no, expires_at, SUM(qty) q FROM stock_moves WHERE purchase_id = ? AND reason = 'RESTOCK' GROUP BY price_item_id, batch_no, expires_at", [purchaseId],
+  ).map((r) => [keyOf(r.id, r.batch_no, r.expires_at), r.q]));
+  const at = nowIso();
+  for (const k of new Set([...want.keys(), ...have.keys()])) {
+    const delta = (want.get(k) ?? 0) - (have.get(k) ?? 0);
+    if (Math.abs(delta) <= 1e-9) continue;
+    const [item, batch, exp] = JSON.parse(k) as [string, string | null, string | null];
+    insert('stock_moves', { price_item_id: item, qty: delta, reason: 'RESTOCK', purchase_id: purchaseId, note: p.reference, batch_no: batch, expires_at: exp, user_id: userId, at });
+  }
+}
+export function saveSupplierPayment(d: { supplier_id: string; purchase_id: string | null; paid_at: string; amount: number; method: PaymentMethod; reference: string; note: string }, userId: string | null): string {
+  if (!(d.amount > 0)) throw new Error('AMOUNT_POSITIVE');
+  return tx(() => insert('supplier_payments', {
+    supplier_id: d.supplier_id, purchase_id: d.purchase_id, paid_at: d.paid_at, amount: Math.round(d.amount), method: d.method,
+    reference: blank(d.reference), note: blank(d.note), status: 'ACTIVE', user_id: userId,
+  }));
+}
+export function voidSupplierPayment(id: string) {
+  tx(() => update('supplier_payments', id, { status: 'VOID' }));
+}
+/** Supplier payments made between two local dates (from inclusive, to exclusive): money spent in the monthly report. */
+export const supplierPaymentsBetween = (fromDate: string, toDate: string) =>
+  all<SupplierPayment & { supplier_name: string }>(
+    `SELECT sp.*, s.name supplier_name FROM supplier_payments sp JOIN suppliers s ON s.id = sp.supplier_id
+     WHERE sp.status = 'ACTIVE' AND sp.paid_at >= ? AND sp.paid_at < ? ORDER BY sp.paid_at DESC`,
+    [fromDate, toDate],
+  );
+/** Total the clinic owes all its suppliers. */
+export const totalOwedToSuppliers = () => supplierBalances().reduce((s, r) => s + Math.max(0, r.owed), 0);
+
+// ---------------------------------------------------------------- automatic WhatsApp (schema v22)
+/** The clinic server's log of automatic WhatsApp messages, newest first. */
+export const waLog = (limit = 100) =>
+  all<WaMessage & { owner_name: string | null; pet_name: string | null }>(
+    `SELECT m.*, o.full_name owner_name, p.name pet_name FROM wa_messages m LEFT JOIN owners o ON o.id = m.owner_id LEFT JOIN pets p ON p.id = m.pet_id
+     ORDER BY m.sent_at DESC LIMIT ?`,
+    [limit],
+  );
+export function saveWaSettings(d: { wa_auto: boolean; wa_auto_kinds: string[]; wa_auto_hour: number }) {
+  saveSettings({ wa_auto: d.wa_auto ? 1 : 0, wa_auto_kinds: d.wa_auto_kinds.join(',') || null, wa_auto_hour: Math.min(21, Math.max(8, Math.round(d.wa_auto_hour))) });
 }

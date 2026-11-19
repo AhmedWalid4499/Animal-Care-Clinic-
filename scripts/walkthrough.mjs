@@ -303,7 +303,7 @@ await step('reports: end-of-day cash and monthly', async () => {
   await win.locator('.side .nav a', { hasText: 'Invoices & prices' }).click();
   await win.locator('.section-tabs a', { hasText: 'Reports' }).click();
   await win.locator('.side .nav a.active', { hasText: 'Invoices & prices' }).waitFor();
-  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Invoices|Reports|Price list') throw new Error('pricing tabs');
+  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Invoices|Reports|Price list|Packages') throw new Error('pricing tabs');
   await win.locator('.tile.main', { hasText: 'Collected' }).waitFor();
   const rows = await win.locator('.reports table.t').nth(1).locator('tbody tr.link').count();
   if (rows < 1) throw new Error('no payments in today\'s cash report');
@@ -318,7 +318,7 @@ await step('reports: end-of-day cash and monthly', async () => {
 // Dose calculator + treatment templates (demo drugs/template from SEED_DEMO).
 await step('dose calculator and treatment templates', async () => {
   await go('#/stock/drugs');
-  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Stock|Vaccine catalogue|Drugs') throw new Error('stock tabs');
+  if ((await win.locator('.section-tabs a').allInnerTexts()).join('|') !== 'Stock|Vaccine catalogue|Drugs|Suppliers') throw new Error('stock tabs');
   await win.locator('.side .nav a.active', { hasText: 'Stock' }).waitFor();
   await win.locator('table.t tr', { hasText: 'Meloxicam 1.5 mg/ml (demo)' }).waitFor();
   await shot('settings-drugs');
@@ -407,6 +407,122 @@ await step('expenses and profit', async () => {
   await win.locator('.reports .tabs button', { hasText: 'Monthly' }).click();
   await win.locator('.tile', { hasText: 'Profit' }).waitFor();
   await shot('report-month-profit');
+});
+
+// Prepaid packages (schema v22, 16 Nov 2026): the Admin's list, sold to a pet with its invoice, sessions used from the
+// pet's record and on the visit form.
+await step('prepaid packages', async () => {
+  await go('#/packages');
+  await win.getByRole('button', { name: 'Add package' }).click();
+  const d = win.locator('.dialog');
+  await d.getByLabel('Package name').fill('Kitten package (test)');
+  await d.getByLabel('Price (EGP)').fill('1200');
+  await d.getByLabel('Item').first().fill('Rabies vaccine (test)');
+  await d.getByLabel('How many').first().fill('2');
+  await d.getByRole('button', { name: 'Add item' }).click();
+  await d.getByLabel('Item').nth(1).fill('Deworming (test)');
+  await shot('package-edit');
+  await d.getByRole('button', { name: 'Save' }).click();
+  await win.locator('table.packages tr', { hasText: 'Kitten package (test)' }).waitFor();
+  await shot('packages');
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).click();
+  await win.locator('.pet-packages').getByRole('button', { name: 'Sell a package' }).click();
+  const pkgOpt = await win.locator('.dialog select option', { hasText: 'Kitten package (test)' }).getAttribute('value');
+  await win.locator('.dialog select').first().selectOption(pkgOpt);
+  await shot('package-sell');
+  await win.locator('.dialog').getByRole('button', { name: 'Sell a package' }).click();
+  await win.waitForSelector('text=Record payment');
+  await win.locator('text=Kitten package (test)').first().waitFor();
+  await shot('package-invoice');
+  await win.goBack();
+  await win.locator('.pet-packages', { hasText: 'Kitten package (test)' }).waitFor();
+  const rabies = win.locator('.pet-packages .pkg-line-chip', { hasText: 'Rabies vaccine (test)' });
+  if (!(await rabies.innerText()).includes('2 of 2 left')) throw new Error(`sold package: ${await rabies.innerText()}`);
+  await rabies.getByRole('button', { name: 'Use 1' }).click();
+  await win.locator('.pet-packages .pkg-line-chip', { hasText: '1 of 2 left' }).waitFor();
+  await shot('pet-packages');
+  // On the visit form: tick the last rabies dose.
+  await win.locator('.pagehead').getByRole('button', { name: 'New visit' }).click();
+  await win.locator('.visit-packages').waitFor();
+  await win.locator('.visit-packages').getByLabel(/Rabies vaccine \(test\)/).check();
+  await win.locator('.visit-packages').scrollIntoViewIfNeeded();
+  await shot('visit-packages');
+  await win.getByRole('button', { name: 'Save', exact: true }).click();
+  await win.waitForSelector('text=Create an invoice?');
+  await win.locator('.dialog').getByRole('button', { name: 'Close', exact: true }).click();
+  await win.locator('.pet-packages .pkg-line-chip', { hasText: 'Rabies vaccine (test)' }).waitFor();
+  const after = await win.locator('.pet-packages .pkg-line-chip', { hasText: 'Rabies vaccine (test)' }).innerText();
+  if (!after.includes('0 of 2 left')) throw new Error(`after the visit: ${after}`);
+  // The package's history: undo the session used from the record.
+  await win.locator('.pet-packages').getByRole('button', { name: 'Kitten package (test)' }).click();
+  await win.locator('.dialog tr', { hasText: 'Rabies vaccine (test)' }).first().waitFor();
+  await shot('package-history');
+  await win.locator('.dialog').getByRole('button', { name: 'Undo' }).first().click();
+  await win.locator('.dialog').last().getByRole('button', { name: 'Confirm' }).click();
+  await win.keyboard.press('Escape');
+  await win.locator('.pet-packages .pkg-line-chip', { hasText: '1 of 2 left' }).waitFor();
+});
+
+// Suppliers and purchases (schema v22): a delivery restocks tracked items, what is owed, voiding takes the stock back.
+await step('suppliers and purchases', async () => {
+  const onHand = async (name) => Number(await win.locator('.stock table.t tbody tr', { hasText: name }).locator('td').nth(1).innerText());
+  await go('#/stock');
+  const before = await onHand('Deworming');
+  await go('#/stock/suppliers');
+  await win.getByRole('button', { name: 'Add supplier' }).click();
+  await win.locator('.dialog').getByLabel('Supplier name').fill('Pharma Co (test)');
+  await win.locator('.dialog').getByLabel('Phone').fill('01001234567');
+  await win.locator('.dialog').getByRole('button', { name: 'Save' }).click();
+  await win.locator('.pagehead', { hasText: 'Pharma Co (test)' }).waitFor();
+  await win.getByRole('button', { name: 'New purchase' }).click();
+  const d = win.locator('.dialog');
+  await d.getByLabel('Their invoice no.').fill('PH-1001');
+  const item = d.locator('.buy-line').first();
+  const opt = await item.locator('select option', { hasText: 'Deworming' }).first().getAttribute('value');
+  await item.locator('select').selectOption(opt);
+  await item.getByLabel('Qty').fill('5');
+  await item.getByLabel('Unit cost (EGP)').fill('40');
+  await d.getByRole('button', { name: 'Add line' }).click();
+  const other = d.locator('.buy-line').nth(1);
+  await other.getByLabel('Description').fill('Exam gloves (box)');
+  await other.getByLabel('Qty').fill('2');
+  await other.getByLabel('Unit cost (EGP)').fill('75');
+  await d.getByLabel('Paid now (EGP)').fill('100');
+  await shot('purchase-new');
+  await d.getByRole('button', { name: 'Save' }).click();
+  await win.locator('.supplier .tile.main', { hasText: '250' }).waitFor();
+  await shot('supplier-detail');
+  await go('#/stock');
+  if ((await onHand('Deworming')) !== before + 5) throw new Error(`deworming after the delivery: ${await onHand('Deworming')} (was ${before})`);
+  await go('#/stock/suppliers');
+  await win.locator('table.t tr', { hasText: 'Pharma Co (test)' }).waitFor();
+  await shot('suppliers');
+  await win.locator('table.t tr', { hasText: 'Pharma Co (test)' }).click();
+  await win.locator('.supplier table.t tr', { hasText: 'PH-1001' }).first().click(); // the purchase (its payment row names it too)
+  await win.locator('.dialog').getByRole('button', { name: 'Void purchase' }).click();
+  await win.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await win.locator('.supplier .tile.main', { hasText: 'In credit' }).waitFor();
+  await go('#/stock');
+  if ((await onHand('Deworming')) !== before) throw new Error(`deworming after voiding: ${await onHand('Deworming')} (was ${before})`);
+  await go('#/reports?view=expenses');
+  await win.locator('.tile', { hasText: 'Paid to suppliers' }).waitFor();
+});
+
+// Automatic WhatsApp (schema v22): an owner can be left out of automatic reminders.
+await step('owner: no automatic WhatsApp', async () => {
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.pagehead').getByRole('button', { name: 'Edit' }).click();
+  await win.getByLabel('No automatic WhatsApp reminders').check();
+  await win.getByRole('button', { name: 'Save', exact: true }).click();
+  await win.waitForSelector('text=Open invoices');
+  await win.locator('.pagehead').getByRole('button', { name: 'Edit' }).click();
+  if (!(await win.getByLabel('No automatic WhatsApp reminders').isChecked())) throw new Error('opt-out not saved');
+  await win.getByLabel('No automatic WhatsApp reminders').uncheck();
+  await win.getByRole('button', { name: 'Save', exact: true }).click();
+  await win.waitForSelector('text=Open invoices');
 });
 
 // Drug counts and a treatment template printed for the owner (7 Nov 2026).

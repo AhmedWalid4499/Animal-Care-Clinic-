@@ -16,27 +16,27 @@ function SectionTabs({ items }: { items: { to: string; label: string; end?: bool
   );
 }
 
-/** Invoices · Reports · Price list (the last two for the Admin). */
+/** Invoices · Reports · Price list · Packages (all but Invoices for the Admin). */
 export function PricingTabs() {
   const { t, isAdmin } = useApp();
   return (
     <SectionTabs
       items={[
         { to: '/invoices', label: t('nav.invoices') },
-        ...(isAdmin ? [{ to: '/reports', label: t('nav.reports') }, { to: '/prices', label: t('settings.prices') }] : []),
+        ...(isAdmin ? [{ to: '/reports', label: t('nav.reports') }, { to: '/prices', label: t('settings.prices') }, { to: '/packages', label: t('packages.title') }] : []),
       ]}
     />
   );
 }
 
-/** Stock · Vaccine catalogue · Drugs (the last two are the Admin's lists). */
+/** Stock · Vaccine catalogue · Drugs · Suppliers (all but Stock are the Admin's). */
 export function StockTabs() {
   const { t, isAdmin } = useApp();
   return (
     <SectionTabs
       items={[
         { to: '/stock', label: t('stock.title') },
-        ...(isAdmin ? [{ to: '/stock/vaccines', label: t('settings.vaccines') }, { to: '/stock/drugs', label: t('settings.drugs') }] : []),
+        ...(isAdmin ? [{ to: '/stock/vaccines', label: t('settings.vaccines') }, { to: '/stock/drugs', label: t('settings.drugs') }, { to: '/stock/suppliers', label: t('suppliers.title'), end: false }] : []),
       ]}
     />
   );
