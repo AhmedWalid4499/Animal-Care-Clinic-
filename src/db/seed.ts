@@ -121,13 +121,24 @@ export function seedDemo() {
     const o4 = owner('Omar Farouk', '01555443322');
     const o5 = owner('هدى إبراهيم', '01066778899', { notes: 'تفضل التواصل عبر واتساب' });
 
-    const luna = pet(o1, 'Luna', 'CAT', { breed: 'Persian', sex: 'FEMALE', is_neutered: 1, date_of_birth: addDays(t, -3 * 365 - 40), color: 'White', microchip_no: '818000001234567' });
-    const max = pet(o1, 'Max', 'DOG', { breed: 'Golden Retriever', sex: 'MALE', date_of_birth: addDays(t, -5 * 365), color: 'Golden' });
-    const rocky = pet(o2, 'Rocky', 'DOG', { breed: 'German Shepherd', sex: 'MALE', is_neutered: 1, date_of_birth: addDays(t, -2 * 365 - 100), color: 'Black & tan' });
-    const mishmish = pet(o3, 'مشمش', 'CAT', { breed: 'بلدي', sex: 'MALE', date_of_birth: addDays(t, -400), dob_is_estimate: 1, color: 'برتقالي' });
+    const luna = pet(o1, 'Luna', 'CAT', { breed: 'Persian', sex: 'FEMALE', is_neutered: 1, date_of_birth: addDays(t, -3 * 365 - 40), color: 'White', eye_color: 'BLUE', microchip_no: '818000001234567' });
+    const max = pet(o1, 'Max', 'DOG', { breed: 'Golden Retriever', sex: 'MALE', date_of_birth: addDays(t, -5 * 365), color: 'Golden', eye_color: 'DARK_BROWN' });
+    const rocky = pet(o2, 'Rocky', 'DOG', { breed: 'German Shepherd', sex: 'MALE', is_neutered: 1, date_of_birth: addDays(t, -2 * 365 - 100), color: 'Black & tan', eye_color: 'BROWN' });
+    const mishmish = pet(o3, 'مشمش', 'CAT', { breed: 'بلدي', sex: 'MALE', date_of_birth: addDays(t, -400), dob_is_estimate: 1, color: 'برتقالي', eye_color: 'GREEN' });
     const kiwi = pet(o4, 'Kiwi', 'BIRD', { breed: 'Budgerigar', sex: 'UNKNOWN', color: 'Green' });
     const bondo = pet(o5, 'بندق', 'RABBIT', { sex: 'FEMALE', date_of_birth: addDays(t, -300) });
     pet(o2, 'Bella', 'DOG', { breed: 'Labrador', sex: 'FEMALE', status: 'DECEASED', deceased_at: addDays(t, -200) });
+
+    // Dental and eye findings (Phase 6) so the charts have something to show.
+    const mark = (pet_id: string, chart: 'DENTAL' | 'VISION', part: string, extra: Record<string, unknown>) =>
+      insert('pet_chart_marks', { id: `${pet_id}:${chart}:${part}`, pet_id, chart, part, updated_by: vetId, ...extra });
+    mark(max, 'DENTAL', '108', { conditions: 'TARTAR,GINGIVITIS', severity: 2, notes: 'Scale and polish under anaesthesia at the next visit.' });
+    mark(max, 'DENTAL', '208', { conditions: 'TARTAR', severity: 1 });
+    mark(max, 'DENTAL', '104', { conditions: 'FRACTURED', severity: 1, notes: 'Enamel chip, no pulp exposure. Recheck in 6 months.' });
+    mark(max, 'DENTAL', '409', { conditions: 'WORN', shade: 'YELLOW' });
+    mark(max, 'VISION', 'OD.LENS', { conditions: 'NUCLEAR_SCLEROSIS', severity: 1, notes: 'Normal for age; menace response present.' });
+    mark(luna, 'DENTAL', '307', { conditions: 'RESORPTION', severity: 2, notes: 'FORL stage 2 — dental X-ray before deciding on extraction.' });
+    mark(luna, 'VISION', 'OS.CONJUNCTIVA', { conditions: 'REDNESS,DISCHARGE', severity: 1, notes: 'Watery discharge; check for herpesvirus if it comes back.' });
 
     const visit = (pet_id: string, daysAgo: number, type: string, extra: Record<string, unknown>) =>
       insert('visits', { pet_id, vet_id: vetId, visited_at: at(-daysAgo, 11), type, ...extra });

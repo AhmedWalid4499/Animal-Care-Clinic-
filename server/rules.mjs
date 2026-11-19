@@ -4,7 +4,7 @@
 import { DELETABLE, SYNC_TABLES } from './tables.mjs';
 
 const ADMIN_ONLY = new Set(['users', 'clinic_settings', 'price_items', 'vaccine_types']);
-const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations']);
+const CLINICAL = new Set(['visits', 'prescriptions', 'vaccinations', 'pet_chart_marks']);
 // An assistant may mark a due vaccination as reminded (the WhatsApp "Remind" button), nothing else clinical.
 const ASSISTANT_VACCINATION_COLS = new Set(['reminder_sent_at', 'updated_at']);
 // Everyone may change these on their own user row: the bell's on/off switches, and their own password.

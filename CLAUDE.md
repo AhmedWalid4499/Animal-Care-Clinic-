@@ -8,6 +8,7 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 - Data: **SQLite via sql.js**, one file at `%APPDATA%\Animal Care Clinic\data\clinic.sqlite`, written atomically after every transaction; daily backup copy (keep 14). Schema in `src/db/schema.ts` mirrors `DATABASE.md` (money = integer piastres; attachments' bytes in `attachment_blobs`)
 - Auth: users with bcryptjs, roles `ADMIN` / `DOCTOR` / `ASSISTANT` (schema v2; old `VET` → `ADMIN`). Admin: everything; Doctor: visits but no Settings/users/archive/void; Assistant: front desk, read-only visits. Doctors also record the **pre-diagnosis** (Phase 5): the patient waits in the dashboard's vet queue and the Admin or another Doctor completes the same visit (`visits.stage`, schema v4). Passwords set by the Admin are temporary (`users.must_change_password`). The UI hides what a role can't do (`isAdmin`, `canVisit` in `src/lib/app.tsx`), and `server/rules.mjs` enforces it
 - **Cloud sync (Phase 1, 4 Nov 2026):** local-first, as in `docs/CLOUD-PLAN.md`. Each device keeps its SQLite and SQLite triggers feed `sync_outbox` (`src/sync/local.ts`); `src/sync/engine.ts` pushes and pulls against `server/` (Node + Postgres on Railway, `railway.json`). Any new table or column syncs automatically if it is in `SYNC_TABLES`, which must match `server/tables.mjs`. Invoice numbers come from the server while linked (`TMP-…` until synced)
+- **Dental & Vision tabs (Phase 6 change request, 19 Nov 2026):** on the pet record for dogs and cats. Dental = occlusal SVG chart (`src/components/DentalChart.tsx`), Triadan numbering, teeth by age (newborn → baby → mixed → adult → senior, `src/lib/dental.ts`). Vision = both eyes (`src/components/EyeChart.tsx`), iris from `pets.eye_color` (set on the pet form), round pupils for dogs, slits for cats, blue-grey baby eyes (`src/lib/vision.ts`). Hover = what the part is; click = finding (multi), severity, how it looks (shade / iris colour), notes. One row per (pet, chart, part) in `pet_chart_marks` (schema v6), id `<pet>:<chart>:<part>` so offline edits merge; never deleted. Doctor/Admin edit, Assistant read-only (`server/rules.mjs` CLINICAL). Findings print on the pet summary
 - i18n: `src/i18n/ar.json` (default, RTL) + `en.json`; never hard-code UI text
 - Charts: `recharts` (weight chart) · receipt / pet summary: print CSS, A5 · export: SheetJS (xlsx/csv)
 - Packaging: `electron-builder` → Windows: NSIS installer + portable exe (`.github/workflows/windows.yml`, `windows-latest`) · macOS: universal dmg, ad-hoc signed via `build/mac-adhoc-sign.cjs`, not notarized (`.github/workflows/macos.yml`, `macos-latest`)
@@ -33,7 +34,7 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/` | 1 Dashboard |
 | `/owners`, `/owners/new` | 2 Owners |
 | `/owners/[id]` | 3 Owner detail |
-| `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|files`) | 4 Pet record |
+| `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|files\|dental\|vision`) | 4 Pet record (Dental / Vision: Phase 6 change request, dogs and cats only) |
 | `/pets/[id]/visits/new`, `/visits/[id]/edit` | 5 Visit |
 | `/intake/new`, `/pets/[id]/intake`, `/visits/[id]/intake` | 5a Pre-diagnosis (Phase 5 change request; queue on the dashboard) |
 | `/appointments` (`?view=day\|week`) | 6 Appointments |
@@ -65,4 +66,5 @@ Scope sign-off 8 Nov · Prototype 13 Nov · Data sheet 22 Nov · Handover 29 Nov
 - [ ] Confirm spelling: logo says "Dr. Waleed ElBoargi", scope says "El-Bourgy"; Arabic spelling used in the how-to is "وليد البرجي"
 - [ ] Confirm species list and vaccine catalogue with intervals
 - [ ] Price list values
+- [ ] Confirm with Dr. Waleed: Dental & Vision tabs (Phase 6) are a change request outside SCOPE §4 (extra screen-level feature); conditions lists and eye colours to be reviewed by him
 - [ ] Re-confirm with Dr. Waleed: Windows desktop app on the clinic PC instead of web/PWA (SCOPE §4–§5 change request); which PC holds the data; code-signing certificate (optional)

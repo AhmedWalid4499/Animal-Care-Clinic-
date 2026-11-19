@@ -4,8 +4,11 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { useApp, useQuery } from '../lib/app';
 import {
   addAttachment, getAttachmentBytes, getPet, getSettings, lastWeight, markVaccinationReminded, petAppointments, petAttachments,
-  petVaccinations, petVisits, petWeights, visitInvoice,
+  petChartMarks, petVaccinations, petVisits, petWeights, visitInvoice,
 } from '../db/repo';
+import { DentalTab } from '../components/DentalChart';
+import { VisionTab } from '../components/EyeChart';
+import { splitConditions, toothById, type Animal } from '../lib/dental';
 import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
 import { get } from '../db/core';
@@ -14,12 +17,14 @@ import { Badge, Field, Icon, PetAvatar, StatusBadge, WaButton } from '../compone
 import { PageHead } from '../components/Layout';
 import { ATTACHMENT_KINDS, type AttachmentKind } from '../db/types';
 
-type Tab = 'timeline' | 'vaccinations' | 'weight' | 'files';
+type Tab = 'timeline' | 'vaccinations' | 'weight' | 'files' | 'dental' | 'vision';
+/** Dental and Vision (Phase 6 change request) are drawn for dogs and cats only. */
+const hasCharts = (species: string) => species === 'DOG' || species === 'CAT';
 
 export function PetRecord() {
   const { id = '' } = useParams();
   const [sp, setSp] = useSearchParams();
-  const tab = (sp.get('tab') as Tab) || 'timeline';
+  const askedTab = (sp.get('tab') as Tab) || 'timeline';
   const { t, fmt, canVisit, locale } = useApp();
   const nav = useNavigate();
   const pet = useQuery(() => getPet(id), [id]);
@@ -28,6 +33,8 @@ export function PetRecord() {
   const upcoming = useQuery(() => petAppointments(id), [id]);
   if (!pet) return <div className="page">{t('common.notFound')}</div>;
   const age = pet.date_of_birth ? ageParts(pet.date_of_birth) : null;
+  const tabs: Tab[] = ['timeline', 'vaccinations', 'weight', 'files', ...(hasCharts(pet.species) ? (['dental', 'vision'] as Tab[]) : [])];
+  const tab = tabs.includes(askedTab) ? askedTab : 'timeline';
 
   return (
     <div className="page">
@@ -62,6 +69,7 @@ export function PetRecord() {
             </div>
             <div><span>{t('pets.dob')}</span><b>{fmt.date(pet.date_of_birth)}</b></div>
             <div><span>{t('pets.color')}</span><b>{pet.color || '—'}</b></div>
+            {hasCharts(pet.species) && <div><span>{t('pets.eyeColor')}</span><b>{pet.eye_color ? t(`eyeColor.${pet.eye_color}`) : '—'}</b></div>}
             <div><span>{t('pets.microchip')}</span><b className="ltr num">{pet.microchip_no || '—'}</b></div>
             <div><span>{t('pets.lastWeight')}</span><b className="num">{weight ? `${fmt.num(weight.weight_kg, 2)} ${t('common.kg')}` : '—'}</b></div>
             <div><span>{t('pets.owner')}</span><b><a href={`#/owners/${pet.owner_id}`}>{pet.owner_name}</a> <span className="ltr muted small">{pet.owner_phone}</span></b></div>
@@ -76,7 +84,7 @@ export function PetRecord() {
       </div>
 
       <div className="tabs" role="tablist">
-        {(['timeline', 'vaccinations', 'weight', 'files'] as Tab[]).map((k) => (
+        {tabs.map((k) => (
           <button key={k} role="tab" className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
             {t(`petRecord.${k}`)}
           </button>
@@ -87,6 +95,8 @@ export function PetRecord() {
         {tab === 'vaccinations' && <Vaccinations petId={id} />}
         {tab === 'weight' && <WeightChart petId={id} />}
         {tab === 'files' && <Files petId={id} />}
+        {tab === 'dental' && <DentalTab pet={pet} />}
+        {tab === 'vision' && <VisionTab pet={pet} />}
       </div>
     </div>
   );
@@ -313,9 +323,28 @@ export function PetSummaryPrint() {
   const pet = useQuery(() => getPet(id), [id]);
   const visits = useQuery(() => petVisits(id), [id]);
   const vacc = useQuery(() => petVaccinations(id), [id]);
+  const marks = useQuery(() => petChartMarks(id), [id]);
   const settings = useQuery(getSettings);
   const nav = useNavigate();
   if (!pet) return null;
+  // Dental and eye findings that are not "normal" (Phase 6), one line each.
+  const findings = hasCharts(pet.species)
+    ? marks.filter((m) => m.conditions || m.notes).map((m) => {
+      let where: string;
+      if (m.part === 'MOUTH') where = t('dental.general');
+      else if (m.part === 'EYES') where = t('vision.general');
+      else if (m.chart === 'VISION') {
+        const [side, part] = m.part.split('.');
+        where = `${t(`vision.part.${part}`)} · ${t(`vision.short${side}`)}`;
+      } else {
+        const td = toothById(pet.species as Animal, m.part);
+        where = td ? `${m.part} ${t(td.deciduous ? 'dental.toothNameBaby' : 'dental.toothName', { where: t(`dental.where.${td.jaw}_${td.side}`), kind: t(`dental.kind.${td.type}${td.ordinal}`) })}` : t(`dental.soft.${m.part}.name`);
+      }
+      const ns = m.chart === 'VISION' ? 'eyeCond' : /^\d/.test(m.part) ? 'toothCond' : 'softCond';
+      const what = [splitConditions(m.conditions).map((c) => t(`${ns}.${c}`)).join(', '), m.severity ? t(`charts.sev${m.severity}`) : '', m.notes ?? ''].filter(Boolean).join(' · ');
+      return { id: m.id, chart: m.chart, where, what };
+    })
+    : [];
   const age = pet.date_of_birth ? ageParts(pet.date_of_birth) : null;
   const seen = new Set<string>();
   const latestVacc = vacc.filter((x) => (seen.has(x.vaccine_type_id) ? false : (seen.add(x.vaccine_type_id), true)));
@@ -347,6 +376,14 @@ export function PetSummaryPrint() {
             <thead><tr><th>{t('visits.vaccine')}</th><th>{t('petRecord.administered')}</th><th>{t('petRecord.nextDue')}</th></tr></thead>
             <tbody>{latestVacc.length ? latestVacc.map((x) => <tr key={x.id}><td>{x.vaccine}</td><td>{fmt.date(x.administered_at)}</td><td>{fmt.date(x.next_due_at)}</td></tr>) : <tr><td colSpan={3}>—</td></tr>}</tbody>
           </table>
+          {findings.length > 0 && (
+            <>
+              <h3 style={{ margin: '12px 0 4px' }}>{t('petRecord.dental')} / {t('petRecord.vision')}</h3>
+              <table>
+                <tbody>{findings.map((f) => <tr key={f.id}><td>{f.chart === 'DENTAL' ? '🦷' : '👁'} {f.where}</td><td>{f.what}</td></tr>)}</tbody>
+              </table>
+            </>
+          )}
           <h3 style={{ margin: '12px 0 4px' }}>{t('petRecord.timeline')}</h3>
           <table>
             <thead><tr><th>{t('common.date')}</th><th>{t('common.type')}</th><th>{t('visits.diagnosis')}</th><th className="r">{t('common.kg')}</th></tr></thead>

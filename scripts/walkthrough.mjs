@@ -95,6 +95,28 @@ await step('pet record', async () => {
   await shot('pet-weight-chart');
 });
 
+await step('dental and vision tabs (Phase 6)', async () => {
+  await win.getByRole('tab', { name: 'Dental' }).click();
+  await win.waitForSelector('svg.mouth');
+  await shot('pet-dental');
+  await win.locator('[aria-label*="(108)"]').first().click();
+  await win.getByRole('button', { name: 'Tartar (calculus)' }).click();
+  await win.getByRole('button', { name: 'Moderate' }).click();
+  await win.getByRole('button', { name: 'Yellow' }).click();
+  await win.locator('.inspector textarea').fill('Scale and polish');
+  await win.locator('.inspector').getByRole('button', { name: 'Save' }).click();
+  await win.waitForSelector('.findings >> text=Scale and polish');
+  await shot('pet-dental-finding');
+  await win.getByRole('tab', { name: 'Vision' }).click();
+  await win.waitForSelector('.eye-svg');
+  await win.locator('.eye-parts').first().getByRole('button', { name: /Lens/ }).click();
+  await win.getByRole('button', { name: 'Nuclear sclerosis' }).click();
+  await win.locator('.inspector').getByRole('button', { name: 'Save' }).click();
+  await win.waitForSelector('.findings >> text=Nuclear sclerosis');
+  await shot('pet-vision-finding');
+  await win.getByRole('tab', { name: 'Timeline' }).click();
+});
+
 await step('new visit with vaccination + prescription + follow-up', async () => {
   await win.locator('.pagehead').getByRole('button', { name: 'New visit' }).click();
   await win.waitForSelector('text=Visit type');
@@ -200,6 +222,15 @@ await step('assistant cannot reach settings', async () => {
   await go('#/settings');
   await win.waitForSelector('text=Settings are for admins only');
   await shot('assistant-blocked-settings');
+  // Dental / Vision are read-only for the assistant
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
+  await win.getByRole('tab', { name: 'Dental' }).click();
+  await win.locator('[aria-label*="(307)"]').first().click();
+  await win.waitForSelector('text=Only doctors and admins can change the chart.');
+  if (await win.locator('.inspector textarea').count()) throw new Error('assistant can edit the dental chart');
+  await shot('assistant-dental-readonly');
 });
 
 await step('phone layout', async () => {

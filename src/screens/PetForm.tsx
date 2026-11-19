@@ -4,7 +4,8 @@ import { useApp, useQuery } from '../lib/app';
 import { getOwner, getPet, microchipTaken, savePet, searchOwners, type PetInput } from '../db/repo';
 import { Field, PetAvatar, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
-import { PET_STATUS, SEXES, SPECIES, type Pet } from '../db/types';
+import { EYE_COLORS, PET_STATUS, SEXES, SPECIES, type EyeColor, type Pet } from '../db/types';
+import { eyeHex } from '../lib/vision';
 import { today } from '../lib/dates';
 
 export function PetFormPage() {
@@ -15,7 +16,7 @@ export function PetFormPage() {
   const [f, setF] = useState<PetInput>(() =>
     existing
       ? strip(existing)
-      : { owner_id: ownerId!, name: '', species: 'DOG', breed: '', sex: 'UNKNOWN', is_neutered: 0, date_of_birth: '', dob_is_estimate: 0, color: '', microchip_no: '', photo_url: null, status: 'ACTIVE', deceased_at: null, notes: '' },
+      : { owner_id: ownerId!, name: '', species: 'DOG', breed: '', sex: 'UNKNOWN', is_neutered: 0, date_of_birth: '', dob_is_estimate: 0, color: '', eye_color: null, microchip_no: '', photo_url: null, status: 'ACTIVE', deceased_at: null, notes: '' },
   );
   const [ownerQ, setOwnerQ] = useState('');
   const owners = useQuery(() => (ownerQ.trim().length >= 2 ? searchOwners(ownerQ, 'ACTIVE').slice(0, 8) : []), [ownerQ]);
@@ -78,6 +79,17 @@ export function PetFormPage() {
           <Field label={t('pets.color')} optional>
             <input type="text" value={f.color ?? ''} onChange={(e) => set('color', e.target.value)} />
           </Field>
+          {(f.species === 'DOG' || f.species === 'CAT') && (
+            <Field label={t('pets.eyeColor')} optional hint={t('pets.eyeColorHint')}>
+              <div className="row nowrap" style={{ gap: 8 }}>
+                <span className="eye-swatch" style={{ background: f.eye_color ? eyeHex(f.eye_color, 'OD') : 'transparent' }} data-odd={f.eye_color === 'ODD' ? '' : undefined} aria-hidden />
+                <select value={f.eye_color ?? ''} onChange={(e) => set('eye_color', (e.target.value || null) as EyeColor | null)}>
+                  <option value="">—</option>
+                  {EYE_COLORS.map((c) => <option key={c} value={c}>{t(`eyeColor.${c}`)}</option>)}
+                </select>
+              </div>
+            </Field>
+          )}
           <Field label={t('pets.microchip')} optional error={chipErr}>
             <input type="text" className="ltr" value={f.microchip_no ?? ''} onChange={(e) => set('microchip_no', e.target.value)} inputMode="numeric" />
           </Field>

@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -20,6 +20,24 @@ const visitIntake = `stage TEXT NOT NULL DEFAULT 'DONE' CHECK (stage IN ('WAITIN
   intake_notes TEXT,
   intake_by TEXT REFERENCES users(id),
   intake_at TEXT`;
+// Dental & Vision charts (Phase 6 change request): one row per (pet, chart, part) holding the vet's current finding.
+// The id is '<pet_id>:<chart>:<part>', so two devices marking the same tooth offline merge into one row on sync.
+// part = Triadan number for teeth ('104', '508'), 'PALATE' / 'GUM_UPPER' / 'GUM_LOWER' / 'TONGUE' / 'MOUTH',
+// or '<OD|OS>.<EYELIDS|THIRD_EYELID|CONJUNCTIVA|CORNEA|IRIS|PUPIL|LENS|GLOBE>' / 'EYES'. Never deleted: reset = conditions NULL.
+const chartMarks = `CREATE TABLE IF NOT EXISTS pet_chart_marks (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  chart TEXT NOT NULL CHECK (chart IN ('DENTAL','VISION')),
+  part TEXT NOT NULL,
+  conditions TEXT,
+  severity INTEGER CHECK (severity IN (1,2,3)),
+  shade TEXT,
+  notes TEXT,
+  updated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pet_chart_marks_part ON pet_chart_marks(pet_id, chart, part);`;
 const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
 
@@ -67,6 +85,7 @@ CREATE TABLE pets (
   date_of_birth TEXT,
   dob_is_estimate INTEGER NOT NULL DEFAULT 0,
   color TEXT,
+  eye_color TEXT,
   microchip_no TEXT UNIQUE,
   photo_url TEXT,
   status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DECEASED','TRANSFERRED')),
@@ -206,6 +225,8 @@ CREATE TABLE attachments (
   uploaded_by TEXT REFERENCES users(id),
   ${ts}
 );
+${chartMarks}
+
 CREATE TABLE attachment_blobs (
   attachment_id TEXT PRIMARY KEY REFERENCES attachments(id),
   data BLOB NOT NULL
@@ -284,12 +305,17 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v5 (5 Nov 2026, Phase 2): each queued change remembers who made it, so it is sent under that person's sign-in.
   5: `ALTER TABLE sync_outbox ADD COLUMN user_id TEXT;`,
+  // v6 (19 Nov 2026, Phase 6 change request): Dental and Vision tabs — eye colour on the pet, and the vet's chart findings.
+  6: `
+    ALTER TABLE pets ADD COLUMN eye_color TEXT;
+    ${chartMarks}
+  `,
 };
 
 /** Tables included in the one-click export, in dependency order. */
 export const EXPORT_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log',
+  'appointments', 'attachments', 'pet_chart_marks', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log',
 ] as const;
 
 /** Tables shared through the clinic server: every export table. attachment_blobs (file bytes) sync separately. */
