@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import webpush from 'web-push';
 
-export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue', 'found'];
+export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue', 'found', 'lab'];
 
 // ---------------------------------------------------------------- what happened → notifications
 /**
@@ -16,7 +16,7 @@ export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue', 'f
  */
 export async function createNotifications(c, clinicId, actor, events, conflicts, { seenSeq = null, firstSeq = 0 } = {}) {
   const users = (await c.query(
-    "SELECT id, data->>'locale' AS locale, data->>'role' AS role, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
+    "SELECT id, data->>'locale' AS locale, data->>'role' AS role, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND COALESCE(data->>'role', '') <> 'LAB'",
     [clinicId],
   )).rows;
   const byId = new Map(users.map((u) => [u.id, u]));
@@ -95,7 +95,7 @@ export async function createNotifications(c, clinicId, actor, events, conflicts,
  */
 export async function createFoundNotifications(c, clinicId, data) {
   const users = (await c.query(
-    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND COALESCE(data->>'role', '') <> 'LAB'",
     [clinicId],
   )).rows;
   const out = users
@@ -107,10 +107,25 @@ export async function createFoundNotifications(c, clinicId, data) {
   return out;
 }
 
+/** A lab doctor uploaded results on the lab extranet (server/lab.mjs): the Admins and Doctors who want lab notifications. */
+export async function createLabNotifications(c, clinicId, data) {
+  const users = (await c.query(
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND data->>'role' IN ('ADMIN', 'DOCTOR')",
+    [clinicId],
+  )).rows;
+  const out = users
+    .filter((u) => !u.off.split(',').map((s) => s.trim()).includes('lab'))
+    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'lab', event: 'results', data }));
+  for (const n of out) {
+    await c.query('INSERT INTO notifications (id, clinic_id, user_id, kind, event, data) VALUES ($1,$2,$3,$4,$5,$6)', [n.id, clinicId, n.user_id, n.kind, n.event, n.data]);
+  }
+  return out;
+}
+
 /** An owner booked on their page (server/booking.mjs): everyone at the clinic who wants appointment notifications. */
 export async function createOnlineBookingNotifications(c, clinicId, data) {
   const users = (await c.query(
-    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND COALESCE(data->>'role', '') <> 'LAB'",
     [clinicId],
   )).rows;
   const out = users
@@ -154,7 +169,8 @@ async function nameOf(c, clinicId, userId) {
 // ---------------------------------------------------------------- push text (the app renders its own from i18n)
 const T = {
   en: {
-    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced', queue: 'Waiting for the vet', found: '🐾 Lost & found' },
+    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced', queue: 'Waiting for the vet', found: '🐾 Lost & found', lab: '🧪 Lab results' },
+    lab: { results: '{lab} sent {n} result(s) for {pet} ({owner})' },
     found: { reported: '{pet} ({owner}) was found: someone scanned the collar tag', located: '{pet} ({owner}) was found: someone scanned the collar tag and shared the location' },
     queue: { waiting: '{by} sent {pet} ({owner}) to the vet: {complaint}', emergency: '🚨 Emergency: {pet} ({owner}) is waiting for the vet: {complaint}' },
     appointment: {
@@ -172,7 +188,8 @@ const T = {
     conflict: { replaced: '{by} changed {label} after you; your edit was replaced', kept: 'Your change to {label} was not applied: {by} changed it later' },
   },
   ar: {
-    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل', queue: 'في انتظار الطبيب', found: '🐾 المفقودات' },
+    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل', queue: 'في انتظار الطبيب', found: '🐾 المفقودات', lab: '🧪 نتائج التحاليل' },
+    lab: { results: '{lab} أرسل {n} نتيجة لـ {pet} ({owner})' },
     found: { reported: 'تم العثور على {pet} ({owner}): شخص مسح بطاقة الطوق', located: 'تم العثور على {pet} ({owner}): شخص مسح بطاقة الطوق وشارك الموقع' },
     queue: { waiting: '{by} أرسل {pet} ({owner}) إلى الطبيب: {complaint}', emergency: '🚨 حالة طارئة: {pet} ({owner}) في انتظار الطبيب: {complaint}' },
     appointment: {
@@ -205,6 +222,7 @@ export function urlFor(n) {
   if (n.kind === 'payment') return `/#/invoices/${d.invoice_id}`;
   if (n.kind === 'queue') return '/#/';
   if (n.kind === 'found') return `/#/lost-found?open=${d.report_id}`;
+  if (n.kind === 'lab') return `/#/pets/${d.pet_id}?tab=labs`;
   if (n.kind === 'conflict') return d.tbl === 'appointments' ? `/#/appointments?open=${d.id}` : d.owner_id ? `/#/owners/${d.owner_id}` : d.pet_id ? `/#/pets/${d.pet_id}` : '/#/';
   return '/#/';
 }

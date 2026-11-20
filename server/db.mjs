@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS files (
   backed_up_at timestamptz,
   PRIMARY KEY (clinic_id, id)
 );
+-- Lab extranet (server/lab.mjs, schema v24 on devices): a lab doctor's browser session. Kept apart from the app's
+-- sessions so a lab account can never reach the sync API. pw = a fingerprint of the password hash at sign-in: a reset or
+-- a new password ends the session.
+CREATE TABLE IF NOT EXISTS lab_sessions (
+  token_hash text PRIMARY KEY,
+  clinic_id uuid NOT NULL REFERENCES clinics(id),
+  user_id text NOT NULL,
+  pw text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   clinic_id uuid NOT NULL REFERENCES clinics(id),

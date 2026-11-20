@@ -25,7 +25,8 @@ const blank = (v: unknown) => (typeof v === 'string' ? v.trim() || null : v ?? n
 
 // ---------------------------------------------------------------- auth & users
 export function login(email: string, password: string): User | null {
-  const u = get<User>('SELECT * FROM users WHERE email = ? AND is_active = 1', [email.trim()]);
+  // Lab accounts sign in only to the lab extranet on the clinic server, never to the app (schema v24).
+  const u = get<User>("SELECT * FROM users WHERE email = ? AND is_active = 1 AND role <> 'LAB'", [email.trim()]);
   if (!u || !bcrypt.compareSync(password, u.password_hash)) return null;
   tx(() => {
     run('INSERT INTO audit_log (id,user_id,table_name,record_id,action,diff,at) VALUES (?,?,?,?,?,?,?)', [
@@ -39,6 +40,27 @@ export function saveNotifyOff(userId: string, off: string[]) {
   tx(() => update('users', userId, { notify_off: off.length ? off.join(',') : null }));
 }
 export const listUsers = () => all<User>('SELECT * FROM users ORDER BY role DESC, name');
+/** Clinic staff (Settings → Users); lab accounts have their own tab. */
+export const listStaff = () => all<User>("SELECT * FROM users WHERE role <> 'LAB' ORDER BY role DESC, name");
+/** Lab doctors' accounts for the lab extranet (Settings → Lab extranet). */
+export const listLabUsers = () => all<User>("SELECT * FROM users WHERE role = 'LAB' ORDER BY is_active DESC, name");
+/**
+ * Admin: add or edit a lab doctor's account. A new one gets a temporary password, returned to give to the lab doctor;
+ * they choose their own at the first sign-in to the extranet.
+ */
+export function saveLabUser(d: { name: string; lab_name: string; email: string; locale: 'ar' | 'en'; is_active: boolean }, id?: string): { id: string; password: string | null } {
+  return tx(() => {
+    const email = d.email.trim();
+    if (get('SELECT 1 FROM users WHERE lower(email) = lower(?) AND id <> ?', [email, id ?? ''])) throw new Error('EMAIL_TAKEN');
+    const values: Record<string, unknown> = { name: d.name.trim(), lab_name: blank(d.lab_name), email, role: 'LAB', roles: null, locale: d.locale, is_active: d.is_active ? 1 : 0 };
+    if (id) {
+      update('users', id, values);
+      return { id, password: null };
+    }
+    const password = tempPassword();
+    return { id: insert('users', { ...values, password_hash: bcrypt.hashSync(password, 10), must_change_password: 1 }), password };
+  });
+}
 /** People who can be the vet on a visit: active Admins and Doctors. */
 /** People who can be the vet on a visit: active users who are Doctors (an Admin is one too unless their roles say otherwise). */
 export const listVets = () =>

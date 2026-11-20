@@ -17,6 +17,7 @@ import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } fro
 import { handleOwnerPage, ownerPagesChanged } from './portal.mjs';
 import { handleTag } from './tags.mjs';
 import { handleClinicPage } from './clinic-page.mjs';
+import { handleLab } from './lab.mjs';
 import { runReminders, scheduleWhatsApp, sendTest, waStatus } from './whatsapp.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -155,7 +156,7 @@ async function auth(req) {
   const s = (await pool.query('UPDATE sessions SET last_seen = now() WHERE token_hash = $1 RETURNING *', [sha256(token)])).rows[0];
   if (!s) return null;
   const u = (await pool.query("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND id = $2 AND NOT deleted", [s.clinic_id, s.user_id])).rows[0];
-  if (!u || !Number(u.data.is_active)) return null;
+  if (!u || !Number(u.data.is_active) || u.data.role === 'LAB') return null;
   return { clinicId: s.clinic_id, user: u.data, deviceId: s.device_id, tokenHash: s.token_hash };
 }
 
@@ -213,7 +214,8 @@ async function api(req, res, url) {
     if (tooManyTries(ip)) return send(res, 429, { error: 'Too many attempts. Wait a few minutes.' });
     const { email, password, deviceId, deviceName } = await readJson(req);
     const found = email && password ? await findUserByEmail(String(email).trim()) : null;
-    if (!found || !Number(found.data.is_active) || !bcrypt.compareSync(String(password), String(found.data.password_hash))) {
+    // A lab account (schema v24) signs in only to the lab extranet (/lab), never here: it would receive every record.
+    if (!found || found.data.role === 'LAB' || !Number(found.data.is_active) || !bcrypt.compareSync(String(password), String(found.data.password_hash))) {
       failedTry(ip);
       return send(res, 401, { error: 'Wrong email or password' });
     }
@@ -403,6 +405,15 @@ const server = http.createServer(async (req, res) => {
       // An owner booked online (server/booking.mjs): devices pull the appointment, open owner pages refresh, staff are told.
       afterBooking: (clinicId, notifications) => {
         broadcast(clinicId, { type: 'changed' });
+        ownerPagesChanged(clinicId);
+        deliver(clinicId, notifications);
+      },
+    }))) return;
+    // The lab extranet (server/lab.mjs): the lab doctor's own sign-in; uploads reach every device, the owner's page and the vets.
+    if ((url.pathname === '/lab' || url.pathname.startsWith('/lab/')) && (await handleLab(pool, req, res, url, {
+      afterUpload: (clinicId, notifications, fileId) => {
+        broadcast(clinicId, { type: 'changed' });
+        if (fileId) broadcast(clinicId, { type: 'files', id: fileId });
         ownerPagesChanged(clinicId);
         deliver(clinicId, notifications);
       },

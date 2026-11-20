@@ -20,6 +20,8 @@ export function notificationText(n: ClinicNotification, t: T, fmt: Formatters): 
     other_pet: String(d.other_pet ?? ''),
     other_at: d.other_at ? `${fmt.weekday(String(d.other_at))} ${fmt.time(String(d.other_at))}` : '',
     amount: d.amount != null ? fmt.money(Number(d.amount)) : '',
+    // Lab extranet uploads (change request 20 Nov): which lab, how many results.
+    lab: String(d.lab ?? ''), n: String(d.n ?? ''),
   };
   return t(`notify.${n.kind}.${n.event}`, vars).replace(/\(\s*\)/g, '').replace(/[:：]\s*$/, '').trim();
 }
@@ -33,7 +35,7 @@ function ago(iso: string, t: T, locale: string) {
   return rtf.format(-Math.round(s / 86400), 'day');
 }
 
-const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard', found: 'paw' };
+const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard', found: 'paw', lab: 'file' };
 
 /** The bell: unread count, the list, and each person's on/off choices. */
 export function NotificationBell({ floating }: { floating?: boolean }) {
@@ -113,7 +115,7 @@ export function NotificationBell({ floating }: { floating?: boolean }) {
           <footer>
             <div className="small muted">{t('notify.prefs')}</div>
             <div className="kinds">
-              {NOTIFY_KINDS.filter((k) => k !== 'queue' || canVisit).map((k) => (
+              {NOTIFY_KINDS.filter((k) => (k !== 'queue' && k !== 'lab') || canVisit).map((k) => (
                 <label key={k} className="check small">
                   <input type="checkbox" checked={!off.has(k)} onChange={() => toggleKind(k)} /> {t(`notify.kind.${k}`)}
                 </label>
