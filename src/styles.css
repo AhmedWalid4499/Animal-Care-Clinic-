@@ -468,6 +468,15 @@ svg.mouth { max-height: 680px; }
   .hovercard { display: none; }
 }
 
+/* ---------- Body chart (change request 20 Nov) ---------- */
+svg.body-svg { max-height: 520px; background: var(--bg-2); border-radius: var(--radius); }
+.body-parts { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; border-top: 1px solid var(--rule); }
+.body-parts button { display: flex; width: 100%; align-items: center; gap: 8px; justify-content: space-between; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 7px 4px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: start; }
+.body-parts button:hover { background: var(--bg-2); }
+.body-parts button.on { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.body-parts .badge { white-space: normal; text-align: end; }
+@media (max-width: 900px) { .body-parts { grid-template-columns: minmax(0, 1fr); } }
+
 /* ---------- print: A5 receipt / pet summary ---------- */
 .print-only { display: none; }
 .sheet { background: #fff; color: #111; }

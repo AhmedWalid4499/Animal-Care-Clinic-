@@ -296,7 +296,7 @@ check('S4-template', 'Spreadsheet template matches import/TEMPLATE.md', JSON.str
     expect.newOwners++;
     if (i < 30) {
       rows.push({ ...o, pet_name: `Imported ${i}a`, species: i % 2 ? 'CAT' : 'كلب', sex: 'F', date_of_birth: '14/05/2022', is_neutered: 'yes', eye_color: ['BLUE', 'dark brown', 'أخضر'][i % 3] });
-      rows.push({ ...o, pet_name: `Imported ${i}b`, species: 'DOG', breed: 'Baladi', microchip_no: `9900000${String(i).padStart(5, '0')}` });
+      rows.push({ ...o, pet_name: `Imported ${i}b`, species: i === 28 ? 'هامستر' : i === 29 ? 'turtle' : 'DOG', breed: 'Baladi', microchip_no: `9900000${String(i).padStart(5, '0')}` });
       expect.pets += 2;
     } else rows.push(o);
   }
@@ -333,6 +333,8 @@ check('S4-template', 'Spreadsheet template matches import/TEMPLATE.md', JSON.str
     const tiger = db.exec("SELECT eye_color FROM pets WHERE name = 'Tiger'")[0].values[0][0];
     const full = await win.locator('pre.note').innerText();
     const noted = /eye colour "purple" not recognised/.test(full);
+    const sp = db.exec("SELECT name, species FROM pets WHERE name IN ('Imported 28b', 'Imported 29b') ORDER BY name")[0].values.map((r) => r.join('=')).join(', ');
+    check('S7.9-species', 'Import reads the new species Hamster and Turtle (English or Arabic)', sp === 'Imported 28b=HAMSTER, Imported 29b=TURTLE', sp);
     check('S7.9-eye', 'Import reads the eye colour (code, English or Arabic) and notes one it does not know', eyes.BLUE === 10 && eyes.DARK_BROWN === 10 && eyes.GREEN === 10 && tiger === null && noted,
       `imported eye colours ${JSON.stringify(eyes)}; "purple" left empty: ${tiger === null}, listed after the import: ${noted}`);
   }
@@ -449,7 +451,7 @@ async function pdfOf(hash, name, size = 'A5', sel) {
   const routes = [
     ['dashboard', '#/'], ['owners', '#/owners'], ['owner-new', '#/owners/new'], ['owner-detail', `#/owners/${ownerId}`],
     ['pet-new', `#/owners/${ownerId}/pets/new`], ['pet-timeline', `#/pets/${petId}?tab=timeline`], ['pet-vaccinations', `#/pets/${petId}?tab=vaccinations`],
-    ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-dental', `#/pets/${petId}?tab=dental`], ['pet-vision', `#/pets/${petId}?tab=vision`], ['pet-edit', `#/pets/${petId}/edit`],
+    ['pet-weight', `#/pets/${petId}?tab=weight`], ['pet-files', `#/pets/${petId}?tab=files`], ['pet-dental', `#/pets/${petId}?tab=dental`], ['pet-vision', `#/pets/${petId}?tab=vision`], ['pet-body', `#/pets/${petId}?tab=body`], ['pet-edit', `#/pets/${petId}/edit`],
     ['pet-prescriptions', `#/pets/${petId}?tab=prescriptions`], ['pet-labs', `#/pets/${petId}?tab=labs`],
     ['case-report', `#/pets/${petId}/report`], ['xray-request', `#/pets/${petId}/xray-request`],
     ['lab-request', `#/pets/${petId}/lab-request`], ['pet-requests', `#/pets/${petId}?tab=requests`],

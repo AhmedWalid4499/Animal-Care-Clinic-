@@ -1,4 +1,4 @@
-export const SPECIES = ['DOG', 'CAT', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER'] as const;
+export const SPECIES = ['DOG', 'CAT', 'BIRD', 'RABBIT', 'REPTILE', 'HAMSTER', 'TURTLE', 'OTHER'] as const;
 export const SEXES = ['MALE', 'FEMALE', 'UNKNOWN'] as const;
 export const PET_STATUS = ['ACTIVE', 'DECEASED', 'TRANSFERRED'] as const;
 /** Patient alerts (schema v6): shown wherever the pet is handled, so the person in front of it sees them first. */
@@ -42,7 +42,7 @@ export type Locale = 'ar' | 'en';
 /** Eye colour chosen when the pet is created (dogs and cats); drawn on the Vision tab. ODD = two different colours. */
 export const EYE_COLORS = ['DARK_BROWN', 'BROWN', 'AMBER', 'HAZEL', 'GOLD', 'COPPER', 'GREEN', 'BLUE', 'ODD'] as const;
 export type EyeColor = (typeof EYE_COLORS)[number];
-export type ChartKind = 'DENTAL' | 'VISION';
+export type ChartKind = 'DENTAL' | 'VISION' | 'BODY';
 /** The vet's current finding on one part of a pet's dental or eye chart (pet_chart_marks). */
 export interface ChartMark {
   id: string; pet_id: string; chart: ChartKind; part: string; conditions: string | null; severity: number | null;

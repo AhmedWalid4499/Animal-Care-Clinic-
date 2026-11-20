@@ -6,7 +6,7 @@ import type {
   Appointment, ApptStatus, Attachment, AttachmentKind, ChartKind, ChartMark, ClinicSettings, Invoice, InvoiceItem, InvoiceStatus, Owner,
   Admission, CareTask, CareTaskStatus, Consent, PackageItem, PackageType, PetPackage, PackageUse, Purchase, PurchaseItem, Supplier, SupplierPayment, WaMessage, Drug, ExamFields, Expense, ExpenseCategory, FoundReport, LabResult, Payment, RequestKind, RequestStatus, TestRequest, PaymentMethod, Pet, PetStatus, Prescription, PriceItem, Role, Species, StockMove, TemplateRx, TreatmentTemplate, Urgency, User, VaccineType, Vaccination, Visit, VisitStage, VisitType,
 } from './types';
-import { EXAM_KEYS, ROLES, highestRole, userRoles } from './types';
+import { EXAM_KEYS, ROLES, SPECIES, highestRole, userRoles } from './types';
 import { CLINIC, OLD_ADDRESS } from './seed';
 import { parseEyeColor } from '../lib/vision';
 
@@ -752,8 +752,8 @@ export function importOwnersPets(rows: ImportRow[]) {
   const yes = (v?: string) => /^(1|y|yes|true|نعم)$/i.test(String(v ?? '').trim());
   const sp = (v?: string) => {
     const s = String(v ?? '').trim().toUpperCase();
-    const map: Record<string, string> = { كلب: 'DOG', قطة: 'CAT', قط: 'CAT', طائر: 'BIRD', أرنب: 'RABBIT', زواحف: 'REPTILE' };
-    return ['DOG', 'CAT', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER'].includes(s) ? s : map[String(v ?? '').trim()] ?? 'OTHER';
+    const map: Record<string, string> = { كلب: 'DOG', قطة: 'CAT', قط: 'CAT', طائر: 'BIRD', أرنب: 'RABBIT', زواحف: 'REPTILE', هامستر: 'HAMSTER', سلحفاة: 'TURTLE', سلحفاه: 'TURTLE' };
+    return (SPECIES as readonly string[]).includes(s) ? s : map[String(v ?? '').trim()] ?? 'OTHER';
   };
   const sexOf = (v?: string) => {
     const s = String(v ?? '').trim().toUpperCase();

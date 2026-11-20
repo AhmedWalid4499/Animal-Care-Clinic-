@@ -155,9 +155,12 @@ export function seedDemo() {
     // Zeus: last seen 14 months ago, nothing booked → on the "not seen in a while" list.
     const zeus = pet(o4, 'Zeus', 'DOG', { breed: 'Husky', sex: 'MALE', date_of_birth: addDays(t, -6 * 365), color: 'Grey' });
     pet(o2, 'Bella', 'DOG', { breed: 'Labrador', sex: 'FEMALE', status: 'DECEASED', deceased_at: addDays(t, -200) });
+    // A hamster and a turtle for the Body tab (species added 20 Nov 2026).
+    const coco = pet(o3, 'Coco', 'HAMSTER', { breed: 'Syrian', sex: 'FEMALE', date_of_birth: addDays(t, -240), color: 'Golden & white' });
+    const shelly = pet(o5, 'Shelly', 'TURTLE', { breed: 'Red-eared slider', sex: 'MALE', date_of_birth: addDays(t, -3 * 365), color: 'Olive' });
 
     // Dental and eye findings (change request 19 Nov) so the charts have something to show.
-    const mark = (pet_id: string, chart: 'DENTAL' | 'VISION', part: string, extra: Record<string, unknown>) =>
+    const mark = (pet_id: string, chart: 'DENTAL' | 'VISION' | 'BODY', part: string, extra: Record<string, unknown>) =>
       insert('pet_chart_marks', { id: `${pet_id}:${chart}:${part}`, pet_id, chart, part, updated_by: vetId, ...extra });
     mark(max, 'DENTAL', '108', { conditions: 'TARTAR,GINGIVITIS', severity: 2, notes: 'Scale and polish under anaesthesia at the next visit.' });
     mark(max, 'DENTAL', '208', { conditions: 'TARTAR', severity: 1 });
@@ -166,6 +169,11 @@ export function seedDemo() {
     mark(max, 'VISION', 'OD.LENS', { conditions: 'NUCLEAR_SCLEROSIS', severity: 1, notes: 'Normal for age; menace response present.' });
     mark(luna, 'DENTAL', '307', { conditions: 'RESORPTION', severity: 2, notes: 'FORL stage 2 — dental X-ray before deciding on extraction.' });
     mark(luna, 'VISION', 'OS.CONJUNCTIVA', { conditions: 'REDNESS,DISCHARGE', severity: 1, notes: 'Watery discharge; check for herpesvirus if it comes back.' });
+    mark(max, 'BODY', 'HINDLEG_L', { conditions: 'LAMENESS', severity: 1, notes: 'Mild lameness after long walks; check the knee (stifle) next visit.' });
+    mark(max, 'BODY', 'BACK', { conditions: 'LUMP', severity: 1, notes: 'Soft 1 cm lump over the ribs, moves under the skin — probably a lipoma. Measure again in 3 months.' });
+    mark(kiwi, 'BODY', 'FOOT_R', { conditions: 'BUMBLEFOOT', severity: 1, notes: 'Change to natural wood perches of different widths.' });
+    mark(coco, 'BODY', 'INCISORS', { conditions: 'OVERGROWN', severity: 2, notes: 'Trimmed today. Give chew sticks.' });
+    mark(shelly, 'BODY', 'CARAPACE', { conditions: 'PYRAMIDING', severity: 1, notes: 'Mild: more humidity, less protein.' });
 
     const visit = (pet_id: string, daysAgo: number, type: string, extra: Record<string, unknown>) =>
       insert('visits', { pet_id, vet_id: vetId, visited_at: at(-daysAgo, 11), type, ...extra });

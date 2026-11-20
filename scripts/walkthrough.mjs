@@ -136,6 +136,18 @@ await step('dental and vision tabs (change request 19 Nov)', async () => {
   await win.locator('.inspector').getByRole('button', { name: 'Save' }).click();
   await win.waitForSelector('.findings >> text=Nuclear sclerosis');
   await shot('pet-vision-finding');
+  // Body tab (change request 20 Nov): record a wound on the cat's right front leg, then see the left side.
+  await win.getByRole('tab', { name: 'Body' }).click();
+  await win.waitForSelector('svg.body-svg');
+  await win.locator('[aria-label="Right front leg"]').first().click();
+  await win.getByRole('button', { name: 'Wound', exact: true }).click();
+  await win.getByRole('button', { name: 'Red', exact: true }).click();
+  await win.locator('.inspector textarea').fill('Small cut, cleaned');
+  await win.locator('.inspector').getByRole('button', { name: 'Save' }).click();
+  await win.waitForSelector('.findings >> text=Small cut, cleaned');
+  await shot('pet-body-finding');
+  await win.getByRole('button', { name: 'Left side' }).click();
+  await shot('pet-body-left');
   await win.getByRole('tab', { name: 'Timeline' }).click();
 });
 

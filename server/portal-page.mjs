@@ -284,7 +284,7 @@ footer.site b { color: var(--ink-2); }
   const TEXT = ${text};
   const FOUND = ${found ? 'true' : 'false'};
   const TZ = '${TZ}';
-  const EMOJI = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', OTHER: '🐾' };
+  const EMOJI = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', HAMSTER: '🐹', TURTLE: '🐢', OTHER: '🐾' };
   const ICONS = {
     home: 'M3 11l9-7 9 7M5 10v10h14V10',
     paw: 'M12 13c-3 0-5 3-5 5s2 2.5 5 2.5 5-.5 5-2.5-2-5-5-5zM6 9a2 2 0 100-4 2 2 0 000 4zM18 9a2 2 0 100-4 2 2 0 000 4zM9.5 6a2 2 0 100-4 2 2 0 000 4zM14.5 6a2 2 0 100-4 2 2 0 000 4z',
