@@ -20,6 +20,8 @@ export function notificationText(n: ClinicNotification, t: T, fmt: Formatters): 
     other_pet: String(d.other_pet ?? ''),
     other_at: d.other_at ? `${fmt.weekday(String(d.other_at))} ${fmt.time(String(d.other_at))}` : '',
     amount: d.amount != null ? fmt.money(Number(d.amount)) : '',
+    // Lab extranet uploads (change request 20 Nov): which lab, how many results.
+    lab: String(d.lab ?? ''), n: String(d.n ?? ''),
   };
   return t(`notify.${n.kind}.${n.event}`, vars).replace(/\(\s*\)/g, '').replace(/[:：]\s*$/, '').trim();
 }

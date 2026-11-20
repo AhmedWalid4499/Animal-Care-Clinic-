@@ -53,8 +53,10 @@ const TEST_GROUP = Object.fromEntries(LAB_TESTS.groups.flatMap((g) => g.tests.ma
 // UI text from src/i18n (never hard-coded): the lab.* part plus species / sex names.
 function loadText() {
   const read = (l) => JSON.parse(fs.readFileSync(path.join(here, '..', 'src', 'i18n', `${l}.json`), 'utf8'));
-  const pick = (d) => ({ ...d.lab, species: d.species, sex: d.sex, labGroup: d.labReq?.group ?? {} });
-  return { ar: pick(read('ar')), en: pick(read('en')) };
+  const en = read('en');
+  // Panels are stored in English whatever language the lab doctor uses, like the clinic's test names (lab-tests.json).
+  const pick = (d) => ({ ...d.lab, species: d.species, sex: d.sex, labGroup: en.labReq?.group ?? {} });
+  return { ar: pick(read('ar')), en: pick(en) };
 }
 const TEXT = loadText();
 
