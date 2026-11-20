@@ -1300,6 +1300,117 @@ const localState = (dataDir, sql) => {
   return r;
 };
 
+// ---------------------------------------------------------------- lab extranet (change request 20 Nov 2026, schema v24)
+await step('lab extranet', async () => {
+  const admin = (await pool.query("SELECT id FROM rows WHERE tbl = 'users' AND lower(data->>'email') = lower($1)", [ADMIN.email])).rows[0].id;
+  const adminId = () => admin;
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY data->>'name' = 'Luna' DESC, id LIMIT 1")).rows[0];
+  const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [pet.data.owner_id])).rows[0].data;
+  // The Admin gives the lab's doctor an account on laptop A: Settings → Lab extranet.
+  await go(A, '#/settings?tab=lab');
+  await A.win.locator('.tab-enter .row.end .btn.primary').click();
+  const dlg = A.win.locator('.dialog');
+  await dlg.locator('input[type=text]').nth(0).fill('Dr. Sara Nabil');
+  await dlg.locator('input[type=text]').nth(1).fill('VetLab Giza');
+  await dlg.locator('input[type=email]').fill('lab@vetlab.test');
+  await dlg.locator('footer .btn.primary').click();
+  await A.win.waitForSelector('.dialog .invite-text');
+  const temp = (await A.win.locator('.dialog .temp-pw b').innerText()).trim();
+  const invite = await A.win.locator('.dialog .invite-text').innerText();
+  await A.win.screenshot({ path: path.join(out, 'A-lab-invite.png') });
+  await A.win.keyboard.press('Escape');
+  const acct = await until(async () => (await pool.query("SELECT data FROM rows WHERE tbl = 'users' AND data->>'email' = 'lab@vetlab.test' AND data->>'role' = 'LAB'")).rows[0], 15_000);
+  const labId = acct.v?.data.id;
+  // A lab account can never use the app's sign-in (it would receive every record).
+  const appLogin = (await api('/api/login', { email: 'lab@vetlab.test', password: temp, deviceId: 'lab-try' })).status;
+  // The vet asks for tests (as a lab request saved on a device).
+  const reqId = crypto.randomUUID();
+  const at = nowIso();
+  const pushed = await api('/api/sync/push', { changes: [{ tbl: 'test_requests', id: reqId, op: 'upsert', at, cols: {
+    id: reqId, pet_id: pet.id, visit_id: null, kind: 'LAB', items: 'liver.alt_gpt,liver.ast_got,kidney.urea_bun,kidney.creatinine,minerals.sodium', other: null,
+    notes: 'Vomiting for 3 days', status: 'REQUESTED', requested_by: adminId(), requested_at: at, created_at: at, updated_at: at,
+  } }] }, tokens.admin);
+  // The lab doctor's browser: a report as a PDF with text.
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const rp = await browser.newPage();
+  await rp.setContent(`<html><body style="font-family:Arial;padding:30px"><h2>VetLab Giza</h2><p>Patient: ${pet.data.name} &nbsp; Date: today</p>
+    <table style="width:100%;font-size:15px"><tr><th align=left>Test</th><th align=left>Result</th><th align=left>Unit</th><th align=left>Reference</th></tr>
+    <tr><td>ALT (SGPT)</td><td>85</td><td>U/L</td><td>10 - 100</td></tr><tr><td>AST (SGOT)</td><td>120 H</td><td>U/L</td><td>0 - 48</td></tr>
+    <tr><td>Urea</td><td>62</td><td>mg/dL</td><td>15 - 34</td></tr><tr><td>Creatinine</td><td>2.4 H</td><td>mg/dL</td><td>0.8 - 1.8</td></tr>
+    <tr><td>WBC</td><td>12.5</td><td>x10^9/L</td><td>5.5 - 19.5</td></tr></table></body></html>`);
+  const reportPdf = path.join(out, 'lab-report.pdf');
+  await rp.pdf({ path: reportPdf, format: 'A4' });
+  const lab = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const labErrors = [];
+  lab.on('pageerror', (e) => labErrors.push(String(e)));
+  await lab.goto(`${SERVER}/lab`);
+  await lab.getByRole('button', { name: 'English' }).click();
+  await lab.fill('input[type=email]', 'lab@vetlab.test');
+  await lab.fill('input[type=password]', temp);
+  await lab.click('button[type=submit]');
+  await lab.waitForSelector('text=Choose your password');
+  const pws = lab.locator('input[type=password]');
+  await pws.nth(0).fill(temp);
+  await pws.nth(1).fill('Lab-own-2026');
+  await pws.nth(2).fill('Lab-own-2026');
+  await lab.click('button[type=submit]');
+  await lab.waitForSelector('text=Tests requested by the vets');
+  const requested = await until(async () => (await lab.locator('button.item', { hasText: pet.data.name }).count()) > 0, 10_000, 300);
+  await lab.screenshot({ path: path.join(out, 'lab-home.png'), fullPage: true });
+  // Without the page's own header, a POST is refused (another site can't post for a signed-in lab doctor).
+  const csrf = await lab.evaluate(async () => (await fetch('/lab/api/logout', { method: 'POST' })).status);
+  await lab.locator('button.item', { hasText: pet.data.name }).first().click();
+  await lab.waitForSelector(`text=Upload results for ${pet.data.name}`);
+  await lab.locator('input[type=file]').first().setInputFiles(reportPdf);
+  await lab.waitForSelector('text=/Found \\d+ result/', { timeout: 30_000 });
+  const read = await lab.$$eval('table.t.edit tbody tr', (trs) => trs.map((tr) => [...tr.querySelectorAll('input')].map((i) => i.value)));
+  await lab.screenshot({ path: path.join(out, 'lab-scanned.png'), fullPage: true });
+  lab.once('dialog', (d) => d.accept());
+  await lab.getByRole('button', { name: 'Save and send to the clinic' }).click();
+  await lab.waitForSelector('text=/Sent: \\d+ result/', { timeout: 20_000 });
+  await lab.screenshot({ path: path.join(out, 'lab-sent.png'), fullPage: true });
+  // On the server: the report (with its bytes), the results pointing at it and the request, the request done, the audit trail.
+  const results = (await pool.query("SELECT data FROM rows WHERE tbl = 'lab_results' AND data->>'request_id' = $1", [reqId])).rows.map((x) => x.data);
+  const attId = results[0]?.attachment_id;
+  const att = attId ? (await pool.query("SELECT data FROM rows WHERE tbl = 'attachments' AND id = $1", [attId])).rows[0]?.data : null;
+  const fileOnServer = attId ? (await pool.query('SELECT size FROM files WHERE id = $1', [attId])).rowCount === 1 : false;
+  const reqDone = (await pool.query("SELECT data->>'status' AS s FROM rows WHERE tbl = 'test_requests' AND id = $1", [reqId])).rows[0]?.s;
+  const audited = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'audit_log' AND data->>'user_id' = $1", [labId])).rows[0].n);
+  const creat = results.find((r) => r.analyte === 'Creatinine');
+  // Laptop A gets the results and the report, and the vet is told.
+  const onA = await until(async () => localState(A.dataDir, `SELECT COUNT(*) FROM lab_results WHERE request_id = '${reqId}' AND attachment_id IS NOT NULL`)[0][0] === results.length && results.length > 0, 20_000, 500);
+  const told = await until(async () => (await pool.query("SELECT 1 FROM notifications WHERE kind = 'lab' AND user_id = $1", [adminId()])).rowCount > 0, 10_000);
+  await go(A, `#/pets/${pet.id}?tab=labs`);
+  const reportBtn = await until(async () => (await A.win.locator('.lab-source').count()) > 0, 10_000, 300);
+  await A.win.screenshot({ path: path.join(out, 'A-lab-results.png'), fullPage: true });
+  // The owner's page shows them (when the owner has one).
+  const ownerToken = owner.portal_token;
+  let ownerSees = null;
+  if (ownerToken) {
+    const d = await (await fetch(`${SERVER}/o/${ownerToken}/data`)).json();
+    const p = (d.pets ?? []).find((x) => String(x.id) === String(pet.id));
+    ownerSees = JSON.stringify(p?.labs ?? []).includes('Creatinine');
+  }
+  // The Admin switches the account off: the lab doctor's open session ends at once (after the device syncs).
+  await go(A, '#/settings?tab=lab');
+  await A.win.locator('.tab-enter table.t tbody tr', { hasText: 'Dr. Sara Nabil' }).click();
+  await A.win.locator('.dialog input[type=checkbox]').uncheck();
+  await A.win.locator('.dialog footer .btn.primary').click();
+  const offOnServer = await until(async () => Number((await pool.query("SELECT data->>'is_active' AS a FROM rows WHERE tbl = 'users' AND id = $1", [labId])).rows[0]?.a) === 0, 15_000);
+  const ended = await lab.evaluate(async () => (await fetch('/lab/api/me')).status);
+  await browser.close();
+  const readOk = read.length >= 5 && read.some((r) => r[0] === 'Creatinine' && r[1] === '2.4' && r[2] === 'mg/dL' && r[3] === '0.8' && r[4] === '1.8');
+  check('lab-extranet', 'The Admin gives the lab doctor an account; on the purple lab extranet they choose a password, see the vet\'s request, upload a PDF that is read into results, and the results and report reach the server, the laptop, the vet and the owner\'s page',
+    !!acct.v && invite.includes(`${SERVER}/lab`) && invite.includes(temp) && pushed.status === 200 && !!requested.v && readOk && results.length >= 5 &&
+      att?.kind === 'LAB' && fileOnServer && reqDone === 'DONE' && audited >= results.length && creat?.value === 2.4 && creat?.ref_high === 1.8 &&
+      !!onA.v && !!told.v && !!reportBtn.v && ownerSees !== false && labErrors.length === 0,
+    `account made on laptop A and on the server: ${!!acct.v}; invite has the /lab link and temporary password: ${invite.includes(`${SERVER}/lab`) && invite.includes(temp)}; request listed on the extranet: ${!!requested.v}; read from the PDF: ${read.map((r) => `${r[0]}=${r[1]}`).join(', ')}; saved ${results.length} results + report (${att?.kind}, bytes on server: ${fileOnServer}); request ${reqDone}; audit rows by the lab: ${audited}; on laptop A: ${!!onA.v}; vet notified: ${!!told.v}; report button on the pet's Lab results: ${!!reportBtn.v}; owner's page: ${ownerSees ?? 'no owner page'}; page errors: ${labErrors.length}`);
+  check('lab-extranet-locked', 'A lab account can\'t use the app\'s sign-in, can\'t be posted for by another site, and stops working when the Admin switches it off',
+    appLogin === 401 && csrf === 403 && !!offOnServer.v && ended === 401,
+    `app sign-in with the lab account → ${appLogin}; POST without the page's header → ${csrf}; switched off on laptop A → on the server: ${!!offOnServer.v}; lab doctor's session then → ${ended}`);
+});
+
 await step('phase2: both laptops offline', async () => {
   const owners = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'owners' AND NOT deleted AND data->>'status' = 'ACTIVE' AND data->>'full_name' NOT LIKE 'Load Owner%' ORDER BY id LIMIT 2")).rows;
   const [X, Y] = owners;

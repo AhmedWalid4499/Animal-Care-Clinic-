@@ -236,6 +236,8 @@ await step('settings', async () => {
   await shot('settings-prices');
   await go('#/stock/vaccines');
   await shot('settings-vaccines');
+  await go('#/settings?tab=lab');
+  await shot('settings-lab-extranet');
   await go('#/settings?tab=data');
   await shot('settings-data');
   // Updates have their own tab now (10 Nov 2026), not inside Data & backup.

@@ -5,7 +5,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useApp, useQuery } from '../lib/app';
-import { getPet, knownAnalytes, petLabResults, saveLabResults, updateLabResult, type LabInputRow } from '../db/repo';
+import { getAttachmentBytes, getPet, knownAnalytes, listLabUsers, petLabResults, saveLabResults, updateLabResult, type LabInputRow } from '../db/repo';
+import { get } from '../db/core';
+import { downloadAttachment, serverUrl } from '../sync/engine';
+import { platform } from '../lib/platform';
 import type { LabResult } from '../db/types';
 import { today } from '../lib/dates';
 import { Badge, Dialog, Field, Icon } from '../components/ui';
@@ -16,7 +19,7 @@ const range = (r: Pick<LabResult, 'ref_low' | 'ref_high'>) =>
   r.ref_low != null && r.ref_high != null ? `${r.ref_low}–${r.ref_high}` : r.ref_low != null ? `≥ ${r.ref_low}` : r.ref_high != null ? `≤ ${r.ref_high}` : '';
 
 export function LabsTab({ petId }: { petId: string }) {
-  const { t, fmt, canVisit } = useApp();
+  const { t, fmt, canVisit, toast } = useApp();
   const nav = useNavigate();
   const rows = useQuery(() => petLabResults(petId), [petId]);
   const [adding, setAdding] = useState(false);
@@ -30,6 +33,21 @@ export function LabsTab({ petId }: { petId: string }) {
     if (g) g.rows.push(r);
     else groups.push({ key, taken_at: r.taken_at, panel: r.panel, rows: [r] });
   }
+  // Results the lab sent from the lab extranet (schema v24): who sent them and the scanned report.
+  const labs = useQuery(listLabUsers);
+  const labOf = (id: string | null) => labs.find((u) => u.id === id);
+  const [opening, setOpening] = useState<string | null>(null);
+  const openReport = async (id: string) => {
+    const a = get<{ file_name: string; mime_type: string | null }>('SELECT file_name, mime_type FROM attachments WHERE id = ?', [id]);
+    let b = getAttachmentBytes(id);
+    if (!b && serverUrl()) {
+      setOpening(id);
+      b = (await downloadAttachment(id).catch(() => null)) ?? undefined;
+      setOpening(null);
+    }
+    if (b && a) platform.openFile(a.file_name, b, a.mime_type ?? 'application/octet-stream');
+    else toast(t('petRecord.fileNotHere'));
+  };
   const series = trend ? rows.filter((r) => r.analyte.toLowerCase() === trend.toLowerCase() && r.value != null).slice().reverse() : [];
 
   return (
@@ -67,6 +85,19 @@ export function LabsTab({ petId }: { petId: string }) {
             </tbody>
           </table>
           {g.rows[0].note && <p className="small muted">{g.rows[0].note}</p>}
+          {(() => {
+            const fromLab = g.rows.find((r) => r.attachment_id);
+            if (!fromLab) return null;
+            const lab = labOf(fromLab.user_id);
+            return (
+              <p className="small lab-source">
+                🧪 {t('labs.fromLab', { lab: lab?.lab_name || t('labs.theLab'), name: lab?.name ?? '—' })}{' '}
+                <button type="button" className="btn ghost sm" onClick={() => void openReport(fromLab.attachment_id!)}>
+                  <Icon name="file" /> {opening === fromLab.attachment_id ? '…' : t('labs.openReport')}
+                </button>
+              </p>
+            );
+          })()}
         </section>
       ))}
       {adding && <LabDialog petId={petId} onClose={() => setAdding(false)} />}

@@ -33,7 +33,7 @@ function ago(iso: string, t: T, locale: string) {
   return rtf.format(-Math.round(s / 86400), 'day');
 }
 
-const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard', found: 'paw' };
+const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard', found: 'paw', lab: 'file' };
 
 /** The bell: unread count, the list, and each person's on/off choices. */
 export function NotificationBell({ floating }: { floating?: boolean }) {
@@ -113,7 +113,7 @@ export function NotificationBell({ floating }: { floating?: boolean }) {
           <footer>
             <div className="small muted">{t('notify.prefs')}</div>
             <div className="kinds">
-              {NOTIFY_KINDS.filter((k) => k !== 'queue' || canVisit).map((k) => (
+              {NOTIFY_KINDS.filter((k) => (k !== 'queue' && k !== 'lab') || canVisit).map((k) => (
                 <label key={k} className="check small">
                   <input type="checkbox" checked={!off.has(k)} onChange={() => toggleKind(k)} /> {t(`notify.kind.${k}`)}
                 </label>

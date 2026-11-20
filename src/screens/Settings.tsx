@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import { strToU8, zipSync } from 'fflate';
 import { useApp, useQuery } from '../lib/app';
 import {
-  getSettings, importOwnersPets, listPriceItems, listUsers, listVaccineTypes, resetPassword, savePriceItem, saveSettings, saveUser, saveVaccineType,
+  getSettings, importOwnersPets, listPriceItems, listStaff, listVaccineTypes, resetPassword, savePriceItem, saveSettings, saveUser, saveVaccineType,
   tableRows, tempPassword, type ImportRow,
 } from '../db/repo';
 import { exportBytes, restoreFrom } from '../db/core';
@@ -19,13 +19,14 @@ import { UpdatesSection, useUpdateState } from '../components/Updates';
 import { useWebUpdate } from '../lib/webUpdate';
 import { ThisDeviceSection } from '../components/ThisDevice';
 import { InviteDialog } from '../components/Account';
+import { LabAccountsTab } from '../components/LabAccounts';
 import { DevicesTab } from '../components/Devices';
 import { serverUrl } from '../sync/engine';
 import { ActivityTab } from './Activity';
 import { WhatsAppTab } from '../components/WhatsAppAuto';
 import { PRICE_CATEGORIES, ROLES, SPECIES, highestRole, userRoles, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
-type Tab = 'clinic' | 'updates' | 'users' | 'devices' | 'whatsapp' | 'activity' | 'data';
+type Tab = 'clinic' | 'updates' | 'users' | 'lab' | 'devices' | 'whatsapp' | 'activity' | 'data';
 // Moved out of Settings (7 Nov 2026): old links still land in the right place.
 const MOVED: Record<string, string> = { prices: '/prices', vaccines: '/stock/vaccines', drugs: '/stock/drugs', templates: '/templates' };
 
@@ -41,9 +42,9 @@ export function Settings() {
     <div className="page">
       <PageHead title={t('settings.title')} />
       <div className="tabs" style={{ marginTop: -18, marginBottom: 18 }}>
-        {(['clinic', ...(isDesktop || __CLOUD__ ? ['updates'] : []), 'users', ...(serverUrl() ? ['devices', 'whatsapp'] : []), 'activity', 'data'] as Tab[]).map((k) => (
+        {(['clinic', ...(isDesktop || __CLOUD__ ? ['updates'] : []), 'users', 'lab', ...(serverUrl() ? ['devices', 'whatsapp'] : []), 'activity', 'data'] as Tab[]).map((k) => (
           <button key={k} className={tab === k ? 'on' : ''} onClick={() => setSp({ tab: k }, { replace: true })}>
-            {k === 'whatsapp' ? t('waAuto.tab') : t(`settings.${k}`)}{k === 'updates' && updateReady ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
+            {k === 'whatsapp' ? t('waAuto.tab') : k === 'lab' ? t('labAccounts.tab') : t(`settings.${k}`)}{k === 'updates' && updateReady ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
           </button>
         ))}
       </div>
@@ -51,6 +52,7 @@ export function Settings() {
         {tab === 'clinic' && <ClinicTab />}
         {tab === 'updates' && (__CLOUD__ ? <ThisDeviceSection /> : <UpdatesSection />)}
         {tab === 'users' && <UsersTab />}
+        {tab === 'lab' && <LabAccountsTab />}
         {tab === 'devices' && <DevicesTab />}
         {tab === 'whatsapp' && <WhatsAppTab />}
         {tab === 'activity' && <ActivityTab />}
@@ -229,7 +231,7 @@ function VaccineDialog({ item, onClose }: { item: Partial<VaccineType>; onClose:
 
 function UsersTab() {
   const { t } = useApp();
-  const rows = useQuery(listUsers);
+  const rows = useQuery(listStaff);
   const [edit, setEdit] = useState<Partial<User> | null>(null);
   const [invite, setInvite] = useState<{ person: Pick<User, 'name' | 'email' | 'role' | 'roles'>; password: string } | null>(null);
   return (

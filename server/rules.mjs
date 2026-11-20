@@ -40,6 +40,8 @@ const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_passw
 export function refuse(role, change, before, userId) {
   const { tbl, op, cols } = change;
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
+  // Lab accounts (schema v24) never sync; they use the lab extranet, which writes through server/lab.mjs.
+  if (role === 'LAB') return 'lab accounts use the lab extranet only';
   if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
   // Lost & found: reports come only from a pet's collar tag page (the server writes them); anyone at the clinic may

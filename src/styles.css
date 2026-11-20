@@ -967,3 +967,4 @@ a.owner-code:hover { text-decoration: underline; }
 ul.plain { list-style: none; padding: 0; margin: 8px 0; }
 ul.plain li { padding: 2px 0; }
 .buy-total { font-size: 18px; }
+.lab-source { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0 0; color: var(--ink-2); }

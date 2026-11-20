@@ -6,7 +6,7 @@ import type { Database } from 'sql.js';
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 // HAMSTER, TURTLE: added 20 Nov 2026 with the Body tab (change request, Ahmed), schema v23.
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','HAMSTER','TURTLE','OTHER'`;
@@ -108,6 +108,8 @@ const clinicalDocs = `CREATE TABLE IF NOT EXISTS lab_results (
   ref_high REAL,
   note TEXT,
   user_id TEXT REFERENCES users(id),
+  attachment_id TEXT,
+  request_id TEXT,
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS lab_results_pet ON lab_results(pet_id, taken_at);
@@ -358,11 +360,12 @@ CREATE TABLE users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE COLLATE NOCASE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('ADMIN','DOCTOR','ASSISTANT')),
+  role TEXT NOT NULL CHECK (role IN ('ADMIN','DOCTOR','ASSISTANT','LAB')),
   locale TEXT NOT NULL DEFAULT 'ar' CHECK (locale IN ('ar','en')),
   is_active INTEGER NOT NULL DEFAULT 1,
   notify_off TEXT,
   must_change_password INTEGER NOT NULL DEFAULT 0,
+  lab_name TEXT,
   ${ts}
 );
 
@@ -619,10 +622,10 @@ function widenCheck(d: Database, table: string, fix: (sql: string) => string) {
   if (!sql || fixed === sql) return;
   const indexes = one(`SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = '${table}' AND sql IS NOT NULL`).map((r) => String(r[0]));
   const cols = one(`PRAGMA table_info(${table})`).map((r) => String(r[1])).join(', ');
-  d.run(fixed.replace(/^CREATE TABLE (IF NOT EXISTS )?"?\w+"?/, `CREATE TABLE ${table}_v23`));
-  d.run(`INSERT INTO ${table}_v23 (${cols}) SELECT ${cols} FROM ${table}`);
+  d.run(fixed.replace(/^CREATE TABLE (IF NOT EXISTS )?"?\w+"?/, `CREATE TABLE ${table}_rebuilt`));
+  d.run(`INSERT INTO ${table}_rebuilt (${cols}) SELECT ${cols} FROM ${table}`);
   d.run(`DROP TABLE ${table}`);
-  d.run(`ALTER TABLE ${table}_v23 RENAME TO ${table}`);
+  d.run(`ALTER TABLE ${table}_rebuilt RENAME TO ${table}`);
   for (const i of indexes) d.run(i);
 }
 
@@ -719,6 +722,15 @@ ${v22Cols}`,
   23: (d) => {
     widenCheck(d, 'pets', (s) => (s.includes("'HAMSTER'") ? s : s.replace("'REPTILE','OTHER'", "'REPTILE','HAMSTER','TURTLE','OTHER'")));
     widenCheck(d, 'pet_chart_marks', (s) => (s.includes("'BODY'") ? s : s.replace("'DENTAL','VISION'", "'DENTAL','VISION','BODY'")));
+  },
+  // v24 (20 Nov 2026, change request): the lab extranet — LAB accounts (web sign-in on the clinic server only, never the
+  // app), the lab's name on the account, and each result's scanned report (attachment) and the request it answers.
+  24: (d) => {
+    widenCheck(d, 'users', (s) => (s.includes("'LAB'") ? s : s.replace("'ADMIN','DOCTOR','ASSISTANT'", "'ADMIN','DOCTOR','ASSISTANT','LAB'")));
+    const cols = (t: string) => (d.exec(`PRAGMA table_info(${t})`)[0]?.values ?? []).map((r) => String(r[1]));
+    if (!cols('users').includes('lab_name')) d.run('ALTER TABLE users ADD COLUMN lab_name TEXT');
+    if (!cols('lab_results').includes('attachment_id')) d.run('ALTER TABLE lab_results ADD COLUMN attachment_id TEXT');
+    if (!cols('lab_results').includes('request_id')) d.run('ALTER TABLE lab_results ADD COLUMN request_id TEXT');
   },
 };
 

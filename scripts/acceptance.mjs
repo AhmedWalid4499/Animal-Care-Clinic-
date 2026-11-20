@@ -460,7 +460,7 @@ async function pdfOf(hash, name, size = 'A5', sel) {
     ['appointments-day', '#/appointments?view=day'], ['appointments-week', '#/appointments?view=week'], ['invoices', '#/invoices'], ['invoice-new', '#/invoices/new'],
     ['invoice-detail', `#/invoices/${invId}`], ['invoice-print', `#/invoices/${invId}/print`],
     ['settings-clinic', '#/settings?tab=clinic'], ['settings-prices', '#/prices'], ['settings-vaccines', '#/stock/vaccines'],
-    ['settings-users', '#/settings?tab=users'], ['settings-data', '#/settings?tab=data'],
+    ['settings-users', '#/settings?tab=users'], ['settings-lab', '#/settings?tab=lab'], ['settings-data', '#/settings?tab=data'],
     ['packages', '#/packages'], ['suppliers', '#/stock/suppliers'], ['reports-expenses', '#/reports?view=expenses'],
   ];
   const problems = [];

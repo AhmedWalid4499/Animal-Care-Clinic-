@@ -20,7 +20,8 @@ export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 export type PriceCategory = (typeof PRICE_CATEGORIES)[number];
 export type InvoiceStatus = (typeof INVOICE_STATUS)[number];
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
-export type Role = 'ADMIN' | 'DOCTOR' | 'ASSISTANT';
+/** LAB = a lab doctor's account for the lab extranet (server /lab only; never signs in to the app). Schema v24. */
+export type Role = 'ADMIN' | 'DOCTOR' | 'ASSISTANT' | 'LAB';
 export const URGENCIES = ['ROUTINE', 'SOON', 'EMERGENCY'] as const;
 export type Urgency = (typeof URGENCIES)[number];
 // Physical examination (schema v19). Each finding is one of these, or null when it wasn't examined.
@@ -52,6 +53,8 @@ export interface ChartMark {
 export interface User {
   id: string; name: string; email: string; password_hash: string; role: Role; locale: Locale; is_active: number; notify_off?: string | null; must_change_password?: number;
   roles?: string | null;
+  /** LAB accounts only: the lab's name, shown with its results (schema v24). */
+  lab_name?: string | null;
 }
 /**
  * Everything a person is (schema v14: users.roles, e.g. "ADMIN,DOCTOR"). Before v14 there was one role, and an Admin was
@@ -140,6 +143,8 @@ export interface TestRequest {
 export interface LabResult {
   id: string; pet_id: string; visit_id: string | null; taken_at: string; panel: string | null; analyte: string; value: number | null; value_text: string | null;
   unit: string | null; ref_low: number | null; ref_high: number | null; note: string | null; user_id: string | null; created_at: string;
+  /** The scanned report it came from, and the request it answers (lab extranet, schema v24). */
+  attachment_id?: string | null; request_id?: string | null;
 }
 export interface Consent {
   id: string; pet_id: string; visit_id: string | null; procedure: string; anaesthesia: number; estimate: number | null; notes: string | null;
