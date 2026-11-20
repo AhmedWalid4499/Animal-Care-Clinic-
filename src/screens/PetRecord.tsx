@@ -7,6 +7,8 @@ import {
   petChartMarks, petVaccinations, petVisits, petWeights, visitInvoice, petConsents, shownCode } from '../db/repo';
 import { DentalTab } from '../components/DentalChart';
 import { VisionTab } from '../components/EyeChart';
+import { BodyTab } from '../components/BodyChart';
+import { bodyPartName, hasBody, type BodyAnimal } from '../lib/body';
 import { splitConditions, toothById, type Animal } from '../lib/dental';
 import { ageParts, daysBetween, today } from '../lib/dates';
 import { platform } from '../lib/platform';
@@ -24,7 +26,7 @@ import { RequestsTab } from '../components/RequestsTab';
 import { mimeOf } from '../lib/mime';
 import { PetPackagesPanel } from './Packages';
 
-type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'exam' | 'labs' | 'requests' | 'files' | 'dental' | 'vision';
+type Tab = 'timeline' | 'vaccinations' | 'prescriptions' | 'weight' | 'exam' | 'labs' | 'requests' | 'files' | 'dental' | 'vision' | 'body';
 /** Dental and Vision (change request, 19 Nov 2026) are drawn for dogs and cats only. */
 const hasCharts = (species: string) => species === 'DOG' || species === 'CAT';
 
@@ -40,7 +42,7 @@ export function PetRecord() {
   const upcoming = useQuery(() => petAppointments(id), [id]);
   if (!pet) return <div className="page">{t('common.notFound')}</div>;
   const age = pet.date_of_birth ? ageParts(pet.date_of_birth) : null;
-  const tabs: Tab[] = ['timeline', 'vaccinations', 'prescriptions', 'weight', 'exam', 'labs', 'requests', 'files', ...(hasCharts(pet.species) ? (['dental', 'vision'] as Tab[]) : [])];
+  const tabs: Tab[] = ['timeline', 'vaccinations', 'prescriptions', 'weight', 'exam', 'labs', 'requests', 'files', ...(hasCharts(pet.species) ? (['dental', 'vision'] as Tab[]) : []), ...(hasBody(pet.species) ? (['body'] as Tab[]) : [])];
   const tab = tabs.includes(askedTab) ? askedTab : 'timeline';
 
   return (
@@ -127,6 +129,7 @@ export function PetRecord() {
         {tab === 'files' && <Files petId={id} />}
         {tab === 'dental' && <DentalTab pet={pet} />}
         {tab === 'vision' && <VisionTab pet={pet} />}
+        {tab === 'body' && <BodyTab pet={pet} />}
       </div>
     </div>
   );
@@ -390,11 +393,12 @@ export function PetSummaryPrint() {
   const settings = useQuery(getSettings);
   const nav = useNavigate();
   if (!pet) return null;
-  // Dental and eye findings that are not "normal" (change request 19 Nov), one line each.
-  const findings = hasCharts(pet.species)
-    ? marks.filter((m) => m.conditions || m.notes).map((m) => {
+  // Dental, eye and body findings that are not "normal" (change requests 19 and 20 Nov), one line each.
+  const findings = hasCharts(pet.species) || hasBody(pet.species)
+    ? marks.filter((m) => (m.conditions || m.notes) && (m.chart === 'BODY' ? hasBody(pet.species) : hasCharts(pet.species))).map((m) => {
       let where: string;
-      if (m.part === 'MOUTH') where = t('dental.general');
+      if (m.chart === 'BODY') where = bodyPartName(t, pet.species as BodyAnimal, m.part) ?? m.part;
+      else if (m.part === 'MOUTH') where = t('dental.general');
       else if (m.part === 'EYES') where = t('vision.general');
       else if (m.chart === 'VISION') {
         const [side, part] = m.part.split('.');
@@ -403,7 +407,7 @@ export function PetSummaryPrint() {
         const td = toothById(pet.species as Animal, m.part);
         where = td ? `${m.part} ${t(td.deciduous ? 'dental.toothNameBaby' : 'dental.toothName', { where: t(`dental.where.${td.jaw}_${td.side}`), kind: t(`dental.kind.${td.type}${td.ordinal}`) })}` : t(`dental.soft.${m.part}.name`);
       }
-      const ns = m.chart === 'VISION' ? 'eyeCond' : /^\d/.test(m.part) ? 'toothCond' : 'softCond';
+      const ns = m.chart === 'BODY' ? 'bodyCond' : m.chart === 'VISION' ? 'eyeCond' : /^\d/.test(m.part) ? 'toothCond' : 'softCond';
       const what = [splitConditions(m.conditions).map((c) => t(`${ns}.${c}`)).join(', '), m.severity ? t(`charts.sev${m.severity}`) : '', m.notes ?? ''].filter(Boolean).join(' · ');
       return { id: m.id, chart: m.chart, where, what };
     })
@@ -442,9 +446,9 @@ export function PetSummaryPrint() {
           </table>
           {findings.length > 0 && (
             <>
-              <h3 style={{ margin: '12px 0 4px' }}>{t('petRecord.dental')} / {t('petRecord.vision')}</h3>
+              <h3 style={{ margin: '12px 0 4px' }}>{t('petRecord.chartFindings')}</h3>
               <table>
-                <tbody>{findings.map((f) => <tr key={f.id}><td>{f.chart === 'DENTAL' ? '🦷' : '👁'} {f.where}</td><td>{f.what}</td></tr>)}</tbody>
+                <tbody>{findings.map((f) => <tr key={f.id}><td>{f.chart === 'DENTAL' ? '🦷' : f.chart === 'VISION' ? '👁' : '🐾'} {f.where}</td><td>{f.what}</td></tr>)}</tbody>
               </table>
             </>
           )}

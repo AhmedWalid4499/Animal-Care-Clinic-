@@ -41,7 +41,7 @@ export function Icon({ name }: { name: keyof typeof paths | string }) {
   );
 }
 
-export const speciesEmoji: Record<string, string> = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', OTHER: '🐾' };
+export const speciesEmoji: Record<string, string> = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', HAMSTER: '🐹', TURTLE: '🐢', OTHER: '🐾' };
 
 /** Patient alerts as coloured chips (danger flags red, chronic conditions amber). Renders nothing without alerts. */
 const ALERT_ICON: Record<string, string> = { AGGRESSIVE: '⚠️', ALLERGY: '🚫', INFECTIOUS: '🦠', DIABETIC: '💉', HEART: '❤️', EPILEPSY: '⚡', OTHER: '❗' };

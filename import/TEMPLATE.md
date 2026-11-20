@@ -13,7 +13,7 @@ Get a ready-made file from the app: **Settings → Data & backup → Download te
 | `owner_address` | | Heliopolis, Cairo | |
 | `owner_notes` | | Prefers WhatsApp | |
 | `pet_name` | | Luna | Empty = owner only |
-| `species` | | CAT | DOG, CAT, BIRD, RABBIT, REPTILE, OTHER (or كلب، قطة، طائر، أرنب، زواحف) |
+| `species` | | CAT | DOG, CAT, BIRD, RABBIT, REPTILE, HAMSTER, TURTLE, OTHER (or كلب، قطة، طائر، أرنب، زواحف، هامستر، سلحفاة) |
 | `breed` | | Persian | |
 | `sex` | | FEMALE | MALE / FEMALE (or ذكر / أنثى); empty = unknown |
 | `is_neutered` | | yes | yes / no |

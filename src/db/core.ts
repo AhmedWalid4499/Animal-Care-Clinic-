@@ -230,7 +230,8 @@ function migrate() {
     d.run('PRAGMA foreign_keys = OFF');
     d.run('BEGIN');
     try {
-      d.run(sql);
+      if (typeof sql === 'function') sql(d);
+      else d.run(sql);
       d.run("INSERT INTO meta (key,value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [String(next)]);
       d.run('COMMIT');
     } catch (e) {

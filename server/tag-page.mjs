@@ -68,7 +68,7 @@ input[type=text], input[type=tel], textarea { width: 100%; font: inherit; font-s
 (() => {
   const TEXT = ${text};
   const FOUND = ${found ? 'true' : 'false'};
-  const EMOJI = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', OTHER: '🐾' };
+  const EMOJI = { DOG: '🐕', CAT: '🐈', BIRD: '🐦', RABBIT: '🐇', REPTILE: '🦎', HAMSTER: '🐹', TURTLE: '🐢', OTHER: '🐾' };
   const base = location.pathname.replace(/\\/+$/, '');
   let lang = null;
   try { lang = localStorage.getItem('tag-page-lang'); } catch (e) {}

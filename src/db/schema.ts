@@ -1,3 +1,4 @@
+import type { Database } from 'sql.js';
 // SQLite translation of DATABASE.md (schema v1).
 // Conventions kept from the Postgres design: UUID text keys, created_at/updated_at on every table,
 // enums as CHECKed text, soft delete via status. Differences forced by SQLite:
@@ -5,9 +6,10 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
-const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
+// HAMSTER, TURTLE: added 20 Nov 2026 with the Body tab (change request, Ahmed), schema v23.
+const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','HAMSTER','TURTLE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
 // Pre-diagnosis (Phase 5): a Doctor records the intake, the patient waits for the vet (stage WAITING), the vet
 // takes the patient (WITH_VET) and completes the same visit (DONE). Complaint, weight and temperature are the
@@ -40,7 +42,7 @@ const visitExam = `bp_systolic INTEGER,
 const chartMarks = `CREATE TABLE IF NOT EXISTS pet_chart_marks (
   id TEXT PRIMARY KEY,
   pet_id TEXT NOT NULL REFERENCES pets(id),
-  chart TEXT NOT NULL CHECK (chart IN ('DENTAL','VISION')),
+  chart TEXT NOT NULL CHECK (chart IN ('DENTAL','VISION','BODY')),
   part TEXT NOT NULL,
   conditions TEXT,
   severity INTEGER CHECK (severity IN (1,2,3)),
@@ -602,7 +604,29 @@ CREATE INDEX audit_at ON audit_log(at);
 `;
 
 /** SQL that upgrades an older database to the current SCHEMA_VERSION, keyed by the version it produces. */
-export const MIGRATIONS: Record<number, string> = {
+/** A step is SQL, or a function for changes SQL alone can't express (v23: rebuild a table to widen a CHECK). */
+export type Migration = string | ((d: Database) => void);
+
+/**
+ * SQLite can't change a CHECK in place: rebuild the table (SQLite's own 12-step recipe, foreign keys are off during
+ * migrations). Works from the table's current definition, so columns added by ALTER on older installs are kept in
+ * their order; indexes are re-created. Does nothing if `fix` leaves the definition as it is (already widened).
+ */
+function widenCheck(d: Database, table: string, fix: (sql: string) => string) {
+  const one = (q: string) => d.exec(q)[0]?.values ?? [];
+  const sql = String(one(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = '${table}'`)[0]?.[0] ?? '');
+  const fixed = fix(sql);
+  if (!sql || fixed === sql) return;
+  const indexes = one(`SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = '${table}' AND sql IS NOT NULL`).map((r) => String(r[0]));
+  const cols = one(`PRAGMA table_info(${table})`).map((r) => String(r[1])).join(', ');
+  d.run(fixed.replace(/^CREATE TABLE (IF NOT EXISTS )?"?\w+"?/, `CREATE TABLE ${table}_v23`));
+  d.run(`INSERT INTO ${table}_v23 (${cols}) SELECT ${cols} FROM ${table}`);
+  d.run(`DROP TABLE ${table}`);
+  d.run(`ALTER TABLE ${table}_v23 RENAME TO ${table}`);
+  for (const i of indexes) d.run(i);
+}
+
+export const MIGRATIONS: Record<number, Migration> = {
   // v2 (4 Nov 2026): roles become ADMIN / DOCTOR / ASSISTANT (VET → ADMIN), and the sync tables appear.
   2: `
     CREATE TABLE users_v2 (
@@ -691,6 +715,11 @@ export const MIGRATIONS: Record<number, string> = {
 ${supplierTables}
 ${waTables}
 ${v22Cols}`,
+  // v23 (20 Nov 2026, change request): the Body tab — Hamster and Turtle become species, and charts get 'BODY'.
+  23: (d) => {
+    widenCheck(d, 'pets', (s) => (s.includes("'HAMSTER'") ? s : s.replace("'REPTILE','OTHER'", "'REPTILE','HAMSTER','TURTLE','OTHER'")));
+    widenCheck(d, 'pet_chart_marks', (s) => (s.includes("'BODY'") ? s : s.replace("'DENTAL','VISION'", "'DENTAL','VISION','BODY'")));
+  },
 };
 
 /** Tables included in the one-click export, in dependency order. */
