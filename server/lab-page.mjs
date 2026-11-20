@@ -4,7 +4,7 @@
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const data = (id, v) => `<script type="application/json" id="${id}">${JSON.stringify(v).replace(/</g, '\\u003c')}</script>`;
 
-export function labPageHtml(text, labTests) {
+export function labPageHtml(text, labTests, clinic) {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -93,6 +93,70 @@ table.t.edit td:first-child { min-width: 170px; }
 table.t.edit td.num { width: 84px; }
 table.t.edit td.unit { width: 96px; }
 @media (max-width: 640px) { .hide-sm { display: none; } }
+/* Sign-in: the same layout as the clinic app's login (src/screens/Login.tsx), in the lab's purple, with lab glassware
+   instead of paw prints. */
+.signin-page { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); background: var(--bg); }
+.signin-page .art { position: relative; overflow: hidden; background: linear-gradient(150deg, #4a2178, #5b2d91 45%, #7a45b8); color: #fff; padding: 44px 48px 28px; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; }
+.signin-page .art::after { content: ""; position: absolute; inset: auto -20% -45% auto; width: 70%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,255,255,.12), transparent); pointer-events: none; }
+.logo-plate { background: #fff; border-radius: var(--radius); display: inline-block; }
+.signin-page .art .logo-plate { max-width: 320px; padding: 14px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.22); }
+.signin-page .art .logo-plate img { display: block; max-height: 130px; max-width: 100%; }
+.signin-page .badge-lab { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
+.signin-page .art h1 { font-size: 40px; line-height: 1.15; max-width: 460px; margin: 0 0 18px; text-wrap: balance; }
+.signin-page .art-bottom { display: flex; flex-direction: column; gap: 6px; position: relative; z-index: 1; }
+.signin-page .art-bottom small { opacity: .8; }
+.slides { max-width: 430px; }
+.slide-stage { min-height: 92px; }
+.slide b { display: block; font-size: 18px; margin-bottom: 4px; }
+.slide p { margin: 0; opacity: .9; line-height: 1.55; }
+.slide { animation: slide-in .5s ease both; }
+.dots { display: flex; gap: 8px; margin-top: 14px; }
+.dots button { width: 22px; height: 4px; border-radius: 2px; border: 0; padding: 0; cursor: pointer; background: rgba(255,255,255,.35); transition: width .25s ease, background-color .25s ease; }
+.dots button.on { width: 40px; background: #fff; }
+.dots button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.lab-trail { width: 100%; max-width: 560px; height: auto; fill: #fff; stroke: #fff; }
+.lab-trail .gl { opacity: 0; animation: glass-step 6s ease-in-out infinite; }
+.signin-page .pane { display: grid; place-items: center; padding: 32px 20px; background: var(--bg); }
+.signin-page form { width: min(380px, 100%); display: flex; flex-direction: column; gap: 16px; }
+.signin-page .tools { display: flex; justify-content: flex-end; }
+.lang-pill { border: 1px solid var(--lab-line); background: var(--bg); border-radius: 999px; padding: 4px 14px; font-weight: 600; font-size: 13px; color: var(--lab); cursor: pointer; }
+.lang-pill:hover { background: var(--lab-soft); border-color: var(--lab); }
+.signin-page .mobile-logo { display: none; }
+.greeting { margin: 0 0 2px; color: var(--lab); font-weight: 600; font-size: 14px; }
+.signin-page h2.title { margin: 0; font-size: 26px; color: var(--ink); }
+.fields { display: flex; flex-direction: column; gap: 12px; }
+.float { position: relative; display: block; }
+.float input { min-height: 54px; padding: 22px 12px 6px; font-size: 15px; border: 1px solid var(--lab-line); border-radius: var(--radius); width: 100%; background: var(--bg); }
+.float > span { position: absolute; inset-inline-start: 13px; top: 17px; color: var(--ink-3); font-size: 15px; pointer-events: none; transition: top .15s ease, font-size .15s ease, color .15s ease; }
+.float input:focus + span, .float input:not(:placeholder-shown) + span { top: 7px; font-size: 11.5px; font-weight: 600; color: var(--lab); }
+.float input:focus { outline: none; border-color: var(--lab); box-shadow: 0 0 0 3px rgba(91,45,145,.18); }
+.has-eye input { padding-left: 12px; padding-right: 46px; }
+[dir='rtl'] .has-eye input { padding-left: 46px; padding-right: 12px; }
+.eye { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); border: 0; background: none; width: 36px; height: 36px; border-radius: var(--radius); color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
+.eye:hover { background: var(--bg-2); color: var(--ink); }
+.eye svg { width: 18px; height: 18px; }
+.login-msg { min-height: 20px; font-size: 13px; font-weight: 600; }
+.login-msg .err { color: var(--bad); background: none; padding: 0; } .login-msg .warn { color: var(--warn); }
+.fields.shake { animation: shake .42s cubic-bezier(.36,.07,.19,.97) both; }
+.btn.signin { min-height: 48px; font-size: 15px; width: 100%; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; animation: spin .8s linear infinite; display: inline-block; }
+.signin-foot { border-top: 1px solid var(--rule); padding-top: 12px; font-size: 12.5px; color: var(--ink-3); }
+.enter { animation: rise .5s cubic-bezier(.2,.7,.2,1) both; animation-delay: var(--d, 0ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes slide-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes shake { 10%, 90% { transform: translateX(-1px); } 20%, 80% { transform: translateX(3px); } 30%, 50%, 70% { transform: translateX(-6px); } 40%, 60% { transform: translateX(6px); } }
+/* Opacity only: a CSS transform here would replace each glyph's SVG transform (its place on the trail). */
+@keyframes glass-step { 0% { opacity: 0; } 8% { opacity: .3; } 50% { opacity: .3; } 64%, 100% { opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .enter, .slide, .lab-trail .gl { animation: none; } .lab-trail .gl { opacity: .2; } }
+@media (max-width: 900px) {
+  .signin-page { grid-template-columns: 1fr; }
+  .signin-page .art { display: none; }
+  .signin-page .mobile-logo { display: block; max-width: 240px; padding: 8px 12px; border: 1px solid var(--rule); }
+  .signin-page .mobile-logo img { display: block; max-width: 100%; }
+  .signin-page .mobile-badge { display: inline-flex; }
+}
+.mobile-badge { display: none; align-items: center; gap: 6px; color: var(--lab); font-weight: 700; font-size: 14px; }
 .hidden { display: none !important; }
 @media (max-width: 640px) {
   table.t.edit thead { display: none; }
@@ -107,6 +171,7 @@ table.t.edit td.unit { width: 96px; }
 <div id="app"><p style="padding:20px">…</p></div>
 ${data('lab-text', text)}
 ${data('lab-tests', labTests)}
+${data('lab-clinic', clinic ?? {})}
 <script type="module" src="/lab/app.mjs"></script>
 </body>
 </html>`;

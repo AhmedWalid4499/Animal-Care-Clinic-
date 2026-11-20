@@ -341,10 +341,22 @@ export async function handleLab(pool, req, res, url, { afterUpload }) {
   const p = url.pathname;
   if (p !== '/lab' && !p.startsWith('/lab/')) return false;
 
+  // The clinic's logo for the sign-in panel: the one in clinic settings, else the logo shipped with the app.
+  if (req.method === 'GET' && p === '/lab/logo') {
+    const st = (await pool.query("SELECT data->>'logo_url' AS logo FROM rows WHERE tbl = 'clinic_settings' AND NOT deleted ORDER BY seq DESC LIMIT 1")).rows[0];
+    const m = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(st?.logo ?? '');
+    const bytes = m ? Buffer.from(m[2], 'base64') : fs.readFileSync(path.join(here, '..', 'src', 'assets', 'clinic-logo.png'));
+    res.writeHead(200, { 'Content-Type': m ? m[1] : 'image/png', 'Cache-Control': 'public, max-age=3600', 'X-Content-Type-Options': 'nosniff' });
+    res.end(bytes);
+    return true;
+  }
   if (req.method === 'GET' && (p === '/lab' || p === '/lab/')) {
     const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' data: blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; frame-src 'self' blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...headers, 'Content-Security-Policy': csp });
-    res.end(labPageHtml(TEXT, LAB_TESTS));
+    // The clinic's name, address and phone for the sign-in panel's footer (public details, as on the clinic's own page).
+    const st = (await pool.query("SELECT data FROM rows WHERE tbl = 'clinic_settings' AND NOT deleted ORDER BY seq DESC LIMIT 1")).rows[0]?.data ?? {};
+    const clinic = { name_en: st.name_en ?? 'Animal Care Clinic', name_ar: st.name_ar ?? 'عيادة رعاية الحيوان', address: st.address ?? null, phone: st.phone ?? null };
+    res.end(labPageHtml(TEXT, LAB_TESTS, clinic));
     return true;
   }
   const own = /^\/lab\/(app\.mjs|parse\.mjs)$/.exec(p);

@@ -117,33 +117,124 @@ function route() {
 window.addEventListener('hashchange', () => user && route());
 
 // ---------------------------------------------------------------- sign in / password
+const CLINIC = JSON.parse(document.getElementById('lab-clinic')?.textContent || '{}');
+const SVG = 'http://www.w3.org/2000/svg';
+function s(tag, attrs = {}, ...kids) {
+  const el = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v);
+  for (const c of kids.flat()) if (c) el.append(c);
+  return el;
+}
+/** Lab glassware crossing the panel one after another — the extranet's version of the app's paw-print trail. */
+function glassTrail() {
+  const tube = () => [
+    s('path', { d: 'M -6 -22 L 6 -22 L 6 14 A 6 6 0 0 1 -6 14 Z', fill: 'none', 'stroke-width': '3' }),
+    s('path', { d: 'M -6 0 L 6 0 L 6 14 A 6 6 0 0 1 -6 14 Z', stroke: 'none' }),
+    s('path', { d: 'M -10 -22 L 10 -22', 'stroke-width': '3', 'stroke-linecap': 'round' }),
+  ];
+  const flask = () => [
+    s('path', { d: 'M -5 -22 L 5 -22 L 5 -7 L 17 13 Q 20 20 12 20 L -12 20 Q -20 20 -17 13 L -5 -7 Z', fill: 'none', 'stroke-width': '3', 'stroke-linejoin': 'round' }),
+    s('path', { d: 'M -10 5 L 10 5 L 17 13 Q 20 20 12 20 L -12 20 Q -20 20 -17 13 Z', stroke: 'none' }),
+    s('path', { d: 'M -9 -22 L 9 -22', 'stroke-width': '3', 'stroke-linecap': 'round' }),
+    s('circle', { cx: '-3', cy: '-2', r: '2', stroke: 'none' }), s('circle', { cx: '3', cy: '-10', r: '1.5', stroke: 'none' }),
+  ];
+  const pipette = () => [
+    s('path', { d: 'M -3 -24 L 3 -24 L 3 6 L 0 20 L -3 6 Z', fill: 'none', 'stroke-width': '3', 'stroke-linejoin': 'round' }),
+    s('ellipse', { cx: '0', cy: '-27', rx: '6', ry: '5', stroke: 'none' }),
+    s('circle', { cx: '0', cy: '25', r: '2.2', stroke: 'none' }),
+  ];
+  const shapes = [tube, flask, pipette];
+  return s('svg', { class: 'lab-trail', viewBox: '0 0 900 170', preserveAspectRatio: 'xMidYMid meet', 'aria-hidden': 'true' },
+    Array.from({ length: 7 }, (_, i) => s('g', {
+      class: 'gl', style: `animation-delay:${i * 0.55}s`,
+      transform: `translate(${60 + i * 128} ${i % 2 ? 108 : 62}) rotate(${i % 2 ? 14 : -14}) scale(1.6)`,
+    }, shapes[i % 3]())));
+}
+const SLIDES = ['requests', 'scan', 'share'];
+let slideTimer = null;
+function slides() {
+  let i = 0;
+  const stage = h('div', { class: 'slide-stage', 'aria-live': 'polite' });
+  const dots = h('div', { class: 'dots', role: 'tablist' });
+  const show = (k) => {
+    i = k;
+    stage.replaceChildren(h('div', { class: 'slide' }, h('b', {}, t(`slides.${SLIDES[i]}`)), h('p', {}, t(`slides.${SLIDES[i]}_text`))));
+    dots.replaceChildren(...SLIDES.map((f, n) => h('button', { type: 'button', role: 'tab', 'aria-selected': n === i ? 'true' : 'false', 'aria-label': t(`slides.${f}`), class: n === i ? 'on' : '', onclick: () => show(n) })));
+  };
+  show(0);
+  clearInterval(slideTimer);
+  if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) slideTimer = setInterval(() => document.body.contains(stage) ? show((i + 1) % SLIDES.length) : clearInterval(slideTimer), 5500);
+  return h('div', { class: 'slides' }, stage, dots);
+}
+const greeting = () => {
+  const hr = new Date().getHours();
+  return t(hr < 12 ? 'morning' : hr < 17 ? 'afternoon' : 'evening');
+};
+const eyeIcon = (off) => s('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
+  s('path', { d: off ? 'M3 3l18 18M10.6 5.1A10.6 10.6 0 0112 5c6.4 0 10 7 10 7a17.6 17.6 0 01-3.2 4.2M6.6 6.6A17.4 17.4 0 002 12s3.6 7 10 7a10 10 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2' : 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 100-6 3 3 0 000 6z' }));
+
 function showLogin(message) {
-  const err = h('div', { class: message ? 'note' : 'err hidden', role: 'alert' }, message ?? '');
-  const email = h('input', { type: 'email', autocomplete: 'username', required: true, dir: 'ltr' });
-  const pw = h('input', { type: 'password', autocomplete: 'current-password', required: true, dir: 'ltr' });
-  const btn = h('button', { class: 'btn primary', type: 'submit' }, t('signIn'));
+  const clinicName = lang === 'ar' ? CLINIC.name_ar : CLINIC.name_en;
+  const msg = h('div', { class: 'login-msg', 'aria-live': 'polite' }, message ? h('span', { class: 'warn' }, message) : null);
+  const email = h('input', { type: 'email', class: 'code', placeholder: ' ', autocomplete: 'username', required: true, dir: 'ltr' });
+  const pw = h('input', { type: 'password', placeholder: ' ', autocomplete: 'current-password', required: true, dir: 'ltr' });
+  const eye = h('button', { type: 'button', class: 'eye', 'aria-label': t('showPassword'), 'aria-pressed': 'false' }, eyeIcon(false));
+  eye.addEventListener('click', () => {
+    const shown = pw.type === 'text';
+    pw.type = shown ? 'password' : 'text';
+    eye.replaceChildren(eyeIcon(!shown));
+    eye.setAttribute('aria-pressed', String(!shown));
+    eye.setAttribute('aria-label', t(shown ? 'showPassword' : 'hidePassword'));
+  });
+  const caps = (e) => {
+    if (e.getModifierState?.('CapsLock')) msg.replaceChildren(h('span', { class: 'warn' }, `⇪ ${t('capsLock')}`));
+    else if (msg.querySelector('.warn') && !message) msg.replaceChildren();
+  };
+  pw.addEventListener('keyup', caps);
+  pw.addEventListener('keydown', caps);
+  const fields = h('div', { class: 'fields enter', style: '--d:120ms' },
+    h('label', { class: 'float' }, email, h('span', {}, t('email'))),
+    h('label', { class: 'float has-eye' }, pw, h('span', {}, t('password')), eye),
+    msg);
+  const btn = h('button', { class: 'btn primary signin enter', style: '--d:180ms', type: 'submit' }, t('signIn'));
   const form = h('form', {
     onsubmit: async (e) => {
       e.preventDefault();
       btn.disabled = true;
+      btn.replaceChildren(h('span', { class: 'spinner', 'aria-hidden': 'true' }), ' ', t('signingIn'));
       try {
-        const r = await api('login', { method: 'POST', body: { email: email.value, password: pw.value } });
+        const r = await api('login', { method: 'POST', body: { email: email.value.trim(), password: pw.value } });
         user = r.user;
         if (!localStorageLang()) setLang(user.locale);
         else route();
       } catch (x) {
-        err.className = 'err';
-        err.textContent = x.code === 'too_many' ? t('tooMany') : t('wrongLogin');
-      } finally {
+        msg.replaceChildren(h('span', { class: 'err' }, x.code === 'too_many' ? t('tooMany') : t('wrongLogin')));
+        fields.classList.remove('shake');
+        void fields.offsetWidth;
+        fields.classList.add('shake');
         btn.disabled = false;
+        btn.replaceChildren(t('signIn'));
       }
     },
   },
-  err,
-  h('label', { class: 'f' }, t('email'), email),
-  h('label', { class: 'f' }, t('password'), pw),
-  h('div', { class: 'row' }, btn));
-  render(topBar(), h('main', {}, h('div', { class: 'login' }, h('div', { class: 'card' }, h('h2', {}, t('signInTitle')), h('p', { class: 'muted small' }, t('signInHint')), form))));
+  h('div', { class: 'tools enter', style: '--d:0ms' }, h('button', { type: 'button', class: 'lang-pill', onclick: () => setLang(lang === 'ar' ? 'en' : 'ar') }, lang === 'ar' ? 'English' : 'العربية')),
+  h('span', { class: 'logo-plate mobile-logo enter' }, h('img', { src: '/lab/logo', alt: clinicName ?? '' })),
+  h('div', { class: 'enter', style: '--d:60ms' },
+    h('span', { class: 'mobile-badge' }, '🧪 ', t('title')),
+    h('p', { class: 'greeting' }, greeting()),
+    h('h2', { class: 'title' }, t('signInTitle')),
+    h('p', { class: 'muted', style: 'margin:4px 0 0' }, t('loginSubtitle'))),
+  fields,
+  btn,
+  h('p', { class: 'signin-foot enter', style: '--d:220ms' }, t('signInHint')));
+  const art = h('div', { class: 'art' },
+    h('div', { class: 'art-top enter', style: '--d:0ms' },
+      h('span', { class: 'logo-plate' }, h('img', { src: '/lab/logo', alt: clinicName ?? '' })),
+      h('div', {}, h('span', { class: 'badge-lab' }, '🧪 ', t('title')))),
+    h('div', { class: 'art-mid enter', style: '--d:120ms' }, h('h1', {}, t('title')), slides()),
+    h('div', { class: 'art-bottom' }, glassTrail(), h('small', {}, [clinicName, CLINIC.address, CLINIC.phone].filter(Boolean).join(' · '))));
+  app.replaceChildren(h('div', { class: 'signin-page' }, art, h('div', { class: 'pane' }, form)));
+  window.scrollTo(0, 0);
   email.focus();
 }
 function localStorageLang() {
