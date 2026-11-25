@@ -8,6 +8,7 @@ import { flush } from '../db/core';
 import { serverUrl, signOutSync } from '../sync/engine';
 import { platform } from '../lib/platform';
 import type { User } from '../db/types';
+import { userRoles } from '../db/types';
 import { Dialog, Field, Icon } from './ui';
 
 const DOWNLOAD_URL = 'https://github.com/AhmedWalid4499/Animal-Care-Clinic-/releases/latest';
@@ -71,13 +72,14 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
 }
 
 /** After the Admin creates a user or resets a password: the message with how to sign in, ready to send. */
-export function InviteDialog({ person, password, onClose }: { person: Pick<User, 'name' | 'email' | 'role'>; password: string; onClose: () => void }) {
+/** `message` replaces the usual text (e.g. a lab doctor's extranet sign-in, Settings → Lab extranet). */
+export function InviteDialog({ person, password, onClose, message }: { person: Pick<User, 'name' | 'email' | 'role' | 'roles'>; password: string; onClose: () => void; message?: string }) {
   const { t, locale, toast } = useApp();
   const settings = useQuery(getSettings);
   const clinic = locale === 'ar' ? settings.name_ar : settings.name_en;
   const server = serverUrl();
-  const vars = { name: person.name, role: t(`roles.${person.role}`), clinic, email: person.email, password, server: server ?? '', download: server && __CLOUD__ ? server : DOWNLOAD_URL };
-  const text = t(server ? 'invite.text' : 'invite.textNoServer', vars);
+  const vars = { name: person.name, role: userRoles(person).map((r) => t(`roles.${r}`)).join(' · '), clinic, email: person.email, password, server: server ?? '', download: server && __CLOUD__ ? server : DOWNLOAD_URL };
+  const text = message ?? t(server ? 'invite.text' : 'invite.textNoServer', vars);
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);

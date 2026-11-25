@@ -1,4 +1,4 @@
-// Cloud sync end-to-end test (docs/CLOUD-PLAN.md, Phases 1–5): a local Postgres + the clinic server +
+// Cloud sync end-to-end test (docs/CLOUD-PLAN.md, Phases 1–6): a local Postgres + the clinic server +
 // two desktop apps + a fake push service standing in for a phone.
 // Usage: npm run build && npm run build:cloud && xvfb-run -a node scripts/sync-test.mjs [outDir]
 // Needs a local Postgres you can reach with TEST_DATABASE_URL (default postgres://clinic:clinic@127.0.0.1:5432/clinic_sync_test,
@@ -6,6 +6,7 @@
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
+import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -36,6 +37,10 @@ async function step(label, fn) {
     await fn();
   } catch (e) {
     check(label, label, false, e.message.split('\n')[0]);
+    // What each laptop showed when the step failed, and the whole error (which locator, what it waited for).
+    console.log(e.message.split('\n').slice(0, 6).join('\n'));
+    const slug = label.replace(/[^a-z0-9]+/gi, '-');
+    for (const d of [globalThis.syncTestA, globalThis.syncTestB]) await d?.win.screenshot({ path: path.join(out, `FAILED-${slug}-${d.name}.png`) }).catch(() => {});
   }
 }
 async function until(fn, ms = 10_000, every = 150) {
@@ -91,9 +96,29 @@ const pushService = https.createServer({ key: fs.readFileSync(path.join(certDir,
   });
 });
 await new Promise((r) => pushService.listen(PUSH_PORT, '127.0.0.1', r));
+
+// A fake WhatsApp Business Cloud API (graph.facebook.com) for the automatic reminders (schema v22). Every server this
+// test starts knows it; nothing is sent until an Admin switches the reminders on. Numbers ending in 9999 are refused.
+const WA_PORT = 8792;
+const waSent = [];
+const waService = http.createServer((req, res) => {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+    waSent.push({ path: req.url, auth: req.headers.authorization, body });
+    const refuse = String(body.to ?? '').endsWith('9999');
+    res.writeHead(refuse ? 400 : 200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(refuse ? { error: { message: '(#131026) Message undeliverable' } } : { messages: [{ id: `wamid.${waSent.length}` }] }));
+  });
+});
+await new Promise((r) => waService.listen(WA_PORT, '127.0.0.1', r));
+Object.assign(process.env, {
+  WHATSAPP_TOKEN: 'test-token', WHATSAPP_PHONE_NUMBER_ID: '1234567890', WHATSAPP_API_BASE: `http://127.0.0.1:${WA_PORT}/v21.0`, WHATSAPP_DISPLAY_NUMBER: '+20 122 700 7428',
+});
 let server = null;
-function startServer(extraEnv = {}) {
-  server = spawn(process.execPath, ['server/index.mjs'], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
+function startServer(extraEnv = {}, entry = 'server/index.mjs') {
+  server = spawn(process.execPath, [entry], { env: { ...process.env, DATABASE_URL: DB, PORT: String(PORT), ADMIN_EMAIL: ADMIN.email, ADMIN_PASSWORD: ADMIN.password, NODE_EXTRA_CA_CERTS: path.join(certDir, 'cert.pem'), FILES_DIR: filesDirNow, ...S3_ENV, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   server.stderr.on('data', (d) => fs.appendFileSync(path.join(out, 'server.log'), d));
   return until(async () => (await fetch(`${SERVER}/health`)).ok, 15_000);
@@ -137,7 +162,8 @@ async function signIn(d, email, password, { newPassword } = {}) {
   await d.win.locator('input[type=email]').fill(email);
   await d.win.locator('input[type=password]').fill(password);
   await d.win.locator('form button.signin').click();
-  await d.win.waitForSelector('.searchbox, .password-form', { timeout: 30_000 });
+  // Signed in = the sidebar's foot (name, Sign out) is there, whichever screen the app returns to.
+  await d.win.waitForSelector('.side-foot, .password-form', { timeout: 30_000 });
   // A temporary password from the Admin: the person must choose their own first.
   if (await d.win.locator('.password-form').count()) {
     if (!newPassword) throw new Error(`${email} was asked to choose a password`);
@@ -145,7 +171,7 @@ async function signIn(d, email, password, { newPassword } = {}) {
     await a.fill(newPassword);
     await b.fill(newPassword);
     await d.win.locator('.password-form .btn.primary').click();
-    await d.win.waitForSelector('.searchbox', { timeout: 10_000 });
+    await d.win.waitForSelector('.side-foot', { timeout: 10_000 });
     return 'changed';
   }
   return 'in';
@@ -165,6 +191,8 @@ const serverCount = async (tbl) => Number((await pool.query('SELECT COUNT(*) n F
 
 const A = await launch('A', { demo: true });
 const B = await launch('B', { demo: false });
+globalThis.syncTestA = A;
+globalThis.syncTestB = B;
 
 await step('first device uploads the clinic', async () => {
   await connect(A);
@@ -173,7 +201,7 @@ await step('first device uploads the clinic', async () => {
   const owners = await serverCount('owners');
   const pets = await serverCount('pets');
   const defaultsActive = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'users' AND data->>'email' LIKE '%@clinic.local' AND (data->>'is_active')::int = 1")).rows[0].n);
-  check('bootstrap', 'The first laptop (Admin) uploads its records to an empty clinic', owners === 5 && pets === 7 && defaultsActive === 0,
+  check('bootstrap', 'The first laptop (Admin) uploads its records to an empty clinic', owners === 5 && pets === 10 && defaultsActive === 0,
     `server now holds ${owners} owners, ${pets} pets; default demo logins left active on the server: ${defaultsActive}`);
   await A.win.screenshot({ path: path.join(out, 'A-dashboard-synced.png') });
 });
@@ -213,6 +241,11 @@ await step('live: B → A', async () => {
 
 let doctorId = null;
 let deskTemp = null;
+// Settings → Users: the role checkboxes (Admin, Doctor, Assistant, in that order); ticks exactly these.
+const ROLE_ORDER = ['ADMIN', 'DOCTOR', 'ASSISTANT'];
+async function setRoles(dlg, roles) {
+  for (const [i, r] of ROLE_ORDER.entries()) await dlg.locator('.role-checks input[type=checkbox]').nth(i).setChecked(roles.includes(r));
+}
 const DOCTOR_PW = 'Doctor-own-2026';
 let inviteText = '';
 await step('admin adds users', async () => {
@@ -222,7 +255,7 @@ await step('admin adds users', async () => {
     const dlg = A.win.locator('.dialog');
     await dlg.locator('input[type=text]').first().fill(name);
     await dlg.locator('input[type=email]').fill(email);
-    await dlg.locator('select').first().selectOption(role);
+    await setRoles(dlg, [role]);
     await dlg.locator('input[name=temp-password]').fill('Welcome2026!');
     await dlg.locator('footer .btn.primary').click();
     // Then the sign-in details to send by WhatsApp or email.
@@ -263,6 +296,34 @@ await step('doctor signs in on the other laptop', async () => {
   check('doctor', 'A Doctor can sign in on another laptop, record visits, and has no Settings', newVisit === 1 && settings === 0, `New visit button: ${newVisit ? 'yes' : 'no'}; Settings in menu: ${settings ? 'yes' : 'no'}`);
   check('first-password', 'A new user gets sign-in details to send, and must choose their own password the first time', invited && sameRefused && !!synced.v && oldFails,
     `invite text has email, temporary password and server: ${invited}; keeping the temporary password refused: ${sameRefused}; new password works on the server: ${!!synced.v}, temporary one no longer: ${oldFails}`);
+});
+
+await step('admin makes someone else an admin', async () => {
+  // The Admin promotes the Doctor on laptop A; on laptop B, where the Doctor is signed in, the Admin screens appear
+  // without signing out, and the server lets them do Admin things. Then back to Doctor for the rest of the test.
+  const setRole = async (role) => {
+    await go(A, '#/settings?tab=users');
+    await A.win.locator('tr.link', { hasText: 'doctor@test.local' }).click();
+    await setRoles(A.win.locator('.dialog'), role === 'ADMIN' ? ['ADMIN', 'DOCTOR'] : [role]); // Admin and Doctor: two roles at once
+    await A.win.locator('.dialog .btn.primary').click();
+  };
+  await setRole('ADMIN');
+  let promoted, told = false, asAdmin = {}, bothRoles = false;
+  try {
+  promoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 1, 15_000, 300);
+  bothRoles = /Admin · Doctor|مدير · طبيب/.test(await B.win.locator('.side-foot').innerText());
+  told = promoted.v ? (await B.win.locator('.toasts').innerText()).includes('Admin') || (await B.win.locator('.toasts').innerText()).includes('مدير') : false;
+  const at = new Date().toISOString(); // (nowIso is defined further down)
+  const pid = crypto.randomUUID();
+  const docToken = (await api('/api/login', { email: 'doctor@test.local', password: DOCTOR_PW, deviceId: 'test-promote' })).body.token;
+  asAdmin = (await api('/api/sync/push', { changes: [{ tbl: 'price_items', id: pid, op: 'upsert', at, cols: { id: pid, name_en: 'Promotion test', name_ar: 'اختبار', category: 'OTHER', unit_price: 100, is_active: 0, created_at: at, updated_at: at } }] }, docToken)).body;
+  } finally {
+    await setRole('DOCTOR'); // always put the Doctor back, or later checks run with two Admins
+  }
+  const demoted = await until(async () => (await B.win.locator('.nav a[href="#/settings"]').count()) === 0, 15_000, 300);
+  check('admin-promote', 'The Admin can make anyone an Admin: their screens and rights change at once, without signing out',
+    !!promoted?.v && told && bothRoles && asAdmin.rejected?.length === 0 && !!demoted.v,
+    `doctor's laptop shows Admin Settings: ${!!promoted?.v} (told: ${told}; shown as Admin and Doctor: ${bothRoles}); server accepts an Admin-only change from them: ${asAdmin.rejected?.length === 0}; back to Doctor on their laptop: ${!!demoted.v}`);
 });
 
 await step('server enforces roles', async () => {
@@ -319,8 +380,10 @@ await step('notify: booking', async () => {
     if (r.status !== 200) throw new Error(`push subscribe → ${r.status}`);
   }
   const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted ORDER BY id LIMIT 1")).rows[0];
+  // Tomorrow at 08:00 (moved to 09:00 below): a fixed hour, so it never lands on the slots the offline step books at
+  // 13:00 / 13:10 (it did when the test ran between 12:00 and 13:00).
   const at = new Date(Date.now() + 86400_000);
-  at.setMinutes(0, 0, 0);
+  at.setHours(8, 0, 0, 0);
   appt = { id: crypto.randomUUID(), pet_id: pet.id, owner_id: pet.data.owner_id, pet: pet.data.name, at: at.toISOString() };
   const beforeB = await bell(B);
   const beforeA = await bell(A);
@@ -412,7 +475,8 @@ await step('notify: preferences', async () => {
   const sneaky = (await api('/api/sync/push', { changes: [{ tbl: 'users', id: deskId, op: 'upsert', at: nowIso(), cols: { role: 'ADMIN' } }] }, tokens.desk)).body;
   // The doctor switches visit notifications off in the bell on laptop B.
   await B.win.locator('.side-foot .bell').click();
-  const visitBox = B.win.locator('.bell-panel .kinds label').nth(2).locator('input'); // queue, appointments, visits…
+  // By its label, not its position: the list grows as kinds are added (Lost & found came first on 14 Nov).
+  const visitBox = B.win.locator('.bell-panel .kinds label', { hasText: /^\s*(Visits|الزيارات)\s*$/ }).locator('input');
   await visitBox.uncheck();
   await B.win.keyboard.press('Escape');
   const docOff = await until(async () => (await pool.query("SELECT data->>'notify_off' v FROM rows WHERE tbl = 'users' AND data->>'email' = 'doctor@test.local'")).rows[0].v === 'visit', 10_000);
@@ -433,7 +497,8 @@ await step('notify: visits', async () => {
   const notBookedToday = `SELECT id, data FROM rows p WHERE tbl = 'pets' AND NOT deleted AND NOT EXISTS (SELECT 1 FROM rows a WHERE a.tbl = 'appointments' AND a.data->>'pet_id' = p.id
     AND ((a.data->>'scheduled_at')::timestamptz AT TIME ZONE 'Africa/Cairo')::date = (now() AT TIME ZONE 'Africa/Cairo')::date) ORDER BY id LIMIT 2`;
   const [booked, walkIn] = (await pool.query(notBookedToday)).rows;
-  const today = new Date(Date.now() + 5 * 60_000).toISOString();
+  // Booked for right now (not a few minutes ahead, which near midnight Cairo time would already be tomorrow).
+  const today = new Date().toISOString();
   const ap = crypto.randomUUID();
   await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: ap, op: 'upsert', at: nowIso(), cols: { id: ap, pet_id: booked.id, owner_id: booked.data.owner_id, scheduled_at: today, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED', created_at: nowIso(), updated_at: nowIso() } }] }, tokens.desk);
   for (const p of [booked, walkIn]) {
@@ -456,20 +521,24 @@ await step('notify: read', async () => {
 });
 
 // ---------------------------------------------------------------- Guest appointments + public booking link (change request, 25 Nov 2026)
-const tomorrowCairo = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + 86_400_000));
+const publicInfo = async () => (await api('/api/public/booking')).body;
 const publicBook = (body) => api('/api/public/book', body);
 const apptRow = async (id) => (await pool.query("SELECT data, deleted FROM rows WHERE tbl = 'appointments' AND id = $1", [id])).rows[0];
+const cairoHm = (iso) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(iso));
+const freeOn = async (date) => ((await publicInfo()).days.find((d) => d.date === date)?.slots ?? []).filter((x) => x.free).map((x) => x.at);
 const booking = {};
 
 await step('booking: link on', async () => {
-  const closed = (await api(`/api/public/slots?date=${tomorrowCairo()}`)).status;
+  const before = await publicInfo();
+  const closed = (await publicBook({ name: 'Too Early', phone: '01000000003', at: new Date(Date.now() + 86_400_000).toISOString() })).status;
   await go(A, '#/settings?tab=clinic');
   await A.win.getByLabel(/استقبال طلبات الحجز|Accept booking requests/).check();
-  const on = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'clinic_settings' AND (data->>'online_booking')::int = 1")).rowCount === 1, 15_000);
+  const on = await until(async () => (await publicInfo()).enabled === true, 15_000);
   const link = await A.win.locator('input[aria-label="رابط الحجز"], input[aria-label="Booking link"]').inputValue();
   await A.win.screenshot({ path: path.join(out, 'booking-settings.png') });
-  check('booking-on', 'The Admin turns online booking on in Settings and gets the link to share; before that the page takes no bookings',
-    closed === 403 && !!on.v && link === `${SERVER}/book`, `slots while off → ${closed}; switched on in ${on.ms} ms; link shown: ${link}`);
+  check('booking-on', 'The Admin turns the public booking page on in Settings and gets the link to share; before that it takes no requests',
+    before.enabled === false && before.days.length === 0 && closed === 403 && !!on.v && link === `${SERVER}/book`,
+    `while off: page closed (${before.days.length} days offered), request → ${closed}; switched on in ${on.ms} ms; link shown: ${link}`);
 });
 
 await step('booking: phone books a slot', async () => {
@@ -477,15 +546,18 @@ await step('booking: phone books a slot', async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 390, height: 800 }, deviceScaleFactor: 2 });
   await page.goto(`${SERVER}/book`);
-  await page.locator('.day').nth(1).click(); // tomorrow
-  await page.locator('.slot').nth(9).waitFor();
-  const slot = (await page.locator('.slot').nth(9).innerText()).trim();
-  await page.locator('.slot').nth(9).click();
+  const day = page.locator('.day:not([disabled])').first();
+  await day.click();
+  booking.date = await day.getAttribute('data-d');
+  const pick = page.locator('.slot:not([disabled])').nth(3);
+  const slot = (await pick.innerText()).trim();
+  await pick.click();
   await page.locator('#name').fill('Salma Online');
   await page.locator('#phone').fill('0101 555 7788');
   await page.locator('#petName').fill('Zizi');
   await page.locator('#species').selectOption('CAT');
-  await page.screenshot({ path: path.join(out, 'booking-page.png'), fullPage: true });
+  const width = await page.evaluate(() => document.documentElement.scrollWidth);
+  await page.screenshot({ path: path.join(out, 'booking-page.png') });
   const t0 = Date.now();
   await page.locator('#send').click();
   await page.locator('#done').waitFor({ state: 'visible', timeout: 10_000 });
@@ -493,37 +565,35 @@ await step('booking: phone books a slot', async () => {
   await browser.close();
   const row = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'appointments' AND data->>'guest_name' = 'Salma Online' AND NOT deleted")).rows[0];
   booking.id = row?.id;
-  booking.date = tomorrowCairo();
-  booking.time = slot;
-  const cairoTime = row && new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(row.data.scheduled_at));
+  booking.at = row?.data.scheduled_at;
   const noted = await until(async () => {
     const who = await Promise.all(['admin', 'doctor', 'desk'].map(async (w) => (await notesFor(w)).some((n) => n.event === 'requested' && n.data.appointment_id === row.id)));
     return who.every(Boolean) && who;
   }, 5_000);
-  // The doctor's laptop gets it live and the dashboard says a request is waiting.
+  // The doctor's laptop gets it live and the dashboard's "Needs attention" says a request is waiting.
   await go(B, '#/');
-  const banner = await until(async () => (await B.win.locator('.note.warn', { hasText: /طلب حجز|online booking request/ }).count()) > 0, 10_000, 200);
-  await B.win.screenshot({ path: path.join(out, 'booking-dashboard-banner.png') });
+  const attn = await until(async () => (await B.win.locator('.attn-requests').count()) > 0, 10_000, 200);
+  await B.win.screenshot({ path: path.join(out, 'booking-dashboard.png') });
   check('booking-public', 'Someone with no account books from a phone: a guest request is stored (no owner/pet record), every staff member is notified, and laptops show it at once',
-    !!row && row.data.status === 'REQUESTED' && row.data.source === 'ONLINE' && row.data.pet_id === null && cairoTime === slot && !!noted.v && !!banner.v,
-    `picked ${booking.date} ${slot} (Cairo) on a 390 px phone; stored ${row?.data.status} ${row?.data.scheduled_at} (= ${cairoTime} Cairo), pet_id ${row?.data.pet_id}; notified admin/doctor/assistant: ${!!noted.v}; doctor's dashboard banner after ${banner.ms + (Date.now() - t0 - banner.ms)} ms: ${!!banner.v}`);
+    !!row && row.data.status === 'REQUESTED' && row.data.source === 'ONLINE' && row.data.pet_id === null && cairoHm(row.data.scheduled_at) === slot && width <= 390 && !!noted.v && !!attn.v,
+    `picked ${booking.date} ${slot} (Cairo) on a 390 px phone (page width ${width}); stored ${row?.data.status} ${row?.data.scheduled_at} (= ${cairoHm(row?.data.scheduled_at)} Cairo), pet_id ${row?.data.pet_id}; notified admin/doctor/assistant: ${!!noted.v}; on the doctor's dashboard ${Date.now() - t0} ms after sending: ${!!attn.v}`);
 });
 
 await step('booking: abuse brakes', async () => {
-  const base = { name: 'Salma Online', phone: '01015557788', date: booking.date };
-  const taken = await publicBook({ ...base, time: booking.time });
-  const offGrid = await publicBook({ ...base, time: '10:07' });
-  const freeNow = (await api(`/api/public/slots?date=${booking.date}`)).body.slots ?? [];
-  const second = await publicBook({ ...base, time: freeNow[freeNow.length - 1] });
+  const base = { name: 'Salma Online', phone: '01015557788' };
+  const taken = await publicBook({ ...base, at: booking.at });
+  const offGrid = await publicBook({ ...base, at: new Date(Date.parse(booking.at) + 7 * 60_000).toISOString() });
+  const freeNow = await freeOn(booking.date);
+  const second = await publicBook({ ...base, at: freeNow[freeNow.length - 1] });
   booking.second = (await pool.query("SELECT id FROM rows WHERE tbl = 'appointments' AND data->>'guest_name' = 'Salma Online' AND id <> $1 AND NOT deleted", [booking.id])).rows[0]?.id;
-  const third = await publicBook({ ...base, time: freeNow[freeNow.length - 2] });
+  const third = await publicBook({ ...base, at: freeNow[freeNow.length - 2] });
   const before = (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'appointments'")).rows[0].n;
-  const bot = await publicBook({ name: 'Bot', phone: '01000000001', date: booking.date, time: freeNow[0], website: 'http://spam.example' });
+  const bot = await publicBook({ name: 'Bot', phone: '01000000001', at: freeNow[0], website: 'http://spam.example' });
   const after = (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'appointments'")).rows[0].n;
-  const listed = freeNow.includes(booking.time);
-  check('booking-brakes', 'The booking page cannot double-book, accepts only real slots, caps requests per phone, and quietly drops bots',
-    taken.status === 409 && taken.body.error === 'taken' && offGrid.status === 400 && !listed && second.status === 200 && third.body.error === 'phone_limit' && bot.status === 200 && before === after,
-    `same slot again → ${taken.status} ${taken.body.error}; 10:07 → ${offGrid.status} ${offGrid.body.error}; booked slot still offered: ${listed}; 2nd request same phone → ${second.status}; 3rd → ${third.status} ${third.body.error}; honeypot → ${bot.status}, rows ${before}→${after}`);
+  const listed = freeNow.includes(booking.at);
+  check('booking-brakes', 'The booking page cannot double-book, accepts only real opening times, caps requests per phone, and quietly drops bots',
+    taken.status === 409 && taken.body.error === 'taken' && offGrid.status === 400 && !listed && second.status === 200 && third.status === 429 && third.body.error === 'phone_limit' && bot.status === 200 && before === after,
+    `same time again → ${taken.status} ${taken.body.error}; 7 minutes later → ${offGrid.status} ${offGrid.body.error}; requested time still offered as free: ${listed}; 2nd request same phone → ${second.status}; 3rd → ${third.status} ${third.body.error}; honeypot → ${bot.status}, rows ${before}→${after}`);
 });
 
 await step('booking: accept, arrive, decline', async () => {
@@ -537,7 +607,7 @@ await step('booking: accept, arrive, decline', async () => {
   const accepted = await until(async () => (await apptRow(booking.id)).data.status === 'SCHEDULED', 10_000);
   const told = await until(async () => (await notesFor('admin')).some((n) => n.event === 'accepted' && n.data.appointment_id === booking.id), 5_000);
   // The guest arrives: the front desk registers them in one tap (laptop B), which makes an owner and a pet.
-  await go(B, `#/appointments?view=day&date=${booking.date}&open=${booking.id}`);
+  await go(B, `#/appointments?view=week&open=${booking.id}`);
   await B.win.locator('.dialog .note .btn.primary').click();
   const reg = await until(async () => {
     const a = await apptRow(booking.id);
@@ -547,7 +617,7 @@ await step('booking: accept, arrive, decline', async () => {
     return pet && owner ? { pet, owner } : null;
   }, 10_000);
   // Decline the second request on the admin's laptop: it is deleted everywhere.
-  await go(A, `#/appointments?open=${booking.second}`);
+  await go(A, `#/appointments?view=week&open=${booking.second}`);
   await A.win.locator('.dialog footer .btn.danger').first().click();
   await A.win.locator('.note.bad .btn.danger').click();
   const gone = await until(async () => (await apptRow(booking.second))?.deleted === true, 10_000);
@@ -569,14 +639,15 @@ await step('booking: guest appointments and rules', async () => {
   const del = await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: g, op: 'delete', at: nowIso(), cols: {} }] }, tokens.desk);
   const delReg = await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: booking.id, op: 'delete', at: nowIso(), cols: {} }] }, tokens.desk);
   const stillThere = (await apptRow(booking.id)).deleted === false;
-  // Switched off: the page says "call the clinic" and takes no bookings.
+  // Switched off: the page says "call the clinic" and takes no requests.
+  const free = await freeOn(booking.date);
   await go(A, '#/settings?tab=clinic');
   await A.win.getByLabel(/استقبال طلبات الحجز|Accept booking requests/).uncheck();
-  const off = await until(async () => (await api(`/api/public/slots?date=${booking.date}`)).status === 403, 15_000);
-  const afterOff = await publicBook({ name: 'Late', phone: '01000000002', date: booking.date, time: '20:00' });
-  check('booking-rules', 'A guest appointment can be deleted (no-show), a registered one cannot; switching the link off stops bookings',
+  const off = await until(async () => (await publicInfo()).enabled === false, 15_000);
+  const afterOff = await publicBook({ name: 'Late', phone: '01000000002', at: free[0] });
+  check('booking-rules', 'A guest appointment can be deleted (no-show), a registered one cannot; switching the link off stops requests',
     !mk.body.rejected?.length && !del.body.rejected?.length && (await apptRow(g)).deleted && delReg.body.rejected?.[0]?.reason === 'records are archived, never deleted' && stillThere && !!off.v && afterOff.status === 403,
-    `assistant books a guest → ${mk.body.rejected?.length ? 'refused' : 'ok'}; deletes it → ${del.body.rejected?.length ? 'refused' : 'deleted'}; deletes a registered appointment → "${delReg.body.rejected?.[0]?.reason}"; switched off → slots 403: ${!!off.v}, booking → ${afterOff.status}`);
+    `assistant books a guest → ${mk.body.rejected?.length ? 'refused' : 'ok'}; deletes it → ${del.body.rejected?.length ? 'refused' : 'deleted'}; deletes a registered appointment → "${delReg.body.rejected?.[0]?.reason}"; switched off → page closed: ${!!off.v}, request → ${afterOff.status}`);
 });
 
 // ---------------------------------------------------------------- Phase 5: pre-diagnosis, password reset, devices
@@ -615,7 +686,7 @@ await step('phase5: pre-diagnosis', async () => {
   await A.win.screenshot({ path: path.join(out, 'A-visit-with-pre-diagnosis.png'), fullPage: true });
   // The vet corrects the temperature and completes the same visit.
   await A.win.locator('.intake-box input[type=number]').nth(1).fill('39.4');
-  await A.win.locator('form > .form-section:not(.intake-box) input[type=text]').first().fill('Acute gastroenteritis');
+  await A.win.locator('form input[name=diagnosis]').fill('Acute gastroenteritis');
   await A.win.locator('.actionbar .btn.primary').click();
   await A.win.waitForSelector('.dialog');
   const invoiceOffered = (await A.win.locator('.dialog footer .btn.primary').count()) === 1;
@@ -634,6 +705,622 @@ await step('phase5: pre-diagnosis', async () => {
     !!told.v && note?.event === 'emergency' && !!inQueue.v && !!withVet.v && shown === 'Vomiting since this morning' && hrShown === '132' && invoiceOffered &&
       v.stage === 'DONE' && v.vet_id === adminId && v.intake_by === doctorId && Number(v.temperature_c) === 39.4 && v.diagnosis === 'Acute gastroenteritis' && visits === 1 && !!emptied.v && earlyVisitNote === 0,
     `vet's notification: ${note?.event ?? 'none'}; in the vet's queue as emergency: ${!!inQueue.v}; doctor's laptop shows "with the vet": ${!!withVet.v}; visit form shows complaint "${shown}", heart rate ${hrShown}; saved as one visit (${visits}), stage ${v.stage}, vet = admin: ${v.vet_id === adminId}, intake by the doctor: ${v.intake_by === doctorId}, temperature corrected to ${v.temperature_c}; invoice offered: ${invoiceOffered}; queue empty after: ${!!emptied.v}; "visit recorded" sent at intake: ${earlyVisitNote}`);
+});
+
+await step('phase5: assistant pre-diagnosis', async () => {
+  // The front desk (an Assistant) registers a new patient and sends the pre-diagnosis, as the app's "New patient" does:
+  // owner + pet + a visit that only waits for the vet, in one push.
+  const deskId = (await pool.query("SELECT id FROM rows WHERE tbl = 'users' AND data->>'email' = 'desk@test.local'")).rows[0].id;
+  const [o, p, v] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  const at = nowIso();
+  const push = (changes, who = 'desk') => api('/api/sync/push', { changes }, tokens[who]).then((r) => r.body);
+  const sent = await push([
+    { tbl: 'owners', id: o, op: 'upsert', at, cols: { id: o, full_name: 'Hoda Sami', phone: '01099887766', status: 'ACTIVE', created_at: at, updated_at: at } },
+    { tbl: 'pets', id: p, op: 'upsert', at, cols: { id: p, owner_id: o, name: 'Simba', species: 'CAT', sex: 'UNKNOWN', is_neutered: 0, dob_is_estimate: 0, status: 'ACTIVE', created_at: at, updated_at: at } },
+    { tbl: 'visits', id: v, op: 'upsert', at, cols: {
+      id: v, pet_id: p, type: 'CHECKUP', stage: 'WAITING', vet_id: null, visited_at: at, intake_by: deskId, intake_at: at, complaint: 'Not eating for two days',
+      urgency: 'SOON', heart_rate: 150, diagnosis: null, treatment_notes: null, follow_up_at: null, invoice_id: null, created_at: at, updated_at: at } },
+  ]);
+  // The vets are told; the assistant is not told about their own patient.
+  const docNote = await until(async () => (await notesFor('doctor')).find((n) => n.kind === 'queue' && n.data.visit_id === v), 10_000);
+  const adminNote = (await notesFor('admin')).find((n) => n.kind === 'queue' && n.data.visit_id === v);
+  const ownNote = (await notesFor('desk')).filter((n) => n.kind === 'queue' && n.data.visit_id === v).length;
+  // The doctor's laptop (B) shows the patient in the queue, sent by Reception.
+  await go(B, '#/');
+  const onB = await until(async () => (await B.win.locator('.section.queue li', { hasText: 'Simba' }).count()) === 1, 10_000, 200);
+  const byShown = onB.v ? await B.win.locator('.section.queue li', { hasText: 'Simba' }).innerText() : '';
+  await B.win.screenshot({ path: path.join(out, 'B-queue-from-assistant.png') });
+  // While waiting the assistant may correct the intake, but not write a diagnosis.
+  const fix = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { heart_rate: 140, intake_notes: 'Owner says vomited once', mucous_membrane: 'PALE', fleas_ticks: 'YES', bp_systolic: 150, updated_at: nowIso() } }]);
+  const diag = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { diagnosis: 'Hairball', updated_at: nowIso() } }]);
+  const rx = crypto.randomUUID();
+  const presc = await push([{ tbl: 'prescriptions', id: rx, op: 'upsert', at: nowIso(), cols: { id: rx, visit_id: v, drug: 'Maropitant', created_at: nowIso(), updated_at: nowIso() } }]);
+  // Once the doctor takes the patient, the pre-diagnosis is the doctor's.
+  await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { stage: 'WITH_VET', vet_id: doctorId, updated_at: nowIso() } }], 'doctor');
+  const late = await push([{ tbl: 'visits', id: v, op: 'upsert', at: nowIso(), cols: { complaint: 'Changed later', updated_at: nowIso() } }]);
+  const row = (await pool.query("SELECT data FROM rows WHERE tbl = 'visits' AND id = $1", [v])).rows[0]?.data ?? {};
+  check('assistant-intake', 'An Assistant records the pre-diagnosis for a new patient; the doctor and the admin are notified and see it in the queue; diagnosis and prescriptions stay with the vets',
+    sent.rejected.length === 0 && !!docNote.v && !!adminNote && ownNote === 0 && !!onB.v && /Reception/.test(byShown) &&
+      fix.rejected.length === 0 && diag.rejected.length === 1 && presc.rejected.length === 1 && late.rejected.length === 1 &&
+      row.stage === 'WITH_VET' && row.intake_by === deskId && Number(row.heart_rate) === 140 && row.mucous_membrane === 'PALE' && row.fleas_ticks === 'YES' && Number(row.bp_systolic) === 150 && row.diagnosis == null && row.complaint === 'Not eating for two days',
+    `new patient + pre-diagnosis accepted: ${sent.rejected.length === 0}; doctor notified: ${docNote.v ? docNote.v.event : 'no'}, admin: ${adminNote ? adminNote.event : 'no'}, assistant about own patient: ${ownNote}; in the doctor's queue: ${!!onB.v} ("${byShown.replace(/\s+/g, ' ').trim()}"); correction while waiting accepted: ${fix.rejected.length === 0}; diagnosis refused: ${diag.rejected[0]?.reason ?? 'NO'}; prescription refused: ${presc.rejected[0]?.reason ?? 'NO'}; edit after the doctor took it refused: ${late.rejected[0]?.reason ?? 'NO'}`);
+});
+
+await step('patient alert reaches the vet', async () => {
+  // The front desk flags Simba as aggressive (schema v6 columns on pets); the doctor's laptop shows it in the queue.
+  const simba = (await pool.query("SELECT id FROM rows WHERE tbl = 'pets' AND data->>'name' = 'Simba' AND NOT deleted")).rows[0].id;
+  const r = (await api('/api/sync/push', { changes: [{ tbl: 'pets', id: simba, op: 'upsert', at: nowIso(), cols: { alert_flags: 'AGGRESSIVE', alert_note: 'Bites when restrained', updated_at: nowIso() } }] }, tokens.desk)).body;
+  await go(B, '#/');
+  const row = B.win.locator('.section.queue li', { hasText: 'Simba' });
+  const shown = await until(async () => (await row.locator('.alert-chip.danger').count()) >= 1 && (await row.innerText()).includes('Bites when restrained'), 10_000, 200);
+  await B.win.screenshot({ path: path.join(out, 'B-queue-alert.png') });
+  check('pet-alert-sync', "A patient alert set at the front desk shows in the vet's queue on another computer",
+    r.rejected.length === 0 && !!shown.v,
+    `alert accepted from the assistant: ${r.rejected.length === 0}; shown in the doctor's queue: ${!!shown.v}`);
+});
+
+await step('drugs and treatment templates: who may change them', async () => {
+  // Schema v7 tables. The drug list decides what the dose calculator says: Admin only. Templates: vets (Admin, Doctor).
+  const at = nowIso();
+  const drug = (id) => ({ tbl: 'drugs', id, op: 'upsert', at, cols: { id, name: 'Test drug', dose_mg_kg: 1, concentration: 10, unit: 'ml', is_active: 1, created_at: at, updated_at: at } });
+  const tpl = (id) => ({ tbl: 'treatment_templates', id, op: 'upsert', at, cols: { id, name: 'Test template', diagnosis: 'x', prescriptions: '[]', is_active: 1, created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskDrug = await push(drug(crypto.randomUUID()), 'desk');
+  const deskTpl = await push(tpl(crypto.randomUUID()), 'desk');
+  const docDrug = await push(drug(crypto.randomUUID()), 'doctor');
+  const docTpl = await push(tpl(crypto.randomUUID()), 'doctor');
+  const adminDrug = await push(drug(crypto.randomUUID()), 'admin');
+  check('calc-tables-rules', 'Only the Admin edits the drug list; Admins and Doctors save treatment templates; Assistants neither',
+    deskDrug.rejected.length === 1 && deskTpl.rejected.length === 1 && docDrug.rejected.length === 1 && docTpl.rejected.length === 0 && adminDrug.rejected.length === 0,
+    `assistant drug: ${deskDrug.rejected[0]?.reason ?? 'ACCEPTED'}; assistant template: ${deskTpl.rejected[0]?.reason ?? 'ACCEPTED'}; doctor drug: ${docDrug.rejected[0]?.reason ?? 'ACCEPTED'}; doctor template: ${docTpl.rejected.length ? 'REFUSED' : 'accepted'}; admin drug: ${adminDrug.rejected.length ? 'REFUSED' : 'accepted'}`);
+});
+
+await step('stock moves: who may add them', async () => {
+  // Schema v8. Stock is a log of moves (never edited), so two devices can't overwrite each other's counts.
+  // Invoices (any role that bills) take items out; restocking and count corrections are for the Admin.
+  const at = nowIso();
+  const item = crypto.randomUUID();
+  const move = (id, reason, extra = {}) => ({ tbl: 'stock_moves', id, op: 'upsert', at, cols: { id, price_item_id: item, qty: reason === 'RESTOCK' ? 10 : -1, reason, at, ts: Date.now(), ...extra } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskInvoice = await push(move(crypto.randomUUID(), 'INVOICE', { invoice_id: crypto.randomUUID() }), 'desk');
+  const deskBare = await push(move(crypto.randomUUID(), 'INVOICE'), 'desk');
+  const deskRestock = await push(move(crypto.randomUUID(), 'RESTOCK'), 'desk');
+  const docAdjust = await push(move(crypto.randomUUID(), 'ADJUST'), 'doctor');
+  const adminId = crypto.randomUUID();
+  const adminRestock = await push(move(adminId, 'RESTOCK'), 'admin');
+  const adminEdit = await push(move(adminId, 'RESTOCK', { qty: 1000 }), 'admin');
+  check('stock-rules', 'Invoices take stock out from any desk; only the Admin restocks or corrects counts; a recorded move is never changed',
+    deskInvoice.rejected.length === 0 && deskBare.rejected.length === 1 && deskRestock.rejected.length === 1 && docAdjust.rejected.length === 1 && adminRestock.rejected.length === 0 && adminEdit.rejected.length === 1,
+    `assistant invoice move: ${deskInvoice.rejected[0]?.reason ?? 'accepted'}; assistant move without invoice: ${deskBare.rejected[0]?.reason ?? 'ACCEPTED'}; assistant restock: ${deskRestock.rejected[0]?.reason ?? 'ACCEPTED'}; doctor correction: ${docAdjust.rejected[0]?.reason ?? 'ACCEPTED'}; admin restock: ${adminRestock.rejected[0]?.reason ?? 'accepted'}; admin edits it later: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('lab results and consent forms: who may change them', async () => {
+  // Schema v11. Lab results are clinical (vets); a signed consent form can be recorded by anyone but never changed.
+  const at = nowIso();
+  const pet = crypto.randomUUID();
+  const lab = (id) => ({ tbl: 'lab_results', id, op: 'upsert', at, cols: { id, pet_id: pet, taken_at: at.slice(0, 10), analyte: 'Creatinine', value: 1.2, created_at: at, updated_at: at } });
+  const consent = (id, procedure = 'Spay') => ({ tbl: 'consents', id, op: 'upsert', at, cols: { id, pet_id: pet, procedure, anaesthesia: 1, signer_name: 'Owner', signature: 'data:image/png;base64,AAAA', signed_at: at, created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const deskLab = await push(lab(crypto.randomUUID()), 'desk');
+  const docLab = await push(lab(crypto.randomUUID()), 'doctor');
+  const cid = crypto.randomUUID();
+  const deskConsent = await push(consent(cid), 'desk');
+  const adminEdit = await push(consent(cid, 'Something else'), 'admin');
+  check('labs-consent-rules', 'Doctors record lab results, assistants cannot; anyone records a signed consent form, nobody changes it afterwards',
+    deskLab.rejected.length === 1 && docLab.rejected.length === 0 && deskConsent.rejected.length === 0 && adminEdit.rejected.length === 1,
+    `assistant lab result: ${deskLab.rejected[0]?.reason ?? 'ACCEPTED'}; doctor lab result: ${docLab.rejected.length ? 'REFUSED' : 'accepted'}; assistant consent: ${deskConsent.rejected.length ? 'REFUSED' : 'accepted'}; admin edits the signed form: ${adminEdit.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('in-patient board: who may change what', async () => {
+  // Schema v12. Vets admit and plan treatments; an assistant only ticks a treatment as given (in their own name).
+  const at = nowIso();
+  const adm = crypto.randomUUID();
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const admission = { tbl: 'admissions', id: adm, op: 'upsert', at, cols: { id: adm, pet_id: crypto.randomUUID(), admitted_at: at, status: 'IN', created_at: at, updated_at: at } };
+  const task = (id) => ({ tbl: 'care_tasks', id, op: 'upsert', at, cols: { id, admission_id: adm, task: 'Fluids', due_at: at, status: 'DUE', created_at: at, updated_at: at } });
+  const deskAdmit = await push({ ...admission, id: crypto.randomUUID(), cols: { ...admission.cols, id: undefined } }, 'desk');
+  const docAdmit = await push(admission, 'doctor');
+  const tid = crypto.randomUUID();
+  const deskTask = await push(task(crypto.randomUUID()), 'desk');
+  await push(task(tid), 'doctor');
+  const users = (await api('/api/sync/pull?since=0&limit=5000', null, tokens.admin)).body.rows.filter((r) => r.tbl === 'users');
+  const deskId = users.find((u) => u.data?.email === 'desk@test.local')?.id;
+  const later = new Date(Date.now() + 1000).toISOString();
+  const tick = await push({ tbl: 'care_tasks', id: tid, op: 'upsert', at: later, cols: { status: 'DONE', done_at: later, done_by: deskId, updated_at: later } }, 'desk');
+  const rename = await push({ tbl: 'care_tasks', id: tid, op: 'upsert', at: later, cols: { task: 'Something else', updated_at: later } }, 'desk');
+  check('ward-rules', 'Doctors admit and plan treatments; an assistant can only tick a treatment as given',
+    deskAdmit.rejected.length === 1 && docAdmit.rejected.length === 0 && deskTask.rejected.length === 1 && tick.rejected.length === 0 && rename.rejected.length === 1,
+    `assistant admits: ${deskAdmit.rejected[0]?.reason ?? 'ACCEPTED'}; doctor admits: ${docAdmit.rejected.length ? 'REFUSED' : 'accepted'}; assistant adds a treatment: ${deskTask.rejected[0]?.reason ?? 'ACCEPTED'}; assistant ticks it given: ${tick.rejected[0]?.reason ?? 'accepted'}; assistant renames it: ${rename.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('expenses: admin only', async () => {
+  // Schema v10. The clinic's own spending (rent, salaries…) is the Admin's, like the reports that show it.
+  const at = nowIso();
+  const exp = (id) => ({ tbl: 'expenses', id, op: 'upsert', at, cols: { id, spent_at: at.slice(0, 10), category: 'RENT', amount: 100000, method: 'CASH', status: 'ACTIVE', created_at: at, updated_at: at } });
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const desk = await push(exp(crypto.randomUUID()), 'desk');
+  const doc = await push(exp(crypto.randomUUID()), 'doctor');
+  const admin = await push(exp(crypto.randomUUID()), 'admin');
+  check('expenses-rules', 'Only the Admin records the clinic\'s expenses',
+    desk.rejected.length === 1 && doc.rejected.length === 1 && admin.rejected.length === 0,
+    `assistant: ${desk.rejected[0]?.reason ?? 'ACCEPTED'}; doctor: ${doc.rejected[0]?.reason ?? 'ACCEPTED'}; admin: ${admin.rejected.length ? 'REFUSED' : 'accepted'}`);
+});
+
+// ---------------------------------------------------------------- schema v22: packages, suppliers, automatic WhatsApp
+await step('packages and suppliers: who may change them', async () => {
+  // The package list and everything about suppliers is the Admin's. Anyone sells a package and records a session used;
+  // a sold package then changes only by an Admin (cancel); a used session only to VOID, by a Doctor or Admin.
+  const at = nowIso();
+  const push = (c, who) => api('/api/sync/push', { changes: [c] }, tokens[who]).then((r) => r.body);
+  const row = (tbl, id, cols) => ({ tbl, id, op: 'upsert', at, cols: { id, created_at: at, updated_at: at, ...cols } });
+  const later = () => new Date(Date.now() + 1000).toISOString();
+  const deskType = await push(row('package_types', crypto.randomUUID(), { name: 'Puppy', price: 100000, items: '[]', is_active: 1 }), 'desk');
+  const pkg = crypto.randomUUID();
+  const deskSell = await push(row('pet_packages', pkg, { pet_id: crypto.randomUUID(), owner_id: crypto.randomUUID(), name: 'Puppy', items: '[{"key":"a","label":"Rabies","qty":3}]', price: 100000, started_at: at.slice(0, 10), status: 'ACTIVE' }), 'desk');
+  const deskCancel = await push({ tbl: 'pet_packages', id: pkg, op: 'upsert', at: later(), cols: { status: 'CANCELLED', updated_at: later() } }, 'desk');
+  const use = crypto.randomUUID();
+  const deskUse = await push(row('package_uses', use, { pet_package_id: pkg, item_key: 'a', used_at: at, status: 'ACTIVE' }), 'desk');
+  const deskUndo = await push({ tbl: 'package_uses', id: use, op: 'upsert', at: later(), cols: { status: 'VOID', updated_at: later() } }, 'desk');
+  const docRekey = await push({ tbl: 'package_uses', id: use, op: 'upsert', at: later(), cols: { item_key: 'b', updated_at: later() } }, 'doctor');
+  const docUndo = await push({ tbl: 'package_uses', id: use, op: 'upsert', at: later(), cols: { status: 'VOID', updated_at: later() } }, 'doctor');
+  const adminCancel = await push({ tbl: 'pet_packages', id: pkg, op: 'upsert', at: later(), cols: { status: 'CANCELLED', updated_at: later() } }, 'admin');
+  check('package-rules', 'Admins keep the package list; anyone sells a package and records a session; only an Admin cancels; a Doctor or Admin undoes a session',
+    deskType.rejected.length === 1 && deskSell.rejected.length === 0 && deskCancel.rejected.length === 1 && deskUse.rejected.length === 0
+      && deskUndo.rejected.length === 1 && docRekey.rejected.length === 1 && docUndo.rejected.length === 0 && adminCancel.rejected.length === 0,
+    `assistant edits the list: ${deskType.rejected[0]?.reason ?? 'ACCEPTED'}; sells: ${deskSell.rejected.length ? 'REFUSED' : 'accepted'}; cancels: ${deskCancel.rejected[0]?.reason ?? 'ACCEPTED'}; uses a session: ${deskUse.rejected.length ? 'REFUSED' : 'accepted'}; undoes it: ${deskUndo.rejected[0]?.reason ?? 'ACCEPTED'}; doctor changes the line: ${docRekey.rejected[0]?.reason ?? 'ACCEPTED'}; doctor undoes: ${docUndo.rejected.length ? 'REFUSED' : 'accepted'}; admin cancels: ${adminCancel.rejected.length ? 'REFUSED' : 'accepted'}`);
+
+  const sup = crypto.randomUUID();
+  const docSupplier = await push(row('suppliers', crypto.randomUUID(), { name: 'Pharma', is_active: 1 }), 'doctor');
+  const adminSupplier = await push(row('suppliers', sup, { name: 'Pharma', is_active: 1 }), 'admin');
+  const pur = crypto.randomUUID();
+  const adminPurchase = await push(row('purchases', pur, { supplier_id: sup, purchased_at: at.slice(0, 10), total: 5000, status: 'ACTIVE' }), 'admin');
+  const line = crypto.randomUUID();
+  await push(row('purchase_items', line, { purchase_id: pur, description: 'Gloves', qty: 1, unit_cost: 5000, line_total: 5000 }), 'admin');
+  const lineDelete = await push({ tbl: 'purchase_items', id: line, op: 'delete', at: later(), cols: {} }, 'admin');
+  const deskPay = await push(row('supplier_payments', crypto.randomUUID(), { supplier_id: sup, paid_at: at.slice(0, 10), amount: 5000, method: 'CASH', status: 'ACTIVE' }), 'desk');
+  const purchaseDelete = await push({ tbl: 'purchases', id: pur, op: 'delete', at: later(), cols: {} }, 'admin');
+  check('supplier-rules', 'Only the Admin records suppliers, purchases and payments to them; a purchase is voided, never deleted (its lines are replaced on edit)',
+    docSupplier.rejected.length === 1 && adminSupplier.rejected.length === 0 && adminPurchase.rejected.length === 0 && lineDelete.rejected.length === 0 && deskPay.rejected.length === 1 && purchaseDelete.rejected.length === 1,
+    `doctor adds a supplier: ${docSupplier.rejected[0]?.reason ?? 'ACCEPTED'}; admin: ${adminSupplier.rejected.length || adminPurchase.rejected.length ? 'REFUSED' : 'accepted'}; admin replaces a line: ${lineDelete.rejected.length ? 'REFUSED' : 'accepted'}; assistant pays: ${deskPay.rejected[0]?.reason ?? 'ACCEPTED'}; admin deletes a purchase: ${purchaseDelete.rejected[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('whatsapp: automatic reminders', async () => {
+  // The clinic server sends due reminders itself through the WhatsApp Business Cloud API (here: the fake above),
+  // only once switched on, once per reminder, never to an owner who opted out; devices only read the log.
+  const at = nowIso();
+  const cairo = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  const today = cairo(new Date());
+  const inDays = (n) => cairo(new Date(Date.now() + n * 86400_000));
+  const push = (changes, who = 'admin') => api('/api/sync/push', { changes }, tokens[who]).then((r) => r.body);
+  const row = (tbl, id, cols) => ({ tbl, id, op: 'upsert', at, cols: { id, created_at: at, updated_at: at, ...cols } });
+  const ids = { owner: crypto.randomUUID(), out: crypto.randomUUID(), bad: crypto.randomUUID(), pet: crypto.randomUUID(), petOut: crypto.randomUUID(), petBad: crypto.randomUUID(), vt: crypto.randomUUID(), vx: crypto.randomUUID(), vxOld: crypto.randomUUID(), appt: crypto.randomUUID(), apptOut: crypto.randomUUID(), apptBad: crypto.randomUUID() };
+  // Tomorrow 18:00 in Cairo, as a moment.
+  const tomorrow18 = new Date(`${inDays(1)}T18:00:00+02:00`).toISOString();
+  const pushed0 = await push([
+    row('owners', ids.owner, { full_name: 'Wa Owner', phone: '01055501234', status: 'ACTIVE', code: 'AC-90001' }),
+    row('owners', ids.out, { full_name: 'Opted Out', phone: '01055505678', status: 'ACTIVE', wa_opt_out: 1, code: 'AC-90002' }),
+    row('owners', ids.bad, { full_name: 'Bad Number', phone: '01055509999', status: 'ACTIVE', code: 'AC-90003' }),
+    row('pets', ids.pet, { owner_id: ids.owner, name: 'Wa Luna', species: 'CAT', sex: 'FEMALE', status: 'ACTIVE' }),
+    row('pets', ids.petOut, { owner_id: ids.out, name: 'Quiet Max', species: 'DOG', sex: 'MALE', status: 'ACTIVE' }),
+    row('pets', ids.petBad, { owner_id: ids.bad, name: 'Bad Bella', species: 'DOG', sex: 'FEMALE', status: 'ACTIVE' }),
+    row('vaccine_types', ids.vt, { name: 'Rabies WA', species: 'CAT', interval_days: 365, is_active: 1 }),
+    // An older dose superseded by a newer one is never reminded.
+    row('vaccinations', ids.vxOld, { pet_id: ids.pet, vaccine_type_id: ids.vt, administered_at: inDays(-400), next_due_at: inDays(-35) }),
+    row('vaccinations', ids.vx, { pet_id: ids.pet, vaccine_type_id: ids.vt, administered_at: inDays(-362), next_due_at: inDays(3) }),
+    row('appointments', ids.appt, { pet_id: ids.pet, owner_id: ids.owner, scheduled_at: tomorrow18, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED' }),
+    row('appointments', ids.apptOut, { pet_id: ids.petOut, owner_id: ids.out, scheduled_at: tomorrow18, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED' }),
+    row('appointments', ids.apptBad, { pet_id: ids.petBad, owner_id: ids.bad, scheduled_at: tomorrow18, duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED' }),
+  ]);
+  if (pushed0.rejected.length) throw new Error(`setup refused: ${JSON.stringify(pushed0.rejected)}`);
+  const status = (await api('/api/whatsapp/status', null, tokens.admin)).body;
+  const deskRun = await api('/api/whatsapp/run', {}, tokens.desk);
+  const deskLog = await push([row('wa_messages', crypto.randomUUID(), { kind: 'VACCINE', status: 'SENT', sent_at: at })], 'admin');
+  // The schedule waits for the Admin's switch; "Send due reminders now" sends what is due.
+  const before = waSent.length;
+  const run1 = (await api('/api/whatsapp/run', {}, tokens.admin)).body;
+  const mine = waSent.slice(before);
+  const to = (n) => mine.filter((m) => m.body.to === n);
+  const vxMsg = to('201055501234').find((m) => m.body.template.name === 'vaccine_reminder');
+  const apMsg = to('201055501234').find((m) => m.body.template.name === 'appointment_reminder');
+  const params = (m) => m?.body.template.components?.[0]?.parameters.map((p) => p.text) ?? [];
+  const run2 = (await api('/api/whatsapp/run', {}, tokens.admin)).body;
+  const rows = (await api('/api/sync/pull?since=0&limit=20000', null, tokens.admin)).body.rows;
+  const data = (tbl, id) => rows.find((r) => r.tbl === tbl && r.id === id)?.data ?? {};
+  const log = rows.filter((r) => r.tbl === 'wa_messages').map((r) => r.data);
+  const failed = log.find((m) => m.owner_id === ids.bad);
+  const ok =
+    status.configured === true && status.number === '+20 122 700 7428' && deskRun.status === 403 && deskLog.rejected.length === 1 &&
+    vxMsg && apMsg && vxMsg.auth === 'Bearer test-token' && vxMsg.path === '/v21.0/1234567890/messages' &&
+    params(vxMsg)[0] === 'Wa Owner' && params(vxMsg)[1] === 'Wa Luna' && params(vxMsg)[2] === 'Rabies WA' && params(apMsg).length === 5 &&
+    to('201055505678').length === 0 && to('201055509999').length === 1 && to('201055501234').length === 2 &&
+    !!data('vaccinations', ids.vx).reminder_sent_at && !!data('appointments', ids.appt).reminder_sent_at && !data('appointments', ids.apptBad).reminder_sent_at &&
+    !data('vaccinations', ids.vxOld).reminder_sent_at && failed?.status === 'FAILED' && /undeliverable/.test(failed?.error ?? '') &&
+    log.some((m) => m.ref_id === ids.vx && m.status === 'SENT' && m.wa_id) &&
+    waSent.slice(before + mine.length).filter((m) => m.body.to === '201055501234').length === 0 && run2.failed >= 1;
+  check('whatsapp-auto', 'The clinic server sends due vaccination and appointment reminders through WhatsApp once, skips opted-out owners, logs failures, and only Admins run it',
+    ok,
+    `configured: ${status.configured}; assistant runs it: ${deskRun.status}; device writes the log: ${deskLog.rejected[0]?.reason ?? 'ACCEPTED'}; first run sent ${run1.sent}, failed ${run1.failed}; to the owner: ${to('201055501234').map((m) => m.body.template.name).join(', ')}; params ${JSON.stringify(params(vxMsg))}; opted out: ${to('201055505678').length}; second run sent ${run2.sent} (none again to the owner); stamped: ${!!data('vaccinations', ids.vx).reminder_sent_at}/${!!data('appointments', ids.appt).reminder_sent_at}; failed logged: ${failed?.status} ${failed?.error ?? ''}; today ${today}`);
+  // Out of the way of later steps, which pick active owners and pets: archived owners, transferred pets.
+  const gone = new Date(Date.now() + 2000).toISOString();
+  await push([ids.owner, ids.out, ids.bad].map((id) => ({ tbl: 'owners', id, op: 'upsert', at: gone, cols: { status: 'ARCHIVED', updated_at: gone } }))
+    .concat([ids.pet, ids.petOut, ids.petBad].map((id) => ({ tbl: 'pets', id, op: 'upsert', at: gone, cols: { status: 'TRANSFERRED', updated_at: gone } }))));
+});
+
+// ---------------------------------------------------------------- Phase 6: owner page (QR) and prescription archive
+await step('customer IDs', async () => {
+  // Every owner has an AC-number; one made on a linked laptop gets its real number from the server (TMP-… until then).
+  await go(A, '#/owners/new');
+  await A.win.getByLabel(/الاسم الكامل|Full name/).fill('ID Owner Test');
+  await A.win.getByLabel(/^\s*(الهاتف|Phone)\s*$/).fill('01090000777');
+  await A.win.locator('.actionbar .btn.primary').click();
+  const real = await until(async () => {
+    const r = (await pool.query("SELECT id, data->>'code' code FROM rows WHERE tbl = 'owners' AND data->>'full_name' = 'ID Owner Test'")).rows[0];
+    return r && /^AC-\d{5}$/.test(r.code) && r;
+  }, 10_000);
+  const onA = await until(async () => (await A.win.locator('.facts .owner-code').innerText().catch(() => '')) === real.v?.code, 10_000, 200);
+  const onB = await until(async () => {
+    await go(B, '#/owners');
+    await B.win.locator('.searchbox input').fill(real.v?.code ?? 'x');
+    await sleep(250);
+    return (await B.win.locator('tbody tr.link').innerText().catch(() => '')).includes('ID Owner Test');
+  }, 10_000, 300);
+  const stats = (await pool.query("SELECT COUNT(*) n, COUNT(DISTINCT data->>'code') d, COUNT(*) FILTER (WHERE data->>'code' !~ '^AC-[0-9]+$' OR data->>'code' IS NULL) bad FROM rows WHERE tbl = 'owners' AND NOT deleted")).rows[0];
+  const changed = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: real.v?.id, op: 'upsert', cols: { code: 'AC-99999' }, at: nowIso() }] }, tokens.admin);
+  check('customer-id', 'Every owner has a unique customer ID; a new one gets its number from the server, finds the owner on any laptop, and never changes',
+    !!real.v && !!onA.v && !!onB.v && Number(stats.bad) === 0 && Number(stats.n) === Number(stats.d) && changed.body.rejected?.length === 1,
+    `new owner on laptop A → ${real.v?.code ?? 'no ID'} from the server, shown on laptop A: ${!!onA.v}; laptop B finds it by searching the ID: ${!!onB.v}; owners on the server ${stats.n}, different IDs ${stats.d}, without an AC-number ${stats.bad}; changing it (even as Admin): ${changed.body.rejected?.[0]?.reason ?? 'ACCEPTED'}`);
+});
+
+await step('phase6: owner page', async () => {
+  // Luna (demo) has lab results, which the owner page shows too; any active pet otherwise.
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY data->>'name' = 'Luna' DESC, id LIMIT 1")).rows[0];
+  const ownerId = pet.data.owner_id;
+  const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [ownerId])).rows[0].data;
+  // The doctor (laptop B) gives the owner their page from the owner screen.
+  await go(B, `#/owners/${ownerId}`);
+  await B.win.locator('.create-owner-page').click();
+  await B.win.waitForSelector('.owner-page .qr');
+  const url = (await B.win.locator('.owner-page-link').innerText()).trim();
+  const token = url.split('/o/')[1];
+  const doctorCanReplace = await B.win.locator('.replace-owner-page').count();
+  await B.win.screenshot({ path: path.join(out, 'B-owner-page-qr.png'), fullPage: true });
+  const onServer = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'owners' AND id = $1 AND data->>'portal_token' = $2", [ownerId, token])).rowCount === 1, 10_000);
+  const html = await fetch(url);
+  const htmlText = await html.text();
+  const data = await (await fetch(`${url}/data`)).json();
+  const leaks = ['national_id', 'notes', 'complaint', 'treatment_notes', 'balance', 'password_hash'].filter((k) => JSON.stringify(data).includes(`"${k}"`));
+
+  // The owner opens it on their phone (a real browser at phone size). It stays open while the clinic works.
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const phonePage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await phonePage.goto(url);
+  await phonePage.waitForSelector('.hello');
+  const firstView = await phonePage.locator('main').innerText();
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-1-home-ar.png'), fullPage: true });
+  const tab = (v) => phonePage.evaluate((x) => (location.hash = x), v).then(() => sleep(150));
+  await tab('appointments');
+
+  // The admin books the pet for the day after tomorrow on laptop A: the phone shows it without reloading.
+  const day = new Date(Date.now() + 2 * 86400_000);
+  const date = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  await go(A, `#/appointments?view=day&date=${date}`);
+  await A.win.locator('.slot.add').first().click();
+  await A.win.locator('.dialog input[type=search]').fill(pet.data.name);
+  await A.win.locator('.dialog .picker button').first().click();
+  await A.win.locator('.dialog input[type=datetime-local]').fill(`${date}T11:40`);
+  const gcal = phonePage.locator('a[href*="calendar.google.com/calendar/render?action=TEMPLATE"]');
+  const apptsBefore = await gcal.count();
+  let t0 = Date.now();
+  await A.win.locator('.dialog footer .btn.primary').click();
+  const apptLive = await until(async () => (await gcal.count()) === apptsBefore + 1, 10_000, 100);
+  const apptMs = Date.now() - t0;
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-3-appointments-ar.png'), fullPage: true });
+  await tab('prescriptions');
+
+  // The doctor records a visit with a prescription on laptop B: it appears on the owner's phone by itself.
+  const DRUG = `Amoxiclav 250 mg ${Date.now() % 10000}`;
+  const DX = `Otitis externa ${Date.now() % 10000}`;
+  const PRIVATE = `Vet-only note ${Date.now() % 10000}`;
+  await go(B, `#/pets/${pet.id}/visits/new`);
+  // The diagnosis goes to the owner (Dr. Waleed, 14 Nov); the treatment notes stay with the clinic.
+  // Labels carry "(optional)" after the name.
+  await B.win.getByLabel(/^\s*(التشخيص|Diagnosis)(\s|$)/).fill(DX);
+  await B.win.getByLabel(/^\s*(ملاحظات العلاج|Treatment notes)(\s|$)/).fill(PRIVATE);
+  await B.win.locator('.form-section', { hasText: '💊' }).locator('.row .btn.sm').click();
+  const rxInputs = B.win.locator('.repeat.rx input');
+  await rxInputs.nth(0).fill(DRUG);
+  await rxInputs.nth(1).fill('1 tablet');
+  await rxInputs.nth(2).fill('twice a day');
+  await rxInputs.nth(3).fill('7');
+  await rxInputs.nth(4).fill('With food');
+  t0 = Date.now();
+  await B.win.locator('.actionbar .btn.primary').click();
+  await B.win.waitForSelector('.dialog');
+  await B.win.keyboard.press('Escape');
+  const rxLive = await until(async () => { const txt = await phonePage.locator('main').innerText(); return txt.includes(DRUG) && txt.includes(DX); }, 15_000, 100);
+  const rxMs = Date.now() - t0;
+  const liveDot = await phonePage.locator('.status.on').count();
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-4-prescriptions-ar.png'), fullPage: true });
+  await tab('pets');
+  const dxOnPets = (await phonePage.locator('main').innerText()).includes(DX);
+  const labsInDb = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'lab_results' AND NOT deleted AND data->>'pet_id' = $1", [String(pet.id)])).rows[0].n);
+  const labsOnPage = labsInDb ? (await phonePage.locator('details.labday').count()) > 0 && /Creatinine|BUN/.test(await phonePage.locator('main').innerText()) : true;
+  const privateShown = JSON.stringify(await (await fetch(`${url}/data`)).json()).includes(PRIVATE);
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-2-pets-ar.png'), fullPage: true });
+  await tab('details');
+  const idOnPage = !!owner.code && (await phonePage.locator('main').innerText()).includes(owner.code);
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-5-details-ar.png'), fullPage: true });
+  await tab('home');
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-1-home-ar.png'), fullPage: true });
+  await phonePage.locator('button.lang').click();
+  const english = await phonePage.locator('h1.hello').innerText();
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-6-home-en.png'), fullPage: true });
+  await phonePage.setViewportSize({ width: 1280, height: 860 });
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-7-home-en-laptop.png'), fullPage: true });
+  const manifest = await (await fetch(`${url}/manifest.webmanifest`)).json().catch(() => ({}));
+
+  // Calendar: the whole feed (to subscribe once) and one appointment (to add).
+  const after = await (await fetch(`${url}/data`)).json();
+  const appt = after.appointments.find((a) => a.pet_id === String(pet.id));
+  const feed = await (await fetch(`${url}/calendar.ics`)).text();
+  const one = appt ? await fetch(`${url}/a/${appt.id}.ics`) : null;
+  const oneText = one ? await one.text() : '';
+  const icsOk = feed.startsWith('BEGIN:VCALENDAR') && feed.includes('BEGIN:VEVENT') && feed.includes(pet.data.name) && one?.status === 200 && /DTSTART:\d{8}T\d{6}Z/.test(oneText) && feed.split('\r\n').every((l) => Buffer.byteLength(l) <= 75);
+
+  // The prescription archive: the doctor finds it again from the owner, by searching, and reprints it.
+  await go(B, `#/owners/${ownerId}`);
+  const inArchive = await until(async () => (await B.win.locator('.rx-archive-section').innerText()).includes(DRUG), 5000, 200);
+  await B.win.locator('.rx-search input').fill('no-such-drug-xyz');
+  const noneFound = (await B.win.locator('.rx-archive-section .rx-list > li.empty').count()) === 1;
+  await B.win.locator('.rx-search input').fill(DRUG.slice(0, 9).toLowerCase());
+  const searched = (await B.win.locator('.rx-archive-section').innerText()).includes(DRUG);
+  await B.win.screenshot({ path: path.join(out, 'B-prescription-archive.png'), fullPage: true });
+  await B.win.locator('.rx-archive-section .rx-list .btn.ghost', { hasText: /طباعة|Print/ }).first().click();
+  await B.win.waitForSelector('.sheet.a5');
+  const sheet = await B.win.locator('.sheet.a5').innerText();
+  await B.win.screenshot({ path: path.join(out, 'B-prescription-print.png'), fullPage: true });
+  await go(B, `#/pets/${pet.id}?tab=prescriptions`);
+  const petTab = (await B.win.locator('.rx-archive').innerText()).includes(DRUG);
+
+  // Requests (schema v17): the doctor saves an X-ray and a lab request and uploads an X-ray image on laptop B;
+  // the owner's open page shows them under Requests, and the image comes from the server.
+  await tab('requests');
+  t0 = Date.now();
+  await go(B, `#/pets/${pet.id}/xray-request`);
+  await B.win.locator('.xbox').nth(0).click();
+  await B.win.locator('.xbox').nth(2).click();
+  await B.win.locator('.save-request').click();
+  await go(B, `#/pets/${pet.id}/lab-request`);
+  await B.win.locator('.xbox', { hasText: /^CBC$/ }).click();
+  await B.win.locator('.xbox', { hasText: /^Creatinine$/ }).click();
+  await B.win.locator('.xray-write textarea').first().fill('Bile acids');
+  await B.win.locator('.save-request').click();
+  const reqLive = await until(async () => {
+    const txt = await phonePage.locator('main').innerText();
+    return txt.includes('CBC') && txt.includes('Bile acids') && (await phonePage.locator('.req-card').count()) >= 2;
+  }, 15_000, 200);
+  const reqMs = Date.now() - t0;
+  const xbytes = fs.readFileSync(path.join(process.cwd(), 'public-cloud', 'icon-192.png'));
+  const xfile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-xray-')), 'thorax-lateral.png');
+  fs.writeFileSync(xfile, xbytes);
+  await B.app.evaluate(({ dialog }, f) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] }); }, xfile);
+  await go(B, `#/pets/${pet.id}?tab=requests`);
+  await B.win.locator('.upload-xray').click();
+  const imgLive = await until(async () => (await phonePage.locator('.xray-gallery img').count()) > 0, 30_000, 300);
+  const imgId = imgLive.v ? (await (await fetch(`${url}/data`)).json()).xrays?.[0]?.id : null;
+  const imgSame = imgId ? Buffer.compare(Buffer.from(await (await fetch(`${url}/f/${imgId}`)).arrayBuffer()), xbytes) === 0 : false;
+  const otherImg = (await fetch(`${url}/f/not-this-owners-file`)).status;
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-8-requests-ar.png'), fullPage: true });
+  const deskReq = await api('/api/sync/push', { changes: [{ tbl: 'test_requests', id: crypto.randomUUID(), op: 'upsert', at: nowIso(), cols: { pet_id: String(pet.id), kind: 'LAB', status: 'REQUESTED', requested_at: nowIso(), items: 'haematology.cbc' } }] }, tokens.desk);
+  check('requests', 'X-ray and lab requests are kept in the pet\'s history and appear, with the X-ray images, on the owner\'s page',
+    !!reqLive.v && !!imgLive.v && imgSame && otherImg === 404 && deskReq.body.rejected?.length === 1,
+    `X-ray + lab request saved on laptop B, on the open phone page after ${reqMs} ms: ${!!reqLive.v}; X-ray image uploaded from the Requests tab shown on the page: ${!!imgLive.v}, same bytes from the server: ${imgSame}; another file id → ${otherImg}; an Assistant's request: ${deskReq.body.rejected?.[0]?.reason ?? 'ACCEPTED'}`);
+
+  // The documents as the clinic prints them (14 Nov 2026): each request and prescription on the owner's page opens its
+  // sheet with the logo, customer ID and address, to save as a PDF; nobody else's documents.
+  const dataNow = await (await fetch(`${url}/data`)).json();
+  const reqHref = await phonePage.locator('.req-card .doc-link').first().getAttribute('href');
+  const labReq = dataNow.requests.find((r) => r.kind === 'LAB');
+  const labHtml = labReq ? await (await fetch(`${url}/doc/req/${labReq.id}?lang=en`)).text() : '';
+  const rxId = dataNow.prescriptions[0]?.visit_id;
+  const rxRes = rxId ? await fetch(`${url}/doc/rx/${rxId}?lang=en`) : null;
+  const rxHtml = rxRes ? await rxRes.text() : '';
+  const docLooks = (html) => html.includes('<img src="data:image/') && (!dataNow.owner.code || html.includes(dataNow.owner.code)) && html.includes('Montasser St');
+  const ticked = (labHtml.match(/class="xbox on"/g) || []).length;
+  const notTheirs = (await fetch(`${url}/doc/rx/not-this-owners-visit`)).status;
+  // The saved X-ray request as a real PDF (schema v20): the doctor's laptop makes it from the sheet once the request is
+  // saved; it reaches the server like any file and the owner's page offers it as a download.
+  const xrReq = dataNow.requests.find((r) => r.kind === 'XRAY');
+  await go(B, `#/requests/${xrReq.id}`);
+  const pdfReady = await until(async () => {
+    const r = (await (await fetch(`${url}/data`)).json()).requests.find((x) => x.id === xrReq.id);
+    return r?.pdf ? r : null;
+  }, 40_000, 500);
+  const pdfRes = pdfReady.v ? await fetch(`${url}/f/${pdfReady.v.pdf}?download=1`) : null;
+  const pdfBuf = pdfRes ? Buffer.from(await pdfRes.arrayBuffer()) : Buffer.alloc(0);
+  const pdfOk = pdfRes?.status === 200 && pdfRes.headers.get('content-type') === 'application/pdf' && /attachment/.test(pdfRes.headers.get('content-disposition') ?? '') && pdfBuf.subarray(0, 4).toString() === '%PDF';
+  const pdfPages = (pdfBuf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
+  const pdfBox = pdfBuf.toString('latin1').match(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)/);
+  const pdfA5 = !!pdfBox && Math.abs(Number(pdfBox[1]) - 419.5) < 3 && Math.abs(Number(pdfBox[2]) - 595.3) < 3;
+  if (pdfBuf.length) fs.writeFileSync(path.join(out, 'owner-xray-request.pdf'), pdfBuf);
+  const pdfButton = await until(async () => (await phonePage.locator('.req-card .pdf-link').count()) > 0, 10_000, 300);
+  // The clinic's own page (14 Nov 2026), which the QR at the bottom left of every document opens.
+  const clinicRes = await fetch(`${new URL(url).origin}/clinic?lang=en`);
+  const clinicHtml = await clinicRes.text();
+  const clinicOk = clinicRes.status === 200 && clinicHtml.includes('https://ipn.eg/S/waleedelbourgi/instapay/8yJQ5M') && clinicHtml.includes('Dr. Waleed El-Bourgi') && clinicHtml.includes('Montasser St');
+  const docQr = labHtml.includes('class="sheet-qr"') && rxHtml.includes('class="sheet-qr"') && rxHtml.includes('<svg');
+  const docPage = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await docPage.goto(new URL(reqHref, url).href);
+  await docPage.waitForSelector('.sheet');
+  await docPage.screenshot({ path: path.join(out, 'owner-page-9-request-document.png'), fullPage: true });
+  await docPage.goto(`${url}/doc/rx/${rxId}`);
+  await docPage.waitForSelector('.sheet');
+  await docPage.screenshot({ path: path.join(out, 'owner-page-10-prescription-document.png'), fullPage: true });
+  await docPage.close();
+  check('owner-documents', 'On the owner\'s page each request and prescription opens the document as the clinic prints it (logo, customer ID, address), to save as a PDF; only their own',
+    !!reqHref && docLooks(labHtml) && ticked >= 2 && labHtml.includes('Bile acids') && rxRes?.status === 200 && docLooks(rxHtml) && rxHtml.includes(DRUG) && notTheirs === 404
+      && !!pdfReady.v && pdfOk && pdfPages === 1 && pdfA5 && !!pdfButton.v && clinicOk && docQr,
+    `Document button on the request card: ${!!reqHref}; lab request sheet with logo, customer ID and address: ${docLooks(labHtml)}, ${ticked} boxes ticked, other tests shown: ${labHtml.includes('Bile acids')}; prescription sheet → ${rxRes?.status}, logo/ID/address: ${docLooks(rxHtml)}, drug shown: ${rxHtml.includes(DRUG)}; someone else's visit → ${notTheirs}; X-ray request PDF made on laptop B and on the owner's page: ${!!pdfReady.v}, downloads as a PDF: ${pdfOk} (${pdfPages} page, A5: ${pdfA5}, ${pdfBuf.length} bytes), Download PDF button: ${!!pdfButton.v}; clinic QR on the documents: ${docQr}; /clinic page (head, address, InstaPay): ${clinicOk}`);
+
+  // Online booking (15 Nov 2026): the owner books a free time on their page; the clinic's laptops get the appointment
+  // and staff are told; the same time can't be booked twice, nor a closed time, nor someone else's pet.
+  await phonePage.evaluate(() => { location.hash = '#book'; });
+  await phonePage.waitForSelector('.slot.free');
+  const freeShown = await phonePage.locator('.slot.free').count();
+  const bookedShownBefore = await phonePage.locator('.slot.booked').count();
+  await phonePage.locator('.slot.free').first().click();
+  await phonePage.locator('#book-note').fill('Limping since yesterday');
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-11-book.png'), fullPage: true });
+  await phonePage.locator('.book-btn').click();
+  const bookedOk = await until(async () => (await phonePage.locator('.book-msg.ok').count()) === 1, 10_000, 200);
+  const online = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'appointments' AND data->>'owner_id' = $1 AND data->>'notes' LIKE '🌐%' ORDER BY seq DESC LIMIT 1", [String(ownerId)])).rows[0];
+  const bookPost = (body) => fetch(`${url}/book`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const again = online ? (await bookPost({ pet_id: online.data.pet_id, at: online.data.scheduled_at, type: 'CHECKUP' })).status : 0;
+  const closed = online ? (await bookPost({ pet_id: online.data.pet_id, at: '2026-01-01T01:00:00.000Z', type: 'CHECKUP' })).status : 0;
+  const slotsNow = await (await fetch(`${url}/slots`)).json();
+  const freeNext = slotsNow.days.flatMap((x) => x.slots).find((s) => s.free);
+  const notMine = freeNext ? (await bookPost({ pet_id: 'not-this-owners-pet', at: freeNext.at, type: 'CHECKUP' })).status : 0;
+  const nowBooked = online ? slotsNow.days.flatMap((x) => x.slots).some((s) => s.at === online.data.scheduled_at && !s.free) : false;
+  // On laptop A's screen (its day view shows the notes); the file on disk can lag while the window is in the background.
+  let onLaptop = { v: null };
+  if (online) {
+    const day = await A.win.evaluate((at) => { const d = new Date(at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }, online.data.scheduled_at);
+    await go(A, `#/appointments?view=day&date=${day}`);
+    onLaptop = await until(async () => (await A.win.locator('main').innerText().catch(() => '')).includes('Limping since yesterday'), 15_000, 300);
+  }
+  const told = online ? Number((await pool.query("SELECT COUNT(*) n FROM notifications WHERE event = 'online' AND data->>'appointment_id' = $1", [online.id])).rows[0].n) : 0;
+  await phonePage.screenshot({ path: path.join(out, 'owner-page-12-booked.png'), fullPage: true });
+  await phonePage.evaluate(() => { location.hash = '#home'; });
+  check('owner-booking', 'An owner books a free time on their page (Sat–Wed 5–10 PM, free / booked only); the clinic gets the appointment and is told; no double, closed-time or someone-else\'s-pet bookings',
+    freeShown > 0 && !!bookedOk.v && !!online && online.data.notes.includes('Limping') && again === 409 && closed === 400 && notMine === 400 && nowBooked && !!onLaptop.v && told > 0,
+    `free times shown: ${freeShown}, booked shown: ${bookedShownBefore}; booked from the page: ${!!bookedOk.v} (${online?.data.scheduled_at ?? 'none'}, note kept: ${online?.data.notes.includes('Limping')}); same time again → ${again}; closed time → ${closed}; another owner's pet → ${notMine}; now shown as booked: ${nowBooked}; on laptop A: ${!!onLaptop.v}; staff notified: ${told}`);
+
+  // A row numbered first but committed last (a slow booking while a laptop pushes) must still reach devices: a pull
+  // waits for writes in progress (numberingLock / pullLock in server/db.mjs). Checked on a throwaway clinic.
+  {
+    const { numberingLock } = await import('../server/db.mjs');
+    const { pullSince } = await import('../server/sync.mjs');
+    const gapClinic = crypto.randomUUID();
+    await pool.query("INSERT INTO clinics (id, name) VALUES ($1, 'pull order check')", [gapClinic]);
+    const numbered = (c, id) => c.query("INSERT INTO rows (clinic_id, tbl, id, data, versions, deleted, seq) VALUES ($1, 'appointments', $2, '{}', '{}', false, nextval('change_seq'))", [gapClinic, id]);
+    const slow = await pool.connect();
+    await slow.query('BEGIN');
+    await numberingLock(slow, gapClinic);
+    await numbered(slow, 'numbered-first');
+    const fast = await pool.connect();
+    await fast.query('BEGIN');
+    await numberingLock(fast, gapClinic);
+    await numbered(fast, 'numbered-second');
+    await fast.query('COMMIT');
+    fast.release();
+    let pulled = null;
+    const pulling = pullSince(pool, gapClinic, 0).then((r) => (pulled = r));
+    await new Promise((r) => setTimeout(r, 400));
+    const waited = pulled === null;
+    await slow.query('COMMIT');
+    slow.release();
+    await pulling;
+    const ids = pulled.rows.map((r) => r.id).join(',');
+    await pool.query('DELETE FROM rows WHERE clinic_id = $1', [gapClinic]);
+    await pool.query('DELETE FROM clinics WHERE id = $1', [gapClinic]);
+    check('pull-order', 'A change committed after a later-numbered one is still pulled (no device skips it)', waited && ids === 'numbered-first,numbered-second',
+      `pull waited for the open write: ${waited}; pulled: ${ids}`);
+  }
+
+  // Only an Admin may replace a printed code; the server refuses it from a Doctor.
+  const refused = await api('/api/sync/push', { changes: [{ tbl: 'owners', id: ownerId, op: 'upsert', cols: { portal_token: 'x'.repeat(22) }, at: nowIso() }] }, tokens.doctor);
+  // The admin replaces the code (a lost card): the old link stops at once, and the open page says so.
+  await go(A, `#/owners/${ownerId}`);
+  await A.win.locator('.replace-owner-page').click();
+  await A.win.locator('.dialog .btn.danger').click();
+  const replaced = await until(async () => {
+    const r = (await pool.query("SELECT data->>'portal_token' t FROM rows WHERE tbl = 'owners' AND id = $1", [ownerId])).rows[0];
+    return r.t && r.t !== token && r.t;
+  }, 10_000);
+  const oldGone = await until(async () => (await fetch(`${url}/data`)).status === 404, 10_000);
+  const pageGone = await until(async () => (await phonePage.locator('.gone').count()) === 1, 10_000, 200);
+  const newWorks = replaced.v ? (await fetch(`${SERVER}/o/${replaced.v}/data`)).status : 0;
+  const wrong = (await fetch(`${SERVER}/o/AAAAAAAAAAAAAAAAAAAAAA/data`)).status;
+  await browser.close();
+
+  check('owner-page', 'An owner gets a QR code to a private page with their details, pets, upcoming appointments and prescriptions',
+    !!onServer.v && html.status === 200 && /no-store/.test(html.headers.get('cache-control')) && html.headers.get('referrer-policy') === 'no-referrer' && /script-src 'nonce-/.test(html.headers.get('content-security-policy') ?? '') &&
+      htmlText.includes('<html') && data.owner?.full_name === owner.full_name && data.pets?.some((p) => p.name === pet.data.name) && leaks.length === 0 && firstView.includes(pet.data.name) && doctorCanReplace === 0,
+    `QR made on the doctor's laptop, on the server: ${!!onServer.v}; page ${html.status} (no-store, no-referrer, CSP with nonce); shows ${data.pets?.length} pet(s) of ${data.owner?.full_name}; staff-only fields in the data: ${leaks.join(', ') || 'none'}; replace button for a Doctor: ${doctorCanReplace ? 'shown' : 'hidden'}`);
+  check('owner-page-live', 'The owner page updates by itself: a booking and a prescription appear on the open phone page within seconds',
+    !!apptLive.v && !!rxLive.v && dxOnPets && !privateShown && labsOnPage && labsInDb > 0 && idOnPage && liveDot === 1 && apptMs < 5000 && rxMs < 8000 && /^Good (morning|afternoon|evening)/.test(english) && manifest.start_url === `/o/${token}`,
+    `booking on laptop A visible on the phone after ${apptMs} ms (${apptsBefore} → ${apptsBefore + 1} appointments); prescription and its diagnosis saved on laptop B visible after ${rxMs} ms (no reload); diagnosis in the pet's visit history: ${dxOnPets}; lab results (${labsInDb} in the clinic) on the pet: ${labsOnPage}; customer ID ${owner.code} on the page: ${idOnPage}; treatment notes sent to the owner: ${privateShown}; live indicator: ${liveDot ? 'on' : 'off'}; English switch: "${english}"; add to home screen opens /o/…: ${manifest.start_url === `/o/${token}`}`);
+  check('owner-page-calendar', 'Appointments can be added to the phone’s calendar: one at a time, or a feed that keeps itself up to date',
+    icsOk, `feed ${feed.split('BEGIN:VEVENT').length - 1} event(s), lines ≤ 75 bytes; one appointment .ics → ${one?.status}; Google Calendar link on the page: ${!!apptLive.v}`);
+  check('rx-archive', 'Every prescription of an owner is in one archive: searchable, per pet, and reprintable',
+    !!inArchive.v && noneFound && searched && sheet.includes(DRUG) && sheet.includes(pet.data.name) && petTab,
+    `on the owner screen: ${!!inArchive.v}; search with no match shows none: ${noneFound}; search "${DRUG.slice(0, 9).toLowerCase()}" finds it: ${searched}; A5 prescription shows the drug and ${pet.data.name}: ${sheet.includes(DRUG)}; pet's Prescriptions tab: ${petTab}`);
+  check('owner-page-replace', 'A lost card: only the Admin can replace the code; the old link stops at once and the open page says so',
+    refused.body.rejected?.length === 1 && !!replaced.v && !!oldGone.v && !!pageGone.v && newWorks === 200 && wrong === 404,
+    `Doctor's replace refused by the server: ${refused.body.rejected?.[0]?.reason ?? 'no'}; old link → 404: ${!!oldGone.v}; the open phone page shows "not active": ${!!pageGone.v}; new link → ${newWorks}; made-up link → ${wrong}`);
+});
+
+// ---------------------------------------------------------------- collar tags and lost & found (schema v18)
+await step('collar tag: lost & found', async () => {
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY data->>'name' = 'Luna' DESC, id LIMIT 1")).rows[0];
+  const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [pet.data.owner_id])).rows[0].data;
+  // The doctor gives the pet a collar tag on laptop B.
+  await go(B, `#/pets/${pet.id}/tag`);
+  await B.win.locator('.create-tag').click();
+  await B.win.waitForSelector('.tag-sheet .qr');
+  const tagUrl = (await B.win.locator('.tag-link').innerText()).trim();
+  await B.win.screenshot({ path: path.join(out, 'B-collar-tag.png'), fullPage: true });
+  const onServer = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'pets' AND id = $1 AND data->>'tag_token' = $2", [pet.id, tagUrl.split('/t/')[1]])).rowCount === 1, 10_000);
+  // Someone finds the pet and scans the collar with their phone (location allowed).
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const finder = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, geolocation: { latitude: 30.0444, longitude: 31.2357, accuracy: 25 }, permissions: ['geolocation'] });
+  const fp = await finder.newPage();
+  await fp.goto(tagUrl);
+  await fp.waitForSelector('.hero h1');
+  const seen = await fp.locator('main').innerText();
+  const shows = seen.includes(pet.data.name) && (!owner.phone || seen.includes(owner.phone));
+  const hides = !(owner.address && seen.includes(owner.address)) && !(owner.email && seen.includes(owner.email));
+  await fp.screenshot({ path: path.join(out, 'tag-page-finder.png'), fullPage: true });
+  const bellBefore = await bell(A);
+  await fp.locator('.btn.alert').first().click();
+  await fp.locator('.send-alert').click();
+  const sent = await until(async () => (await fp.locator('.card.done').count()) === 1, 15_000, 200);
+  await fp.screenshot({ path: path.join(out, 'tag-page-sent.png'), fullPage: true });
+  const report = await until(async () => (await pool.query("SELECT id, data FROM rows WHERE tbl = 'found_reports' AND data->>'pet_id' = $1 ORDER BY seq DESC LIMIT 1", [String(pet.id)])).rows[0], 10_000);
+  // Everyone at the clinic: the bell, and Lost & found on the laptops.
+  const told = await until(async () => (await bell(A)) > bellBefore, 10_000, 200);
+  await go(A, '#/lost-found');
+  const listed = await until(async () => (await A.win.locator('.found-item.new', { hasText: pet.data.name }).count()) === 1, 10_000, 200);
+  const mapBtn = await A.win.locator('.found-item.new .open-map').count();
+  await A.win.screenshot({ path: path.join(out, 'A-lost-found.png'), fullPage: true });
+  // The owner's own page shows it, and the pet's profile opens there.
+  const ownerToken = (await pool.query("SELECT data->>'portal_token' t FROM rows WHERE tbl = 'owners' AND id = $1", [pet.data.owner_id])).rows[0].t;
+  let ownerSees = false;
+  let profile = false;
+  if (ownerToken) {
+    const op = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+    await op.goto(`${SERVER}/o/${ownerToken}`);
+    ownerSees = !!(await until(async () => (await op.locator('.found-alert').count()) > 0, 10_000, 200)).v;
+    await op.screenshot({ path: path.join(out, 'owner-page-found-alert.png'), fullPage: true });
+    await op.evaluate((id) => (location.hash = 'pet:' + id), String(pet.id));
+    profile = !!(await until(async () => (await op.locator('.profile-head').innerText().catch(() => '')).includes(pet.data.name), 5000, 200)).v;
+    await op.screenshot({ path: path.join(out, 'owner-page-pet-profile.png'), fullPage: true });
+    await op.close();
+  }
+  // Rules: reports come only from the tag page; staff may only mark them handled.
+  const deskNew = await api('/api/sync/push', { changes: [{ tbl: 'found_reports', id: crypto.randomUUID(), op: 'upsert', at: nowIso(), cols: { pet_id: String(pet.id), reported_at: nowIso(), status: 'NEW' } }] }, tokens.desk);
+  const moved = await api('/api/sync/push', { changes: [{ tbl: 'found_reports', id: report.v?.id, op: 'upsert', at: nowIso(), cols: { lat: 1 } }] }, tokens.admin);
+  await A.win.locator('.found-item.new .mark-handled').first().click();
+  const handled = await until(async () => (await pool.query("SELECT data->>'status' s FROM rows WHERE tbl = 'found_reports' AND id = $1", [report.v?.id])).rows[0]?.s === 'HANDLED', 10_000);
+  const cleared = ownerToken ? await until(async () => ((await (await fetch(`${SERVER}/o/${ownerToken}/data`)).json()).found ?? []).length === 0, 10_000) : { v: true };
+  await browser.close();
+  const r = report.v?.data ?? {};
+  check('lost-found', 'A collar tag shows the pet and how to reach the owner; Alert tells everyone at the clinic and the owner, with the location, and lands in Lost & found',
+    !!onServer.v && shows && hides && !!sent.v && Math.abs(Number(r.lat) - 30.0444) < 0.001 && !!told.v && !!listed.v && mapBtn === 1 && (!ownerToken || ownerSees) && (!ownerToken || profile) &&
+      deskNew.body.rejected?.length === 1 && moved.body.rejected?.length === 1 && !!handled.v && !!cleared.v,
+    `tag made on laptop B: ${!!onServer.v}; finder sees the pet and the owner's phone: ${shows}, not the address or email: ${hides}; alert sent: ${!!sent.v} with location ${r.lat}, ${r.lng}; laptop A's bell: ${!!told.v}; in Lost & found with a map button: ${!!listed.v && mapBtn === 1}; owner's page shows the alert: ${ownerToken ? ownerSees : 'no owner page'}; pet profile on the owner page: ${profile}; a device inventing a report: ${deskNew.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; changing a report's location: ${moved.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; marked handled: ${!!handled.v}, gone from the owner's page: ${!!cleared.v}`);
 });
 
 await step('phase5: password reset', async () => {
@@ -743,6 +1430,117 @@ const localState = (dataDir, sql) => {
   return r;
 };
 
+// ---------------------------------------------------------------- lab extranet (change request 20 Nov 2026, schema v24)
+await step('lab extranet', async () => {
+  const admin = (await pool.query("SELECT id FROM rows WHERE tbl = 'users' AND lower(data->>'email') = lower($1)", [ADMIN.email])).rows[0].id;
+  const adminId = () => admin;
+  const pet = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'pets' AND NOT deleted AND data->>'status' = 'ACTIVE' ORDER BY data->>'name' = 'Luna' DESC, id LIMIT 1")).rows[0];
+  const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [pet.data.owner_id])).rows[0].data;
+  // The Admin gives the lab's doctor an account on laptop A: Settings → Lab extranet.
+  await go(A, '#/settings?tab=lab');
+  await A.win.locator('.tab-enter .row.end .btn.primary').click();
+  const dlg = A.win.locator('.dialog');
+  await dlg.locator('input[type=text]').nth(0).fill('Dr. Sara Nabil');
+  await dlg.locator('input[type=text]').nth(1).fill('VetLab Giza');
+  await dlg.locator('input[type=email]').fill('lab@vetlab.test');
+  await dlg.locator('footer .btn.primary').click();
+  await A.win.waitForSelector('.dialog .invite-text');
+  const temp = (await A.win.locator('.dialog .temp-pw b').innerText()).trim();
+  const invite = await A.win.locator('.dialog .invite-text').innerText();
+  await A.win.screenshot({ path: path.join(out, 'A-lab-invite.png') });
+  await A.win.keyboard.press('Escape');
+  const acct = await until(async () => (await pool.query("SELECT data FROM rows WHERE tbl = 'users' AND data->>'email' = 'lab@vetlab.test' AND data->>'role' = 'LAB'")).rows[0], 15_000);
+  const labId = acct.v?.data.id;
+  // A lab account can never use the app's sign-in (it would receive every record).
+  const appLogin = (await api('/api/login', { email: 'lab@vetlab.test', password: temp, deviceId: 'lab-try' })).status;
+  // The vet asks for tests (as a lab request saved on a device).
+  const reqId = crypto.randomUUID();
+  const at = nowIso();
+  const pushed = await api('/api/sync/push', { changes: [{ tbl: 'test_requests', id: reqId, op: 'upsert', at, cols: {
+    id: reqId, pet_id: pet.id, visit_id: null, kind: 'LAB', items: 'liver.alt_gpt,liver.ast_got,kidney.urea_bun,kidney.creatinine,minerals.sodium', other: null,
+    notes: 'Vomiting for 3 days', status: 'REQUESTED', requested_by: adminId(), requested_at: at, created_at: at, updated_at: at,
+  } }] }, tokens.admin);
+  // The lab doctor's browser: a report as a PDF with text.
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const rp = await browser.newPage();
+  await rp.setContent(`<html><body style="font-family:Arial;padding:30px"><h2>VetLab Giza</h2><p>Patient: ${pet.data.name} &nbsp; Date: today</p>
+    <table style="width:100%;font-size:15px"><tr><th align=left>Test</th><th align=left>Result</th><th align=left>Unit</th><th align=left>Reference</th></tr>
+    <tr><td>ALT (SGPT)</td><td>85</td><td>U/L</td><td>10 - 100</td></tr><tr><td>AST (SGOT)</td><td>120 H</td><td>U/L</td><td>0 - 48</td></tr>
+    <tr><td>Urea</td><td>62</td><td>mg/dL</td><td>15 - 34</td></tr><tr><td>Creatinine</td><td>2.4 H</td><td>mg/dL</td><td>0.8 - 1.8</td></tr>
+    <tr><td>WBC</td><td>12.5</td><td>x10^9/L</td><td>5.5 - 19.5</td></tr></table></body></html>`);
+  const reportPdf = path.join(out, 'lab-report.pdf');
+  await rp.pdf({ path: reportPdf, format: 'A4' });
+  const lab = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const labErrors = [];
+  lab.on('pageerror', (e) => labErrors.push(String(e)));
+  await lab.goto(`${SERVER}/lab`);
+  await lab.getByRole('button', { name: 'English' }).click();
+  await lab.fill('input[type=email]', 'lab@vetlab.test');
+  await lab.fill('input[type=password]', temp);
+  await lab.click('button[type=submit]');
+  await lab.waitForSelector('text=Choose your password');
+  const pws = lab.locator('input[type=password]');
+  await pws.nth(0).fill(temp);
+  await pws.nth(1).fill('Lab-own-2026');
+  await pws.nth(2).fill('Lab-own-2026');
+  await lab.click('button[type=submit]');
+  await lab.waitForSelector('text=Tests requested by the vets');
+  const requested = await until(async () => (await lab.locator('button.item', { hasText: pet.data.name }).count()) > 0, 10_000, 300);
+  await lab.screenshot({ path: path.join(out, 'lab-home.png'), fullPage: true });
+  // Without the page's own header, a POST is refused (another site can't post for a signed-in lab doctor).
+  const csrf = await lab.evaluate(async () => (await fetch('/lab/api/logout', { method: 'POST' })).status);
+  await lab.locator('button.item', { hasText: pet.data.name }).first().click();
+  await lab.waitForSelector(`text=Upload results for ${pet.data.name}`);
+  await lab.locator('input[type=file]').first().setInputFiles(reportPdf);
+  await lab.waitForSelector('text=/Found \\d+ result/', { timeout: 30_000 });
+  const read = await lab.$$eval('table.t.edit tbody tr', (trs) => trs.map((tr) => [...tr.querySelectorAll('input')].map((i) => i.value)));
+  await lab.screenshot({ path: path.join(out, 'lab-scanned.png'), fullPage: true });
+  lab.once('dialog', (d) => d.accept());
+  await lab.getByRole('button', { name: 'Save and send to the clinic' }).click();
+  await lab.waitForSelector('text=/Sent: \\d+ result/', { timeout: 20_000 });
+  await lab.screenshot({ path: path.join(out, 'lab-sent.png'), fullPage: true });
+  // On the server: the report (with its bytes), the results pointing at it and the request, the request done, the audit trail.
+  const results = (await pool.query("SELECT data FROM rows WHERE tbl = 'lab_results' AND data->>'request_id' = $1", [reqId])).rows.map((x) => x.data);
+  const attId = results[0]?.attachment_id;
+  const att = attId ? (await pool.query("SELECT data FROM rows WHERE tbl = 'attachments' AND id = $1", [attId])).rows[0]?.data : null;
+  const fileOnServer = attId ? (await pool.query('SELECT size FROM files WHERE id = $1', [attId])).rowCount === 1 : false;
+  const reqDone = (await pool.query("SELECT data->>'status' AS s FROM rows WHERE tbl = 'test_requests' AND id = $1", [reqId])).rows[0]?.s;
+  const audited = Number((await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'audit_log' AND data->>'user_id' = $1", [labId])).rows[0].n);
+  const creat = results.find((r) => r.analyte === 'Creatinine');
+  // Laptop A gets the results and the report, and the vet is told.
+  const onA = await until(async () => localState(A.dataDir, `SELECT COUNT(*) FROM lab_results WHERE request_id = '${reqId}' AND attachment_id IS NOT NULL`)[0][0] === results.length && results.length > 0, 20_000, 500);
+  const told = await until(async () => (await pool.query("SELECT 1 FROM notifications WHERE kind = 'lab' AND user_id = $1", [adminId()])).rowCount > 0, 10_000);
+  await go(A, `#/pets/${pet.id}?tab=labs`);
+  const reportBtn = await until(async () => (await A.win.locator('.lab-source').count()) > 0, 10_000, 300);
+  await A.win.screenshot({ path: path.join(out, 'A-lab-results.png'), fullPage: true });
+  // The owner's page shows them (when the owner has one).
+  const ownerToken = owner.portal_token;
+  let ownerSees = null;
+  if (ownerToken) {
+    const d = await (await fetch(`${SERVER}/o/${ownerToken}/data`)).json();
+    const p = (d.pets ?? []).find((x) => String(x.id) === String(pet.id));
+    ownerSees = JSON.stringify(p?.labs ?? []).includes('Creatinine');
+  }
+  // The Admin switches the account off: the lab doctor's open session ends at once (after the device syncs).
+  await go(A, '#/settings?tab=lab');
+  await A.win.locator('.tab-enter table.t tbody tr', { hasText: 'Dr. Sara Nabil' }).click();
+  await A.win.locator('.dialog input[type=checkbox]').uncheck();
+  await A.win.locator('.dialog footer .btn.primary').click();
+  const offOnServer = await until(async () => Number((await pool.query("SELECT data->>'is_active' AS a FROM rows WHERE tbl = 'users' AND id = $1", [labId])).rows[0]?.a) === 0, 15_000);
+  const ended = await lab.evaluate(async () => (await fetch('/lab/api/me')).status);
+  await browser.close();
+  const readOk = read.length >= 5 && read.some((r) => r[0] === 'Creatinine' && r[1] === '2.4' && r[2] === 'mg/dL' && r[3] === '0.8' && r[4] === '1.8');
+  check('lab-extranet', 'The Admin gives the lab doctor an account; on the purple lab extranet they choose a password, see the vet\'s request, upload a PDF that is read into results, and the results and report reach the server, the laptop, the vet and the owner\'s page',
+    !!acct.v && invite.includes(`${SERVER}/lab`) && invite.includes(temp) && pushed.status === 200 && !!requested.v && readOk && results.length >= 5 &&
+      att?.kind === 'LAB' && fileOnServer && reqDone === 'DONE' && audited >= results.length && creat?.value === 2.4 && creat?.ref_high === 1.8 &&
+      !!onA.v && !!told.v && !!reportBtn.v && ownerSees !== false && labErrors.length === 0,
+    `account made on laptop A and on the server: ${!!acct.v}; invite has the /lab link and temporary password: ${invite.includes(`${SERVER}/lab`) && invite.includes(temp)}; request listed on the extranet: ${!!requested.v}; read from the PDF: ${read.map((r) => `${r[0]}=${r[1]}`).join(', ')}; saved ${results.length} results + report (${att?.kind}, bytes on server: ${fileOnServer}); request ${reqDone}; audit rows by the lab: ${audited}; on laptop A: ${!!onA.v}; vet notified: ${!!told.v}; report button on the pet's Lab results: ${!!reportBtn.v}; owner's page: ${ownerSees ?? 'no owner page'}; page errors: ${labErrors.length}`);
+  check('lab-extranet-locked', 'A lab account can\'t use the app\'s sign-in, can\'t be posted for by another site, and stops working when the Admin switches it off',
+    appLogin === 401 && csrf === 403 && !!offOnServer.v && ended === 401,
+    `app sign-in with the lab account → ${appLogin}; POST without the page's header → ${csrf}; switched off on laptop A → on the server: ${!!offOnServer.v}; lab doctor's session then → ${ended}`);
+});
+
 await step('phase2: both laptops offline', async () => {
   const owners = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'owners' AND NOT deleted AND data->>'status' = 'ACTIVE' AND data->>'full_name' NOT LIKE 'Load Owner%' ORDER BY id LIMIT 2")).rows;
   const [X, Y] = owners;
@@ -755,8 +1553,11 @@ await step('phase2: both laptops offline', async () => {
   await editOwner(B, Y.id, { notes: 'Note from laptop B (later)' });
   const tmpA = await newInvoice(A, X.data.full_name);
   const tmpB = await newInvoice(B, Y.data.full_name);
-  await book(A, pets[0].data.name, '15:00');
-  await book(B, pets[1].data.name, '15:10'); // overlaps; neither laptop can know
+  // 13:00 / 13:10: outside online-booking hours (17:00–22:00 Cairo), so the owner-page booking above can't have taken
+  // the slot first. It did at 15:00 when the test ran on a Friday (no booking that day: the first free slot was
+  // Saturday 17:00 Cairo = 15:00 on a UTC machine) and the overlap warning stopped this step. Clear of the demo's 12:00.
+  await book(A, pets[0].data.name, '13:00');
+  await book(B, pets[1].data.name, '13:10'); // overlaps; neither laptop can know
   await go(B, `#/pets/${pets[1].id}/visits/new`);
   await B.win.locator('.actionbar .btn.primary').click(); // pet, date and type are enough
   await B.win.waitForSelector('.dialog');
@@ -884,7 +1685,7 @@ await step('phase4: files', async () => {
     };
   });
   await go(B, `#/pets/${pet.id}?tab=files`);
-  await B.win.locator('.list li.link', { hasText: 'xray-left-leg.png' }).click();
+  await B.win.locator('.file-tile', { hasText: 'xray-left-leg.png' }).click();
   const opened = await until(async () => B.app.evaluate(() => globalThis.__opened), 10_000, 200);
   const openedSha = opened.v ? sha(fs.readFileSync(opened.v)) : null;
   await B.win.screenshot({ path: path.join(out, 'B-files.png') });
@@ -973,6 +1774,119 @@ await step('phase4: phone install', async () => {
     `Chrome's installability errors: ${errors.length ? errors.join(', ') : 'none'}; manifest errors: ${manifest.errors.length}; ${manifest.url}`);
 });
 
+await step('chromebook: installed app', async () => {
+  // The web app on a Chromebook (docs/CHROMEBOOK.md): installable with shelf shortcuts, laptop layout,
+  // named "Chromebook" in Settings → Devices, Ctrl+K search, one window at a time, and updates from the server.
+  const { chromium } = require('playwright');
+  // isVisible() answers at once; this waits up to ms for the element to show.
+  const shown = (loc, ms) => loc.waitFor({ state: 'visible', timeout: ms }).then(() => true, () => false);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clinic-chromebook-'));
+  const ctx = await chromium.launchPersistentContext(dir, {
+    viewport: { width: 1366, height: 768 },
+    userAgent: 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  });
+  const errors = [];
+  ctx.on('weberror', (e) => errors.push(String(e.error())));
+  try {
+    const page = ctx.pages()[0] ?? (await ctx.newPage());
+    await page.goto(SERVER);
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await page.waitForSelector('form button.signin');
+
+    // Installable, with the Chromebook parts of the manifest.
+    const cdp = await ctx.newCDPSession(page);
+    const manifest = await cdp.send('Page.getAppManifest');
+    const installErrors = (await cdp.send('Page.getInstallabilityErrors')).installabilityErrors.map((e) => e.errorId);
+    const m = JSON.parse(manifest.data);
+    const manifestOk = installErrors.length === 0 && manifest.errors.length === 0 && !m.orientation && m.shortcuts?.length === 4 &&
+      JSON.stringify(m.launch_handler).includes('focus-existing') && m.screenshots?.some((s) => s.form_factor === 'wide');
+    let wideShot = 0;
+    for (const s of m.screenshots ?? []) wideShot += (await page.request.get(`${SERVER}${s.src}`)).ok() ? 1 : 0;
+
+    // Sign in: laptop layout (sidebar, no phone bottom bar); the server lists it as a Chromebook.
+    await page.locator('input[type=email]').fill(ADMIN.email);
+    await page.locator('input[type=password]').fill(ADMIN.password);
+    await page.locator('form button.signin').click();
+    await page.waitForSelector('.searchbox', { timeout: 30_000 });
+    const layout = { side: await page.locator('aside.side').isVisible(), bottom: await page.locator('nav.bottom-nav').isVisible() };
+    const named = (await pool.query("SELECT COUNT(*) n FROM sessions WHERE device_name = 'Chromebook'")).rows[0].n > 0;
+    if (await page.locator('.side-foot button', { hasText: 'English' }).count()) await page.locator('.side-foot button', { hasText: 'English' }).click();
+
+    // The install banner speaks of the Chromebook and uses Chrome's own install prompt.
+    await page.evaluate(() => {
+      const e = new Event('beforeinstallprompt');
+      e.prompt = async () => void (window.__prompted = true);
+      e.userChoice = Promise.resolve({ outcome: 'accepted' });
+      window.dispatchEvent(e);
+    });
+    const banner = await page.locator('.install-banner').innerText({ timeout: 3000 }).catch(() => '');
+    await page.locator('.install-banner .btn.primary').click().catch(() => {});
+    const prompted = await page.evaluate(() => window.__prompted === true);
+    const bannerGone = (await page.locator('.install-banner').count()) === 0;
+
+    // Ctrl+K from a screen without a search box jumps to the dashboard's search.
+    await page.evaluate(() => (location.hash = '#/appointments'));
+    await sleep(400);
+    await page.keyboard.press('Control+k');
+    await sleep(400);
+    const searchFocused = await page.evaluate(() => location.hash === '#/' && !!document.activeElement?.closest('.searchbox'));
+
+    // Settings → Updates → This device (web app).
+    await page.evaluate(() => (location.hash = '#/settings?tab=updates'));
+    const deviceText = await page.locator('.this-device').innerText({ timeout: 5000 }).catch(() => '');
+    await page.screenshot({ path: path.join(out, 'chromebook-settings-device.png') });
+
+    // One window at a time: an owner saved in the app window, then a browser tab opened at once and "Use it here".
+    const name = `Chromebook Owner ${Date.now() % 100000}`;
+    await page.evaluate(() => (location.hash = '#/owners/new'));
+    await page.getByLabel('Full name').fill(name);
+    await page.getByLabel('Phone', { exact: true }).fill(`01${String(Date.now()).slice(-9)}`);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForURL(/#\/owners\/[0-9a-f-]{36}/, { timeout: 5000 });
+    const tab = await ctx.newPage();
+    await tab.goto(SERVER);
+    const blocked = await shown(tab.locator('.open-elsewhere'), 10_000);
+    await tab.locator('.open-elsewhere .btn.primary').click();
+    await tab.waitForSelector('.searchbox', { timeout: 15_000 });
+    const firstStepsAside = await shown(page.locator('.open-elsewhere'), 10_000);
+    await tab.evaluate(() => (location.hash = '#/owners'));
+    await tab.locator('.main .searchbox input').fill(name.split(' ').pop());
+    const carried = await shown(tab.getByText(name).first(), 5000);
+    const onServer = await until(async () => (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'owners' AND data->>'full_name' = $1", [name])).rows[0].n > 0, 20_000);
+    await tab.screenshot({ path: path.join(out, 'chromebook-took-over.png') });
+    await page.screenshot({ path: path.join(out, 'chromebook-open-elsewhere.png') });
+
+    // A new version deployed while the app is open: it offers to reload, and the reload brings it in.
+    await tab.route('**/version.json', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ build: 'next-deploy' }) }));
+    await tab.evaluate(() => (location.hash = '#/settings?tab=updates'));
+    await tab.locator('.this-device button', { hasText: 'Check for updates now' }).click();
+    const offered = await shown(tab.locator('.update-banner'), 5000);
+    await tab.unroute('**/version.json');
+    await Promise.all([tab.waitForEvent('load', { timeout: 15_000 }), tab.locator('.update-banner .btn.primary').click()]);
+    await tab.waitForSelector('.this-device', { timeout: 15_000 }); // reloaded, still signed in, on the same screen
+    await sleep(800);
+    const afterReload = (await tab.locator('.update-banner').count()) === 0;
+    await tab.evaluate(() => (location.hash = '#/'));
+    await sleep(500);
+    await tab.screenshot({ path: path.join(out, 'chromebook-dashboard.png') });
+    check('chromebook-install', 'Chromebook: the web app installs as an app (own window, shelf shortcuts, one window, store pictures)',
+      manifestOk && wideShot === (m.screenshots?.length ?? -1),
+      `installability errors: ${installErrors.join(', ') || 'none'}; orientation lock: ${m.orientation ?? 'none'}; shortcuts: ${(m.shortcuts ?? []).map((s) => s.short_name).join(', ')}; launch: ${JSON.stringify(m.launch_handler)}; screenshots served: ${wideShot}/${m.screenshots?.length ?? 0}`);
+    check('chromebook-use', 'Chromebook: laptop layout, named as a Chromebook, install banner, Ctrl+K search, This device in Settings',
+      layout.side && !layout.bottom && named && /Chromebook/.test(banner) && prompted && bannerGone && searchFocused && /Chromebook/.test(deviceText),
+      `sidebar: ${layout.side}, phone bar: ${layout.bottom}; server device name Chromebook: ${named}; banner: "${banner.split('\n')[0]}", Chrome prompt shown: ${prompted}; Ctrl+K → search: ${searchFocused}; This device: "${deviceText.split('\n').slice(0, 3).join(' / ')}"`);
+    check('chromebook-one-window', 'Chromebook: a second window waits; "Use it here" moves the clinic over with nothing lost',
+      blocked && firstStepsAside && carried && !!onServer.v,
+      `second tab blocked: ${blocked}; first window stepped aside: ${firstStepsAside}; owner saved just before is in the new window: ${carried}; and on the server: ${!!onServer.v}`);
+    check('chromebook-update', 'Chromebook: a new deploy is offered while the app is open, and Reload brings it in',
+      offered && afterReload && errors.length === 0,
+      `update offered: ${offered}; banner gone after reload: ${afterReload}; page errors: ${errors.length ? errors.join(' | ') : 'none'}`);
+  } finally {
+    await ctx.close(); // also when a step above fails, or the open browser keeps the test running
+  }
+});
+
 await step('phase2: sign in while offline', async () => {
   // The Admin signs in on laptop A while the internet is down, works, and the app signs in to the server by itself later.
   await stopServer();
@@ -1025,6 +1939,44 @@ await step('restart keeps sync', async () => {
   await A2.close();
 });
 
+await step('server older than the app', async () => {
+  // Railway still running an older version (it deployed from another branch): the server does not know the drugs
+  // table yet. A drug saved on a laptop must stay there (and wait), not vanish when the server refuses it.
+  const oldDir = path.resolve('.sync-test-old-server');
+  fs.rmSync(oldDir, { recursive: true, force: true });
+  fs.cpSync('server', oldDir, { recursive: true });
+  const tf = path.join(oldDir, 'tables.mjs');
+  fs.writeFileSync(tf, fs.readFileSync(tf, 'utf8').replace("'drugs', ", ''));
+  await stopServer();
+  await startServer({}, path.join(oldDir, 'index.mjs'));
+  const C = await launch('C', { demo: false });
+  try {
+    await connect(C);
+    await signIn(C, ADMIN.email, ADMIN.password);
+    await until(async () => (await C.win.locator('.sync-badge.synced').count()) > 0, 20_000);
+    await go(C, '#/stock/drugs');
+    await C.win.locator('.btn.primary', { hasText: /Add|إضافة/ }).first().click();
+    await C.win.locator('.dialog input[type=text]').first().fill('Server-behind drug');
+    await C.win.locator('.dialog input[type=number]').nth(0).fill('2');
+    await C.win.locator('.dialog input[type=number]').nth(1).fill('50');
+    await C.win.locator('.dialog .btn.primary').click();
+    await C.win.locator('.sync-badge').click();
+    const told = await until(async () => (await C.win.locator('.sync-badge').innerText()).match(/update|تحديث/), 15_000, 300);
+    const kept = await C.win.locator('table.t tbody tr', { hasText: 'Server-behind drug' }).count();
+    // Railway updated: the current server comes back, and the waiting drug goes up.
+    await stopServer();
+    await startServer();
+    await C.win.locator('.sync-badge').click();
+    const up = await until(async () => (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'drugs' AND data->>'name' = 'Server-behind drug' AND NOT deleted")).rows[0].n === '1', 20_000, 500);
+    check('server-behind', 'A server older than the app does not make new records vanish: they wait on the laptop and go up once the server is updated',
+      !!told.v && kept === 1 && !!up.v,
+      `badge on the old server: "${told.v ? told.v[0] : 'no notice'}"; drug still on the laptop: ${kept === 1}; reached the updated server: ${!!up.v}`);
+  } finally {
+    await C.app.close().catch(() => {});
+    fs.rmSync(oldDir, { recursive: true, force: true });
+  }
+});
+
 await step('admin password recovery', async () => {
   // The Admin lost their password: ADMIN_RESET_PASSWORD in Railway, restart.
   const RESET = 'Recovery-2026x';
@@ -1050,11 +2002,12 @@ await step('admin password recovery', async () => {
 await B.app.close().catch(() => {});
 await stopServer().catch(() => {});
 pushService.close();
+waService.close();
 await s3.close().catch(() => {});
 await pool.end();
 
 const failed = results.filter((r) => !r.pass);
 fs.writeFileSync(path.join(out, 'sync-test.json'), JSON.stringify(results, null, 2));
-fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync end-to-end test (Phases 1–5)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
+fs.writeFileSync(path.join(out, 'SYNC-TEST.md'), ['# Cloud sync end-to-end test (Phases 1–6)', '', `Run ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC by \`scripts/sync-test.mjs\`: local Postgres 16, the clinic server, two desktop apps, a fake push service for a phone, and a Chromebook. ${results.length - failed.length}/${results.length} passed.`, '', '| Check | Result | Evidence |', '|---|---|---|', ...results.map((r) => `| ${r.criterion} | ${r.pass ? 'Pass' : '**Fail**'} | ${String(r.evidence).replace(/\|/g, '\\|')} |`), ''].join('\n'));
 console.log(`\n${results.length - failed.length}/${results.length} passed → ${out}`);
 process.exitCode = failed.length ? 1 : 0;

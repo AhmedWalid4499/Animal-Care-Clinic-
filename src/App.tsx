@@ -12,9 +12,24 @@ import { IntakeFormPage } from './screens/IntakeForm';
 import { Appointments } from './screens/Appointments';
 import { InvoicesList, InvoiceFormPage, InvoiceDetail, InvoicePrint } from './screens/Invoices';
 import { Settings } from './screens/Settings';
+import { MySettings } from './screens/MySettings';
+import { Reminders } from './screens/Reminders';
+import { VaccinationCertificate } from './screens/Certificate';
+import { HealthRecordPrint } from './screens/HealthRecord';
+import { Reports } from './screens/Reports';
+import { StockPage } from './screens/Stock';
+import { PrescriptionPrint, TemplatePrint } from './screens/Prescription';
+import { ConsentNew, ConsentView } from './screens/Consent';
+import { Ward } from './screens/Ward';
+import { DrugsPage, PricesPage, TemplatesPage, VaccinesPage } from './components/Sections';
 import { useEffect, type ReactNode } from 'react';
+import { OwnerCardPrint } from './components/OwnerPage';
+import { CaseReport, LabReportPrint, RequestForm } from './screens/Documents';
+import { LostFound, PetTag } from './screens/LostFound';
 import { ForcedPasswordChange } from './components/Account';
 import { onLive } from './sync/engine';
+import { PackagesPage } from './screens/Packages';
+import { SupplierDetail, SuppliersPage } from './screens/Suppliers';
 
 function AdminOnly({ children }: { children: ReactNode }) {
   const { isAdmin, t } = useApp();
@@ -25,6 +40,13 @@ function AdminOnly({ children }: { children: ReactNode }) {
 function ClinicalOnly({ children }: { children: ReactNode }) {
   const { canVisit, t } = useApp();
   if (!canVisit) return <div className="page"><p className="note warn">{t('visits.vetOnly')}</p></div>;
+  return <>{children}</>;
+}
+
+// Pre-diagnosis: Assistants too (they send the patient to the vet; the diagnosis stays with Admins and Doctors).
+function IntakeAllowed({ children }: { children: ReactNode }) {
+  const { canIntake, t } = useApp();
+  if (!canIntake) return <div className="page"><p className="note warn">{t('visits.vetOnly')}</p></div>;
   return <>{children}</>;
 }
 
@@ -44,23 +66,49 @@ export function App({ firstRun }: { firstRun: boolean }) {
           <Route path="owners/new" element={<OwnerFormPage />} />
           <Route path="owners/:id" element={<OwnerDetail />} />
           <Route path="owners/:id/edit" element={<OwnerFormPage />} />
+          <Route path="owners/:id/card" element={<OwnerCardPrint />} />
           <Route path="owners/:ownerId/pets/new" element={<PetFormPage />} />
           <Route path="pets/:id" element={<PetRecord />} />
           <Route path="pets/:id/edit" element={<PetFormPage />} />
           <Route path="pets/:id/print" element={<PetSummaryPrint />} />
+          <Route path="pets/:id/certificate" element={<VaccinationCertificate />} />
+          <Route path="pets/:id/health-record" element={<HealthRecordPrint />} />
+          <Route path="pets/:id/tag" element={<PetTag />} />
+          <Route path="lost-found" element={<LostFound />} />
+          <Route path="pets/:id/labs/:date" element={<LabReportPrint />} />
+          <Route path="pets/:id/report" element={<ClinicalOnly><CaseReport /></ClinicalOnly>} />
+          <Route path="pets/:id/xray-request" element={<ClinicalOnly><RequestForm kind="XRAY" /></ClinicalOnly>} />
+          <Route path="pets/:id/lab-request" element={<ClinicalOnly><RequestForm kind="LAB" /></ClinicalOnly>} />
+          <Route path="requests/:rid" element={<RequestForm />} />
+          <Route path="pets/:id/consent/new" element={<ConsentNew />} />
+          <Route path="consents/:id" element={<ConsentView />} />
           <Route path="visits/new" element={<ClinicalOnly><VisitPickPet /></ClinicalOnly>} />
           <Route path="pets/:petId/visits/new" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
           <Route path="visits/:visitId/edit" element={<ClinicalOnly><VisitFormPage /></ClinicalOnly>} />
-          <Route path="intake/new" element={<ClinicalOnly><VisitPickPet intake /></ClinicalOnly>} />
-          <Route path="pets/:petId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />
-          <Route path="visits/:visitId/intake" element={<ClinicalOnly><IntakeFormPage /></ClinicalOnly>} />
+          <Route path="visits/:visitId/prescription" element={<PrescriptionPrint />} />
+          <Route path="intake/new" element={<IntakeAllowed><VisitPickPet intake /></IntakeAllowed>} />
+          <Route path="pets/:petId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />
+          <Route path="visits/:visitId/intake" element={<IntakeAllowed><IntakeFormPage /></IntakeAllowed>} />
           <Route path="appointments" element={<Appointments />} />
+          <Route path="reminders" element={<Reminders />} />
           <Route path="invoices" element={<InvoicesList />} />
           <Route path="invoices/new" element={<InvoiceFormPage />} />
           <Route path="invoices/:id" element={<InvoiceDetail />} />
           <Route path="invoices/:id/edit" element={<InvoiceFormPage />} />
           <Route path="invoices/:id/print" element={<InvoicePrint />} />
+          <Route path="reports" element={<AdminOnly><Reports /></AdminOnly>} />
+          <Route path="ward" element={<Ward />} />
+          <Route path="stock" element={<StockPage />} />
+          <Route path="stock/vaccines" element={<AdminOnly><VaccinesPage /></AdminOnly>} />
+          <Route path="stock/drugs" element={<AdminOnly><DrugsPage /></AdminOnly>} />
+          <Route path="stock/suppliers" element={<AdminOnly><SuppliersPage /></AdminOnly>} />
+          <Route path="stock/suppliers/:id" element={<AdminOnly><SupplierDetail /></AdminOnly>} />
+          <Route path="prices" element={<AdminOnly><PricesPage /></AdminOnly>} />
+          <Route path="packages" element={<AdminOnly><PackagesPage /></AdminOnly>} />
+          <Route path="templates" element={<ClinicalOnly><TemplatesPage /></ClinicalOnly>} />
+          <Route path="templates/:id/print" element={<ClinicalOnly><TemplatePrint /></ClinicalOnly>} />
           <Route path="settings" element={<AdminOnly><Settings /></AdminOnly>} />
+          <Route path="account" element={<MySettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

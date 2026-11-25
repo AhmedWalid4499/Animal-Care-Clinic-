@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp, useQuery, type Theme } from '../lib/app';
-import { getSettings } from '../db/repo';
+import { getSettings, newFoundCount } from '../db/repo';
+import { userRoles } from '../db/types';
 import { Icon } from './ui';
-import { UpdateBanner } from './Updates';
+import { SideUpdateStatus, UpdateBanner, useUpdateState } from './Updates';
 import { SyncBadge } from './SyncBadge';
 import { signOutSync } from '../sync/engine';
 import { dropPushSubscription } from '../sync/notify';
-import { NotificationAnnouncer, NotificationBell } from './Notifications';
+import { NotificationAnnouncer, NotificationBell, RefusedAnnouncer } from './Notifications';
 import { ChangePasswordDialog } from './Account';
-import { InstallPrompt } from './InstallPrompt';
+import { InstallPrompt, LaunchHandler, useInstall } from './InstallPrompt';
+import { WardWatcher } from '../screens/Ward';
 
 export function Layout() {
   const { t, user, setUser, isAdmin, canVisit, locale, setLocale, theme, setTheme } = useApp();
@@ -17,17 +19,32 @@ export function Layout() {
   const nav = useNavigate();
   const { pathname } = useLocation();
   const [pwDialog, setPwDialog] = useState(false);
+  const inst = useInstall();
+  useSearchShortcut();
   // Each screen starts at the top and slides in (see .route-enter in styles.css).
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [pathname]);
-  const items = [
-    { to: '/', icon: 'home', label: t('nav.dashboard'), end: true },
-    { to: '/owners', icon: 'users', label: t('nav.owners') },
-    { to: '/appointments', icon: 'calendar', label: t('nav.appointments') },
-    { to: '/invoices', icon: 'receipt', label: t('nav.invoices') },
-    ...(isAdmin ? [{ to: '/settings', icon: 'settings', label: t('nav.settings') }] : []),
+  const updateReady = useUpdateState()?.status === 'ready';
+  // Sidebar groups (10 Nov 2026, "the UI is a bit confusing"): the day's work first, then the clinic's books and
+  // supplies, then Settings. The phone's bottom bar shows the items without `sideOnly`.
+  type Item = { to: string; icon: string; label: string; end?: boolean; also?: string[]; sideOnly?: boolean; group: 'day' | 'clinic' | 'system'; dot?: boolean; count?: number };
+  // Lost & found (schema v18): alerts from collar tags nobody has handled yet.
+  const foundNew = useQuery(newFoundCount);
+  const items: Item[] = [
+    { to: '/', icon: 'home', label: t('nav.dashboard'), end: true, group: 'day' },
+    { to: '/owners', icon: 'users', label: t('nav.owners'), group: 'day' },
+    { to: '/appointments', icon: 'calendar', label: t('nav.appointments'), group: 'day' },
+    { to: '/ward', icon: 'stethoscope', label: t('ward.title'), sideOnly: true, group: 'day' },
+    { to: '/lost-found', icon: 'paw', label: t('lostFound.title'), sideOnly: true, group: 'day', count: foundNew },
+    // Invoices, Reports and the Price list (the tabs on top of each move between them).
+    { to: '/invoices', icon: 'receipt', label: t('nav.pricing'), also: ['/reports', '/prices', '/packages'], group: 'clinic' },
+    { to: '/stock', icon: 'box', label: t('nav.stock'), sideOnly: true, group: 'clinic' },
+    ...(canVisit ? [{ to: '/templates', icon: 'clipboard', label: t('settings.templates'), sideOnly: true, group: 'clinic' as const }] : []),
+    // Admins: the clinic's full Settings. Everyone else: their own Settings (app updates, language, password).
+    { to: isAdmin ? '/settings' : '/account', icon: 'settings', label: t('nav.settings'), group: 'system', dot: updateReady },
   ];
+  const inSection = (i: { also?: string[] }) => !!i.also?.some((p) => pathname === p || pathname.startsWith(`${p}/`));
   const clinicName = locale === 'ar' ? settings.name_ar : settings.name_en;
   const nextTheme: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
   return (
@@ -51,10 +68,14 @@ export function Layout() {
             </div>
           )}
           <nav className="nav">
-            {items.map((i) => (
-              <NavLink key={i.to} to={i.to} end={i.end}>
-                <Icon name={i.icon} /> {i.label}
-              </NavLink>
+            {items.map((i, n) => (
+              <Fragment key={i.to}>
+                {(n === 0 || items[n - 1].group !== i.group) && (i.group === 'system' ? <hr className="nav-sep" /> : <div className="nav-group">{t(`nav.group.${i.group}`)}</div>)}
+                <NavLink to={i.to} end={i.end} className={({ isActive }) => (isActive || inSection(i) ? 'active' : '')}>
+                  <Icon name={i.icon} /> {i.label}{i.dot ? <span className="dot-badge" aria-label={t('updates.readyShort')} /> : null}
+                  {i.count ? <span className="nav-count">{i.count}</span> : null}
+                </NavLink>
+              </Fragment>
             ))}
           </nav>
           {canVisit && (
@@ -67,19 +88,24 @@ export function Layout() {
               <SyncBadge />
               <NotificationBell />
             </div>
+            <SideUpdateStatus />
             <div className="who">
               <b>{user?.name}</b>
-              <span className="muted">{t(`roles.${user?.role}`)}</span>
+              <span className="muted">{userRoles(user).map((r) => t(`roles.${r}`)).join(' · ')}</span>
             </div>
             <button className="linkbtn" onClick={() => setLocale(locale === 'ar' ? 'en' : 'ar')}>{t('app.language')}</button>
             <button className="linkbtn" onClick={() => setTheme(nextTheme[theme])}>
               {t('app.theme')}: {t(`app.theme${theme[0].toUpperCase()}${theme.slice(1)}`)}
             </button>
+            {inst.canPrompt && !inst.running && <button className="linkbtn" onClick={() => void inst.install()}>{t('install.button')}</button>}
             <button className="linkbtn" onClick={() => setPwDialog(true)}>{t('password.change')}</button>
             <button className="linkbtn" onClick={async () => { await dropPushSubscription(); signOutSync(); setUser(null); nav('/'); }}>{t('app.logout')}</button>
           </div>
         </aside>
         <NotificationAnnouncer />
+        <RefusedAnnouncer />
+        <WardWatcher />
+        <LaunchHandler />
         {pwDialog && <ChangePasswordDialog onClose={() => setPwDialog(false)} />}
         <div className="mobile-bell"><NotificationBell floating /></div>
         <main className="main">
@@ -90,8 +116,8 @@ export function Layout() {
         </main>
       </div>
       <nav className="bottom-nav no-print">
-        {items.map((i) => (
-          <NavLink key={i.to} to={i.to} end={i.end}>
+        {items.filter((i) => !('sideOnly' in i)).map((i) => (
+          <NavLink key={i.to} to={i.to} end={i.end} className={({ isActive }) => (isActive || inSection(i) ? 'active' : '')}>
             <Icon name={i.icon} />
             {i.label}
           </NavLink>
@@ -99,6 +125,39 @@ export function Layout() {
       </nav>
     </>
   );
+}
+
+/**
+ * Ctrl+K (⌘K on a Mac), or "/" when not typing: jump to the search box (Chromebook and laptop keyboards).
+ * Screens without a search box go to the dashboard's.
+ */
+function useSearchShortcut() {
+  const nav = useNavigate();
+  useEffect(() => {
+    const focusSearch = () => {
+      const box = document.querySelector<HTMLInputElement>('.main .searchbox input');
+      if (box) {
+        box.focus();
+        box.select();
+        return true;
+      }
+      return false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      const combo = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k';
+      if (!combo && !(e.key === '/' && !typing && !e.ctrlKey && !e.metaKey && !e.altKey)) return;
+      if (document.querySelector('.overlay')) return; // a dialog is open
+      e.preventDefault();
+      if (!focusSearch()) {
+        nav('/');
+        setTimeout(focusSearch, 80);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [nav]);
 }
 
 export function PageHead({ title, sub, crumb, children }: { title: string; sub?: string; crumb?: { to: string; label: string }; children?: React.ReactNode }) {

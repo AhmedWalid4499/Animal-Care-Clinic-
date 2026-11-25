@@ -11,7 +11,7 @@ import { PageHead } from '../components/Layout';
 import { SPECIES, VISIT_TYPES, type VisitType } from '../db/types';
 import type { T as TFunction } from '../lib/app';
 
-// Calendar hours. The public booking page offers slots in the same hours (server/booking.mjs).
+// Calendar hours (what the day view shows). Online booking offers the clinic's opening times instead: src/lib/clinic-info.json → hours.
 const OPEN_HOUR = 9;
 const CLOSE_HOUR = 22;
 
@@ -23,11 +23,14 @@ export const apptWaText = (key: string, a: ApptRow, clinic: string, t: TFunction
 
 export function Appointments() {
   const { t, fmt } = useApp();
+  const go = useNavigate();
   const [sp, setSp] = useSearchParams();
   const view = (sp.get('view') as 'day' | 'week') || 'day';
   const date = sp.get('date') || today();
   const openId = sp.get('open');
-  const [editing, setEditing] = useState<{ id?: string; at?: string } | null>(openId ? { id: openId } : null);
+  // ?new=1 (the dashboard's "Book appointment"): open a new booking straight away.
+  const fresh = () => ({ at: `${date}T${String(Math.max(OPEN_HOUR, new Date().getHours() + 1)).padStart(2, '0')}:00` });
+  const [editing, setEditing] = useState<{ id?: string; at?: string } | null>(openId ? { id: openId } : sp.get('new') ? fresh() : null);
   // A notification clicked while this screen is already open changes ?open= without remounting it.
   useEffect(() => {
     if (openId) setEditing({ id: openId });
@@ -46,6 +49,9 @@ export function Appointments() {
   return (
     <div className="page">
       <PageHead title={t('appointments.title')}>
+        <button className="btn" onClick={() => go('/reminders')}>
+          <Icon name="chat" /> {t('reminders.title')}
+        </button>
         <button className="btn primary" onClick={() => setEditing({ at: `${date}T${String(Math.max(OPEN_HOUR, new Date().getHours() + 1)).padStart(2, '0')}:00` })}>
           <Icon name="plus" /> {t('appointments.new')}
         </button>

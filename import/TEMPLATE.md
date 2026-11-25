@@ -13,14 +13,15 @@ Get a ready-made file from the app: **Settings → Data & backup → Download te
 | `owner_address` | | Heliopolis, Cairo | |
 | `owner_notes` | | Prefers WhatsApp | |
 | `pet_name` | | Luna | Empty = owner only |
-| `species` | | CAT | DOG, CAT, BIRD, RABBIT, REPTILE, OTHER (or كلب، قطة، طائر، أرنب، زواحف) |
+| `species` | | CAT | DOG, CAT, BIRD, RABBIT, REPTILE, HAMSTER, TURTLE, OTHER (or كلب، قطة، طائر، أرنب، زواحف، هامستر، سلحفاة) |
 | `breed` | | Persian | |
 | `sex` | | FEMALE | MALE / FEMALE (or ذكر / أنثى); empty = unknown |
 | `is_neutered` | | yes | yes / no |
 | `date_of_birth` | | 2022-05-14 | `YYYY-MM-DD` or `DD/MM/YYYY` |
 | `dob_is_estimate` | | yes | yes when the age is a guess |
 | `color` | | White | |
+| `eye_color` | | BLUE | Dogs and cats only (Vision tab). DARK_BROWN, BROWN, AMBER, HAZEL, GOLD, COPPER, GREEN, BLUE, ODD (two different colours), or in words: dark brown, yellow, odd eyes… / بني غامق، بني، كهرماني، عسلي، ذهبي، أصفر، نحاسي، أخضر، أزرق، لونين. Empty = not set; an unknown colour is left empty and listed after the import |
 | `microchip_no` | | 818000001234567 | Must be unique; duplicates are skipped and listed |
 | `pet_notes` | | Allergic to penicillin | |
 
-After the import the app shows how many owners and pets were created and lists any skipped rows by row number. Acceptance check (SCOPE §7.9): imported counts match the sheet's row count.
+After the import the app shows how many owners and pets were created and lists any skipped rows by row number, then any rows imported with a note (e.g. an eye colour it did not recognise). Acceptance check (SCOPE §7.9): imported counts match the sheet's row count.

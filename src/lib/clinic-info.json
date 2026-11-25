@@ -1,0 +1,25 @@
+{
+  "_note": "The clinic's public details (Ahmed, 14 Nov 2026), read by the app (QR on every printed document) and the clinic server (the /clinic page and the owner page's Pay now). site = the clinic server; a device not linked to a server uses it for the QR.",
+  "site": "https://app.animalcarecliniceg.com",
+  "headedBy": {
+    "en": "Dr. Waleed El-Bourgi",
+    "ar": "د. وليد البرجي"
+  },
+  "instapay": "https://ipn.eg/S/waleedelbourgi/instapay/8yJQ5M",
+  "hours": {
+    "_note": "Online booking on the owner page (Ahmed, 15 Nov 2026). days: 0 = Sunday … 6 = Saturday; clinic time (Africa/Cairo).",
+    "days": [
+      6,
+      0,
+      1,
+      2,
+      3
+    ],
+    "from": "17:00",
+    "to": "22:00",
+    "slotMin": 20,
+    "daysAhead": 14,
+    "minNoticeMin": 60,
+    "maxUpcoming": 3
+  }
+}

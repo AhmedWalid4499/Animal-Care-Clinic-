@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { findDuplicatePhone, getOwner, getSettings, saveOwner, searchOwners, type OwnerInput } from '../db/repo';
 import { telUrl } from '../lib/whatsapp';
-import { Dialog, Field, Icon, StatusBadge, WaButton } from '../components/ui';
+import { Dialog, Field, Icon, OwnerCode, StatusBadge, WaButton } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import type { Owner } from '../db/types';
 
@@ -53,7 +53,7 @@ export function OwnersList() {
             {rows.map((o) => (
               <tr key={o.id} className={`link ${o.status === 'ARCHIVED' ? 'greyed' : ''}`} onClick={() => nav(`/owners/${o.id}`)}>
                 <td>
-                  <b>{o.full_name}</b> {o.status === 'ARCHIVED' && <StatusBadge ns="owners" value="archived" />}
+                  <b>{o.full_name}</b> <OwnerCode code={o.code} ownerId={o.id} /> {o.status === 'ARCHIVED' && <StatusBadge ns="owners" value="archived" />}
                 </td>
                 <td className="ltr num">{o.phone}</td>
                 <td className="hide-sm muted">{o.pet_names ?? '—'}</td>
@@ -124,6 +124,11 @@ export function OwnerFormPage() {
           <Field label={t('common.notes')} className="span2" optional>
             <textarea value={f.notes ?? ''} onChange={set('notes')} />
           </Field>
+          <Field label={t('waAuto.tab')} hint={t('waAuto.optOutHint')} className="span2" group>
+            <label className="check">
+              <input type="checkbox" checked={!!f.wa_opt_out} onChange={(e) => setF({ ...f, wa_opt_out: e.target.checked })} /> {t('waAuto.optOut')}
+            </label>
+          </Field>
         </div>
         <div className="actionbar">
           <button type="button" className="btn" onClick={() => nav(-1)}>{t('common.cancel')}</button>
@@ -150,5 +155,5 @@ export function OwnerFormPage() {
 }
 
 function pick(o: Owner): OwnerInput {
-  return { full_name: o.full_name, phone: o.phone, whatsapp: o.whatsapp, email: o.email, address: o.address, national_id: o.national_id, notes: o.notes };
+  return { full_name: o.full_name, phone: o.phone, whatsapp: o.whatsapp, email: o.email, address: o.address, national_id: o.national_id, notes: o.notes, wa_opt_out: !!o.wa_opt_out };
 }

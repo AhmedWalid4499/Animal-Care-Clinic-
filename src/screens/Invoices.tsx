@@ -7,7 +7,8 @@ import {
 } from '../db/repo';
 import { fromLocalInput, nowLocalInput } from '../lib/dates';
 import { platform } from '../lib/platform';
-import { Confirm, Dialog, Field, Icon, StatusBadge, WaButton } from '../components/ui';
+import { Confirm, Dialog, Field, Icon, SavePdfButton, StatusBadge, WaButton, SheetAddress } from '../components/ui';
+import { PricingTabs } from '../components/Sections';
 import { PageHead } from '../components/Layout';
 import { PAYMENT_METHODS, type InvoiceStatus, type PaymentMethod } from '../db/types';
 
@@ -24,6 +25,7 @@ export function InvoicesList() {
   const sum = rows.filter((r) => r.status !== 'VOID').reduce((s, r) => s + (r.total - r.paid), 0);
   return (
     <div className="page">
+      <PricingTabs />
       <PageHead title={t('invoices.title')} sub={`${rows.length} · ${t('invoices.balance')} ${fmt.money(sum)}`}>
         <button className="btn primary" onClick={() => nav('/invoices/new')}><Icon name="plus" /> {t('invoices.new')}</button>
       </PageHead>
@@ -352,13 +354,13 @@ export function InvoicePrint() {
       <div className="row no-print" style={{ marginBottom: 14 }}>
         <button className="btn" onClick={() => nav(-1)}>{t('app.back')}</button>
         <button className="btn primary" onClick={() => platform.print()}><Icon name="print" /> {t('common.print')}</button>
+        <SavePdfButton owner={inv.owner_name} pet={inv.pet_name} doc={`${t('invoices.receipt')} ${inv.number}`} />
       </div>
       <div className="sheet-wrap">
         <div className="sheet a5">
           <div className="head">
             <div>
               <b style={{ fontSize: 15 }}>{locale === 'ar' ? s.name_ar : s.name_en}</b>
-              <div style={{ fontSize: 10 }}>{s.address}</div>
               {(s.phone || s.whatsapp) && <div style={{ fontSize: 10 }} className="ltr">{[...new Set([s.phone, s.whatsapp].filter(Boolean))].join(' · ')}</div>}
             </div>
             {s.logo_url && <img src={s.logo_url} alt="" />}
@@ -392,6 +394,7 @@ export function InvoicePrint() {
           </table>
           <div style={{ marginTop: 8, fontSize: 11 }}><b>{t(`invoiceStatus.${inv.status}`)}</b></div>
           {s.receipt_footer && <div className="foot">{s.receipt_footer}</div>}
+          <SheetAddress address={s.address} />
         </div>
       </div>
     </div>

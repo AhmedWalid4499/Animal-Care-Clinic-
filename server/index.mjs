@@ -1,6 +1,7 @@
 // Animal Care Clinic sync server (docs/CLOUD-PLAN.md). Runs on Railway (railway.json) or locally:
 //   DATABASE_URL=postgres://… ADMIN_EMAIL=… ADMIN_PASSWORD=… node server/index.mjs
 // Serves the web app from dist-cloud/, the sync API under /api, and live change pings on /api/live.
+import { CLINIC_ADDRESS, OLD_ADDRESS as OLD_PLACEHOLDER } from './clinic.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -9,11 +10,16 @@ import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { WebSocketServer } from 'ws';
 import { createPool, migrate } from './db.mjs';
-import { applyChanges, bootstrapRows, pullSince } from './sync.mjs';
+import { applyChanges, assignOwnerCodes, bootstrapRows, pullSince } from './sync.mjs';
 import { sendPush, setupPush } from './notify.mjs';
 import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backup.mjs';
 import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
-import { publicApi } from './booking.mjs';
+import { handleOwnerPage, ownerPagesChanged } from './portal.mjs';
+import { publicBookingApi } from './booking.mjs';
+import { handleTag } from './tags.mjs';
+import { handleClinicPage } from './clinic-page.mjs';
+import { handleLab } from './lab.mjs';
+import { runReminders, scheduleWhatsApp, sendTest, waStatus } from './whatsapp.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -59,6 +65,20 @@ async function bootstrapServer() {
     }
   }
   await adminRecovery(clinic.id, email);
+  // The clinic's street address (14 Nov 2026) replaces the old seeded placeholder; devices receive it with their next pull.
+  const OLD_ADDRESS = OLD_PLACEHOLDER;
+  const ADDRESS = CLINIC_ADDRESS;
+  const now = new Date().toISOString();
+  const placeholder = await pool.query("SELECT clinic_id, versions FROM rows WHERE tbl = 'clinic_settings' AND NOT deleted AND (COALESCE(data->>'address', '') IN ('', $1))", [OLD_ADDRESS]);
+  for (const r of placeholder.rows) {
+    await pool.query("UPDATE rows SET data = data || jsonb_build_object('address', $2::text, 'updated_at', $3::text), versions = $4, seq = nextval('change_seq') WHERE clinic_id = $1 AND tbl = 'clinic_settings'",
+      [r.clinic_id, ADDRESS, now, { ...r.versions, address: `${now}|server`, updated_at: `${now}|server` }]);
+    console.log('clinic address set');
+  }
+  for (const { id } of (await pool.query('SELECT id FROM clinics')).rows) {
+    const n = await assignOwnerCodes(pool, id);
+    if (n) console.log(`gave ${n} owner(s) a customer ID`);
+  }
 }
 
 /**
@@ -137,7 +157,7 @@ async function auth(req) {
   const s = (await pool.query('UPDATE sessions SET last_seen = now() WHERE token_hash = $1 RETURNING *', [sha256(token)])).rows[0];
   if (!s) return null;
   const u = (await pool.query("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND id = $2 AND NOT deleted", [s.clinic_id, s.user_id])).rows[0];
-  if (!u || !Number(u.data.is_active)) return null;
+  if (!u || !Number(u.data.is_active) || u.data.role === 'LAB') return null;
   return { clinicId: s.clinic_id, user: u.data, deviceId: s.device_id, tokenHash: s.token_hash };
 }
 
@@ -190,13 +210,13 @@ function deliver(clinicId, notifications) {
 // ---------------------------------------------------------------- routes
 async function api(req, res, url) {
   const p = url.pathname;
-  // The public booking page (no sign-in): free slots and new requests.
+  // The public booking page /book (no sign-in, server/booking.mjs): opening times and guest requests.
   if (p.startsWith('/api/public/')) {
-    return publicApi(pool, req, res, url, {
+    return publicBookingApi(pool, req, res, url, {
       send, readJson,
-      after: (clinicId, seq, notifications) => {
-        broadcast(clinicId, { type: 'changed', seq });
-        deliver(clinicId, notifications);
+      after: (clinicId, notifications) => {
+        broadcast(clinicId, { type: 'changed' }); // devices pull the request
+        deliver(clinicId, notifications); // bell, tray, phones
       },
     });
   }
@@ -205,7 +225,8 @@ async function api(req, res, url) {
     if (tooManyTries(ip)) return send(res, 429, { error: 'Too many attempts. Wait a few minutes.' });
     const { email, password, deviceId, deviceName } = await readJson(req);
     const found = email && password ? await findUserByEmail(String(email).trim()) : null;
-    if (!found || !Number(found.data.is_active) || !bcrypt.compareSync(String(password), String(found.data.password_hash))) {
+    // A lab account (schema v24) signs in only to the lab extranet (/lab), never here: it would receive every record.
+    if (!found || found.data.role === 'LAB' || !Number(found.data.is_active) || !bcrypt.compareSync(String(password), String(found.data.password_hash))) {
       failedTry(ip);
       return send(res, 401, { error: 'Wrong email or password' });
     }
@@ -231,7 +252,10 @@ async function api(req, res, url) {
     if (!Array.isArray(changes) || changes.length > 2000) return send(res, 400, { error: 'changes must be an array of at most 2000' });
     const seenSeq = Number.isFinite(Number(cursor)) && cursor !== undefined && cursor !== null ? Number(cursor) : null;
     const r = await applyChanges(pool, { clinicId: s.clinicId, user: s.user, deviceId: s.deviceId, changes, seenSeq });
-    if (r.seq) broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
+    if (r.seq) {
+      broadcast(s.clinicId, { type: 'changed', seq: r.seq }, s.deviceId);
+      ownerPagesChanged(s.clinicId); // owners' pages open on their phones fetch again (Phase 6)
+    }
     deliver(s.clinicId, r.notifications);
     await endSessionsAfter(s, r.endSessions);
     return send(res, 200, { rejected: r.rejected, reverts: r.reverts, failed: r.failed, seq: r.seq });
@@ -247,7 +271,11 @@ async function api(req, res, url) {
     if (!Array.isArray(rows)) return send(res, 400, { error: 'rows must be an array' });
     const r = await bootstrapRows(pool, { clinicId: s.clinicId, deviceId: s.deviceId, rows, done: !!done });
     if (r.error) return send(res, 409, r);
-    if (done) broadcast(s.clinicId, { type: 'changed' });
+    if (done) {
+      await assignOwnerCodes(pool, s.clinicId);
+      broadcast(s.clinicId, { type: 'changed' });
+      ownerPagesChanged(s.clinicId);
+    }
     return send(res, 200, r);
   }
   if (p === '/api/notifications' && req.method === 'GET') {
@@ -294,6 +322,22 @@ async function api(req, res, url) {
       if (!bytes) return send(res, 404, { error: 'file not on the server (yet)' });
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length, 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Server-Time': new Date().toISOString(), ...cors });
       return res.end(bytes);
+    }
+  }
+  // Automatic WhatsApp reminders (schema v22, server/whatsapp.mjs): status, "Send due reminders now", a test (Admin only).
+  if (p.startsWith('/api/whatsapp/')) {
+    if (s.user.role !== 'ADMIN') return send(res, 403, { error: 'admins only' });
+    if (p === '/api/whatsapp/status' && req.method === 'GET') return send(res, 200, await waStatus(pool, s.clinicId));
+    if (p === '/api/whatsapp/run' && req.method === 'POST') {
+      const r = await runReminders(pool, s.clinicId, { force: true });
+      if (r.changed) broadcast(s.clinicId, { type: 'changed' });
+      return send(res, 200, { ...r, status: await waStatus(pool, s.clinicId) });
+    }
+    if (p === '/api/whatsapp/test' && req.method === 'POST') {
+      const { phone } = await readJson(req);
+      const r = await sendTest(pool, s.clinicId, typeof phone === 'string' ? phone : '');
+      broadcast(s.clinicId, { type: 'changed' });
+      return send(res, 200, r);
     }
   }
   // Backups (Phase 4): status, "Back up now", and a copy to keep (Admin only).
@@ -380,7 +424,36 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+    // The public booking page for people with no owner page yet (server/book.html). Public.
     if (url.pathname === '/book' || url.pathname === '/book/') return serveBookingPage(res);
+    // An owner's page from their QR code (server/portal.mjs): public, the link itself is the key.
+    if ((url.pathname.startsWith('/o/') || url.pathname.startsWith('/o-font/')) && (await handleOwnerPage(pool, req, res, url, {
+      // An owner booked online (server/booking.mjs): devices pull the appointment, open owner pages refresh, staff are told.
+      afterBooking: (clinicId, notifications) => {
+        broadcast(clinicId, { type: 'changed' });
+        ownerPagesChanged(clinicId);
+        deliver(clinicId, notifications);
+      },
+    }))) return;
+    // The lab extranet (server/lab.mjs): the lab doctor's own sign-in; uploads reach every device, the owner's page and the vets.
+    if ((url.pathname === '/lab' || url.pathname.startsWith('/lab/')) && (await handleLab(pool, req, res, url, {
+      afterUpload: (clinicId, notifications, fileId) => {
+        broadcast(clinicId, { type: 'changed' });
+        if (fileId) broadcast(clinicId, { type: 'files', id: fileId });
+        ownerPagesChanged(clinicId);
+        deliver(clinicId, notifications);
+      },
+    }))) return;
+    // The clinic's own page (server/clinic-page.mjs): the QR on every printed document opens it. Public.
+    if (url.pathname.startsWith('/clinic') && (await handleClinicPage(pool, req, res, url))) return;
+    // A pet's collar tag (server/tags.mjs): public; a finder's Alert becomes a found report everyone at the clinic sees.
+    if (url.pathname.startsWith('/t/') && (await handleTag(pool, req, res, url, {
+      afterReport: (clinicId, notifications) => {
+        broadcast(clinicId, { type: 'changed' }); // devices pull the report into Lost & found
+        ownerPagesChanged(clinicId); // the owner's open page shows the alert
+        deliver(clinicId, notifications); // bell, tray, phones
+      },
+    }))) return;
     return serveStatic(req, res, url);
   } catch (e) {
     console.error(req.method, url.pathname, e);
@@ -425,6 +498,7 @@ bootstrapServer()
     const st = storageInfo();
     if (!st.persistent) console.warn(`FILES ARE NOT ON A VOLUME (${st.dir}): X-rays and backups are lost at the next deploy. Railway: add a Volume mounted at /data and set FILES_DIR=/data.`);
     scheduleBackups(pool);
+    scheduleWhatsApp(pool, (clinicId) => broadcast(clinicId, { type: 'changed' }));
     server.listen(PORT, () => console.log(`clinic server on :${PORT} (web app from ${STATIC_DIR}, files in ${st.dir})`));
   })
   .catch((e) => {

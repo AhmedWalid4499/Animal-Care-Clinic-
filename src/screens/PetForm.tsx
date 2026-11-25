@@ -4,7 +4,8 @@ import { useApp, useQuery } from '../lib/app';
 import { getOwner, getPet, microchipTaken, savePet, searchOwners, type PetInput } from '../db/repo';
 import { Field, PetAvatar, imageToDataUrl } from '../components/ui';
 import { PageHead } from '../components/Layout';
-import { PET_STATUS, SEXES, SPECIES, type Pet } from '../db/types';
+import { ALERT_FLAGS, EYE_COLORS, PET_STATUS, SEXES, SPECIES, type EyeColor, type Pet } from '../db/types';
+import { eyeHex } from '../lib/vision';
 import { today } from '../lib/dates';
 
 export function PetFormPage() {
@@ -15,7 +16,7 @@ export function PetFormPage() {
   const [f, setF] = useState<PetInput>(() =>
     existing
       ? strip(existing)
-      : { owner_id: ownerId!, name: '', species: 'DOG', breed: '', sex: 'UNKNOWN', is_neutered: 0, date_of_birth: '', dob_is_estimate: 0, color: '', microchip_no: '', photo_url: null, status: 'ACTIVE', deceased_at: null, notes: '' },
+      : { owner_id: ownerId!, name: '', species: 'DOG', breed: '', sex: 'UNKNOWN', is_neutered: 0, date_of_birth: '', dob_is_estimate: 0, color: '', eye_color: null, microchip_no: '', photo_url: null, status: 'ACTIVE', deceased_at: null, notes: '', alert_flags: null, alert_note: '' },
   );
   const [ownerQ, setOwnerQ] = useState('');
   const owners = useQuery(() => (ownerQ.trim().length >= 2 ? searchOwners(ownerQ, 'ACTIVE').slice(0, 8) : []), [ownerQ]);
@@ -78,6 +79,17 @@ export function PetFormPage() {
           <Field label={t('pets.color')} optional>
             <input type="text" value={f.color ?? ''} onChange={(e) => set('color', e.target.value)} />
           </Field>
+          {(f.species === 'DOG' || f.species === 'CAT') && (
+            <Field label={t('pets.eyeColor')} optional hint={t('pets.eyeColorHint')}>
+              <div className="row nowrap" style={{ gap: 8 }}>
+                <span className="eye-swatch" style={{ background: f.eye_color ? eyeHex(f.eye_color, 'OD') : 'transparent' }} data-odd={f.eye_color === 'ODD' ? '' : undefined} aria-hidden />
+                <select value={f.eye_color ?? ''} onChange={(e) => set('eye_color', (e.target.value || null) as EyeColor | null)}>
+                  <option value="">—</option>
+                  {EYE_COLORS.map((c) => <option key={c} value={c}>{t(`eyeColor.${c}`)}</option>)}
+                </select>
+              </div>
+            </Field>
+          )}
           <Field label={t('pets.microchip')} optional error={chipErr}>
             <input type="text" className="ltr" value={f.microchip_no ?? ''} onChange={(e) => set('microchip_no', e.target.value)} inputMode="numeric" />
           </Field>
@@ -103,6 +115,29 @@ export function PetFormPage() {
               )}
             </Field>
           )}
+          <Field label={t('alerts.title')} className="span2 alerts-field" hint={t('alerts.hint')} optional group>
+            <div className="row">
+              {ALERT_FLAGS.map((fl) => {
+                const on = (f.alert_flags ?? '').split(',').includes(fl);
+                return (
+                  <label key={fl} className="check">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => {
+                        const cur = new Set((f.alert_flags ?? '').split(',').filter(Boolean));
+                        if (e.target.checked) cur.add(fl);
+                        else cur.delete(fl);
+                        set('alert_flags', ALERT_FLAGS.filter((x) => cur.has(x)).join(',') || null);
+                      }}
+                    />{' '}
+                    {t(`alerts.flag.${fl}`)}
+                  </label>
+                );
+              })}
+            </div>
+            <input type="text" value={f.alert_note ?? ''} placeholder={t('alerts.notePlaceholder')} aria-label={t('alerts.note')} onChange={(e) => set('alert_note', e.target.value)} />
+          </Field>
           <Field label={t('common.notes')} className="span2" optional>
             <textarea value={f.notes ?? ''} onChange={(e) => set('notes', e.target.value)} />
           </Field>
@@ -118,6 +153,6 @@ export function PetFormPage() {
 
 function strip(p: Pet): PetInput {
   const rest: Record<string, unknown> = { ...p };
-  for (const k of ['id', 'owner_name', 'owner_phone', 'owner_whatsapp', 'created_at', 'updated_at']) delete rest[k];
+  for (const k of ['id', 'owner_name', 'owner_phone', 'owner_whatsapp', 'owner_code', 'tag_token', 'created_at', 'updated_at', 'recall_sent_at']) delete rest[k];
   return rest as unknown as PetInput;
 }

@@ -38,10 +38,12 @@
   .day { flex: 0 0 auto; scroll-snap-align: start; min-width: 64px; text-align: center; border: 1px solid var(--rule-2); background: var(--bg); color: var(--ink); border-radius: var(--radius); padding: 8px 6px; font: inherit; cursor: pointer; }
   .day small { display: block; color: var(--ink-3); font-size: 12px; }
   .day b { display: block; font-size: 18px; }
+  .day:disabled { opacity: .4; cursor: default; }
   .day[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .day[aria-pressed="true"] small { color: var(--accent); }
   .slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
   .slot { border: 1px solid var(--rule-2); background: var(--bg); color: var(--ink); border-radius: var(--radius); padding: 10px 4px; font: inherit; font-variant-numeric: tabular-nums; cursor: pointer; direction: ltr; }
+  .slot:disabled { color: var(--ink-3); background: var(--bg-2); border-style: dashed; text-decoration: line-through; cursor: default; }
   .slot[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
   .empty { color: var(--ink-3); padding: 12px 0; }
   label.f { display: block; margin-bottom: 14px; }
@@ -86,6 +88,7 @@
     <h2><span class="n">2</span><span data-t="pickTime"></span></h2>
     <div class="slots" id="slots" role="group"></div>
     <p class="empty" id="noSlots" hidden data-t="noSlots"></p>
+    <p class="note" id="noDays" hidden></p>
 
     <h2><span class="n">3</span><span data-t="details"></span></h2>
     <label class="f"><span data-t="name"></span><input id="name" name="name" autocomplete="name" maxlength="80" required></label>
@@ -120,15 +123,15 @@
   const T = {
     ar: {
       subtitle: 'احجز موعداً للكشف', pickDay: 'اختر اليوم', pickTime: 'اختر الوقت', details: 'بياناتك',
-      noSlots: 'لا توجد مواعيد متاحة في هذا اليوم. جرّب يوماً آخر.', name: 'الاسم', phone: 'رقم الموبايل (واتساب)',
+      noSlots: 'كل المواعيد في هذا اليوم محجوزة. جرّب يوماً آخر.', noDays: 'لا توجد مواعيد متاحة في الأسبوعين القادمين. اتصل بالعيادة', name: 'الاسم', phone: 'رقم الموبايل (واتساب)',
       petName: 'اسم الحيوان', species: 'النوع', optional: '(اختياري)', reason: 'سبب الزيارة', notes: 'ملاحظات',
       send: 'إرسال طلب الحجز', sending: 'جارٍ الإرسال…', pickFirst: 'اختر اليوم والوقت', sentTitle: 'تم إرسال طلبك',
       sentBody: 'ستراجع العيادة الطلب وتؤكد لك الموعد على واتساب أو بالهاتف. الموعد غير مؤكد حتى تتواصل معك العيادة.',
       again: 'حجز موعد آخر', closed: 'الحجز عبر الإنترنت غير متاح الآن. للحجز اتصل بالعيادة',
       emergency: 'للحالات الطارئة لا تحجز هنا، اتصل بالعيادة مباشرة', loadError: 'تعذّر الاتصال. تأكد من الإنترنت وأعد تحميل الصفحة.',
       errors: {
-        name: 'اكتب اسمك.', phone: 'اكتب رقم موبايل صحيح.', slot: 'اختر اليوم والوقت.', taken: 'هذا الوقت حُجز للتو. اختر وقتاً آخر.',
-        phone_limit: 'لديك بالفعل طلبات حجز قادمة بهذا الرقم. اتصل بالعيادة لتغييرها.', too_many: 'محاولات كثيرة. حاول بعد قليل.',
+        name: 'اكتب اسمك.', phone: 'اكتب رقم موبايل صحيح.', time: 'اختر اليوم والوقت من المواعيد المتاحة.', taken: 'هذا الوقت حُجز للتو. اختر وقتاً آخر.',
+        phone_limit: 'لديك بالفعل طلبات حجز قادمة بهذا الرقم. اتصل بالعيادة لتغييرها.', too_many_tries: 'محاولات كثيرة. حاول بعد قليل.',
         closed: 'الحجز عبر الإنترنت غير متاح الآن.', full: 'العيادة لديها طلبات كثيرة الآن. اتصل بالعيادة للحجز.', other: 'حدث خطأ. حاول مرة أخرى.',
       },
       types: { CHECKUP: 'كشف', VACCINATION: 'تطعيم', FOLLOW_UP: 'متابعة', OTHER: 'أخرى' },
@@ -137,15 +140,15 @@
     },
     en: {
       subtitle: 'Book a visit', pickDay: 'Choose a day', pickTime: 'Choose a time', details: 'Your details',
-      noSlots: 'No free times on this day. Try another day.', name: 'Your name', phone: 'Mobile number (WhatsApp)',
+      noSlots: 'Every time on this day is booked. Try another day.', noDays: 'No free times in the next two weeks. Please call the clinic', name: 'Your name', phone: 'Mobile number (WhatsApp)',
       petName: 'Pet’s name', species: 'Species', optional: '(optional)', reason: 'Reason for visit', notes: 'Notes',
       send: 'Send booking request', sending: 'Sending…', pickFirst: 'Choose a day and a time', sentTitle: 'Request sent',
       sentBody: 'The clinic will review it and confirm on WhatsApp or by phone. The time is not confirmed until the clinic contacts you.',
       again: 'Book another visit', closed: 'Online booking is not available right now. To book, call the clinic',
       emergency: 'For an emergency don’t book here, call the clinic', loadError: 'Could not connect. Check the internet and reload the page.',
       errors: {
-        name: 'Enter your name.', phone: 'Enter a valid mobile number.', slot: 'Choose a day and a time.', taken: 'That time was just taken. Please choose another.',
-        phone_limit: 'You already have upcoming requests with this number. Call the clinic to change them.', too_many: 'Too many attempts. Try again a little later.',
+        name: 'Enter your name.', phone: 'Enter a valid mobile number.', time: 'Choose a day and one of the free times.', taken: 'That time was just taken. Please choose another.',
+        phone_limit: 'You already have upcoming requests with this number. Call the clinic to change them.', too_many_tries: 'Too many attempts. Try again a little later.',
         closed: 'Online booking is not available right now.', full: 'The clinic has many requests right now. Please call to book.', other: 'Something went wrong. Please try again.',
       },
       types: { CHECKUP: 'Check-up', VACCINATION: 'Vaccination', FOLLOW_UP: 'Follow-up', OTHER: 'Other' },
@@ -179,7 +182,9 @@
       fillSelect($('type'), info.types, L().types, $('type').value || 'CHECKUP');
       fillSelect($('species'), ['', ...info.species], L().species_, $('species').value);
       renderDays();
-      renderSlots(lastSlots);
+      renderSlots();
+      $('noDays').innerHTML = tel(L().noDays);
+      $('noDays').hidden = (info.days || []).some((x) => x.slots.some((s) => s.free));
     }
     updateBar();
   }
@@ -193,53 +198,61 @@
     }
     sel.value = value;
   }
-  function addDays(d, n) { const x = dateAt(d); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); }
+  const timeFmt = () => new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const dayInfo = (d) => (info?.days || []).find((x) => x.date === d);
   function renderDays() {
     const box = $('days');
     box.innerHTML = '';
-    for (let d = info.today; d <= info.last; d = addDays(d, 1)) {
+    for (const { date: d, slots } of info.days || []) {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'day'; b.dataset.d = d;
       b.setAttribute('aria-pressed', String(d === day));
-      const wd = d === info.today ? L().today : new Intl.DateTimeFormat(L().locale, { weekday: 'short', timeZone: 'UTC' }).format(dateAt(d));
+      b.disabled = !slots.some((x) => x.free);
+      const wd = new Intl.DateTimeFormat(L().locale, { weekday: 'short', timeZone: 'UTC' }).format(dateAt(d));
       const mo = new Intl.DateTimeFormat(L().locale, { month: 'short', timeZone: 'UTC' }).format(dateAt(d));
       b.innerHTML = `<small>${esc(wd)}</small><b>${Number(d.slice(8))}</b><small>${esc(mo)}</small>`;
       b.onclick = () => pickDay(d);
       box.appendChild(b);
     }
   }
-  let lastSlots = null;
-  function renderSlots(list) {
+  function renderSlots() {
     const box = $('slots');
     box.innerHTML = '';
-    $('noSlots').hidden = !(list && list.length === 0);
-    for (const s of list || []) {
+    const list = day ? dayInfo(day)?.slots || [] : [];
+    $('noSlots').hidden = !(day && !list.some((x) => x.free));
+    for (const s of list) {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'slot'; b.textContent = s;
-      b.setAttribute('aria-pressed', String(s === time));
-      b.onclick = () => { time = s; renderSlots(list); updateBar(); };
+      b.type = 'button'; b.className = 'slot'; b.textContent = timeFmt().format(new Date(s.at));
+      b.disabled = !s.free;
+      b.setAttribute('aria-pressed', String(s.at === time));
+      b.onclick = () => { time = s.at; renderSlots(); updateBar(); };
       box.appendChild(b);
     }
   }
-  async function pickDay(d) {
-    day = d; time = null; lastSlots = null;
-    renderDays(); renderSlots(null); updateBar();
-    try {
-      const r = await fetch(`/api/public/slots?date=${d}`);
-      const j = await r.json();
-      if (day !== d) return;
-      if (!r.ok) return showErr(j.error);
-      lastSlots = j.slots;
-      renderSlots(j.slots);
-    } catch { showErr('other'); }
+  function pickDay(d) {
+    day = d; time = null;
+    renderDays(); renderSlots(); updateBar();
   }
-  function fmtWhen(d, t) {
-    return `${new Intl.DateTimeFormat(L().locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(dateAt(d))} · ${t}`;
+  /** Load the clinic's details and the next two weeks' times (again after "taken", so the page shows what is free now). */
+  async function load() {
+    const j = await (await fetch('/api/public/booking')).json();
+    info = j;
+    if (j.logo) { $('logo').src = j.logo; $('logo').hidden = false; }
+    if (day && !dayInfo(day)) day = null;
+    if (!day) day = (j.days || []).find((x) => x.slots.some((s) => s.free))?.date ?? null;
+    if (time && !dayInfo(day)?.slots.some((s) => s.at === time && s.free)) time = null;
+    applyLang();
+    return j;
+  }
+  function fmtWhen(at) {
+    const d = new Date(at);
+    const date = new Intl.DateTimeFormat(L().locale, { timeZone: 'Africa/Cairo', weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+    return `${date} · ${timeFmt().format(d)}`;
   }
   function updateBar() {
-    $('sum').textContent = day && time ? fmtWhen(day, time) : L().pickFirst;
+    $('sum').textContent = time ? fmtWhen(time) : L().pickFirst;
     $('send').textContent = busy ? L().sending : L().send;
-    $('send').disabled = busy || !day || !time || $('name').value.trim().length < 2 || $('phone').value.replace(/\D/g, '').length < 8;
+    $('send').disabled = busy || !time || $('name').value.trim().length < 2 || $('phone').value.replace(/\D/g, '').length < 8;
   }
   function showErr(code) {
     const e = $('err');
@@ -256,16 +269,16 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: $('name').value, phone: $('phone').value, pet_name: $('petName').value, species: $('species').value,
-          type: $('type').value, notes: $('notes').value, date: day, time, website: $('website').value, lang,
+          type: $('type').value, notes: $('notes').value, at: time, website: $('website').value, lang,
         }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         showErr(j.error);
-        if (j.error === 'taken') pickDay(day);
+        if (j.error === 'taken') { time = null; await load().catch(() => {}); }
         return;
       }
-      $('sentWhen').textContent = fmtWhen(day, time);
+      $('sentWhen').textContent = fmtWhen(time);
       $('form').hidden = true; $('bar').hidden = true; $('done').hidden = false;
       scrollTo(0, 0);
     } catch { showErr('other'); }
@@ -281,17 +294,13 @@
   $('again').onclick = () => {
     $('done').hidden = true; $('form').hidden = false; $('bar').hidden = false;
     $('notes').value = ''; $('petName').value = '';
-    time = null; if (day) pickDay(day);
+    time = null; load().catch(() => {});
   };
 
   applyLang();
-  fetch('/api/public/booking').then((r) => r.json()).then((j) => {
-    info = j;
-    if (j.logo) { $('logo').src = j.logo; $('logo').hidden = false; }
-    applyLang();
+  load().then((j) => {
     if (!j.enabled) { $('closed').hidden = false; return; }
     $('form').hidden = false; $('bar').hidden = false;
-    pickDay(j.today);
   }).catch(() => { $('loadErr').hidden = false; });
 })();
 </script>

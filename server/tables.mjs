@@ -2,11 +2,12 @@
 // (scripts/sync-test.mjs checks this). attachment_blobs (file bytes) are not synced in Phase 1.
 export const SYNC_TABLES = [
   'clinic_settings', 'users', 'owners', 'pets', 'visits', 'prescriptions', 'vaccine_types', 'vaccinations',
-  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'audit_log',
+  'appointments', 'attachments', 'price_items', 'invoices', 'invoice_items', 'payments', 'drugs', 'treatment_templates', 'stock_moves', 'expenses', 'lab_results', 'consents', 'admissions', 'care_tasks', 'test_requests', 'found_reports', 'pet_chart_marks',
+  'package_types', 'pet_packages', 'package_uses', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments', 'wa_messages', 'audit_log',
 ];
 
 /**
- * Only these may be hard-deleted, and only as part of editing their visit / invoice (CLAUDE.md data rules).
+ * Only these may be hard-deleted, and only as part of editing their visit / invoice / purchase (CLAUDE.md data rules).
  * Guest appointments (no owner/pet yet) may be deleted too: see rules.mjs.
  */
-export const DELETABLE = new Set(['prescriptions', 'invoice_items']);
+export const DELETABLE = new Set(['prescriptions', 'invoice_items', 'purchase_items']);

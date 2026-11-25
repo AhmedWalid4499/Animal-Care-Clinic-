@@ -1,0 +1,85 @@
+{
+  "_note": "Regions and views on the X-ray request (labels in src/i18n xray.*); limbs have a left / right box each. Read by the app (src/screens/Documents.tsx) and the clinic server (owner page documents). Never rename a key: saved requests store them.",
+  "regions": [
+    {
+      "region": "thorax",
+      "views": [
+        "latR",
+        "latL",
+        "vd",
+        "dv"
+      ]
+    },
+    {
+      "region": "abdomen",
+      "views": [
+        "lat",
+        "vd"
+      ]
+    },
+    {
+      "region": "skull",
+      "views": [
+        "lat",
+        "dv",
+        "openMouth",
+        "dental",
+        "bulla"
+      ]
+    },
+    {
+      "region": "spine",
+      "views": [
+        "cervical",
+        "thoracic",
+        "lumbar",
+        "lumbosacral"
+      ]
+    },
+    {
+      "region": "pelvis",
+      "views": [
+        "vdExtended",
+        "vdFrog",
+        "lat"
+      ]
+    },
+    {
+      "region": "forelimb",
+      "views": [
+        "shoulder",
+        "humerus",
+        "elbow",
+        "radiusUlna",
+        "carpus",
+        "paw"
+      ],
+      "sides": true
+    },
+    {
+      "region": "hindlimb",
+      "views": [
+        "hip",
+        "femur",
+        "stifle",
+        "tibia",
+        "tarsus",
+        "paw"
+      ],
+      "sides": true
+    },
+    {
+      "region": "other",
+      "views": [
+        "wholeBody",
+        "contrast",
+        "comparison"
+      ]
+    }
+  ],
+  "options": [
+    "sedation",
+    "urgent",
+    "repeat"
+  ]
+}

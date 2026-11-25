@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import webpush from 'web-push';
 
-export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue'];
+export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue', 'found', 'lab'];
 
 // ---------------------------------------------------------------- what happened → notifications
 /**
@@ -16,7 +16,7 @@ export const KINDS = ['appointment', 'visit', 'payment', 'conflict', 'queue'];
  */
 export async function createNotifications(c, clinicId, actor, events, conflicts, { seenSeq = null, firstSeq = 0 } = {}) {
   const users = (await c.query(
-    "SELECT id, data->>'locale' AS locale, data->>'role' AS role, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1",
+    "SELECT id, data->>'locale' AS locale, data->>'role' AS role, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND COALESCE(data->>'role', '') <> 'LAB'",
     [clinicId],
   )).rows;
   const byId = new Map(users.map((u) => [u.id, u]));
@@ -45,12 +45,11 @@ export async function createNotifications(c, clinicId, actor, events, conflicts,
   for (const e of events) {
     const a = e.after;
     if (e.tbl === 'appointments') {
-      // A guest (schema v6) has no pet/owner record yet: name them from the booking itself.
+      // A guest (schema v25) has no pet/owner record yet: name them from the booking itself.
       const who = a.pet_id ? await pet(a.pet_id) : { pet: a.guest_pet_name || a.guest_name || '', owner: a.guest_name || '', phone: a.guest_phone || '' };
       const base = { appointment_id: e.id, pet_id: a.pet_id, at: a.scheduled_at, type: a.type, ...who };
       const placed = e.isNew || ('scheduled_at' in e.cols && e.before?.scheduled_at !== a.scheduled_at);
-      if (e.isNew && a.status === 'REQUESTED') everyoneElse('appointment', 'requested', base); // public booking page
-      else if (e.isNew) everyoneElse('appointment', 'booked', base);
+      if (e.isNew) everyoneElse('appointment', 'booked', base);
       else if ('status' in e.cols && e.before?.status === 'REQUESTED' && a.status === 'SCHEDULED') everyoneElse('appointment', 'accepted', base);
       else if ('scheduled_at' in e.cols && e.before?.scheduled_at !== a.scheduled_at) everyoneElse('appointment', 'moved', { ...base, from: e.before?.scheduled_at });
       else if ('status' in e.cols && e.before?.status !== a.status) everyoneElse('appointment', String(a.status).toLowerCase(), base);
@@ -93,6 +92,57 @@ export async function createNotifications(c, clinicId, actor, events, conflicts,
   return out;
 }
 
+/**
+ * Lost & found (schema v18): someone scanned a pet's collar tag and pressed Alert. Everyone at the clinic is told
+ * (each person can switch the kind off in the bell). Returns the stored notifications, to deliver like the others.
+ */
+export async function createFoundNotifications(c, clinicId, data) {
+  const users = (await c.query(
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND COALESCE(data->>'role', '') <> 'LAB'",
+    [clinicId],
+  )).rows;
+  const out = users
+    .filter((u) => !u.off.split(',').map((s) => s.trim()).includes('found'))
+    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'found', event: data.located ? 'located' : 'reported', data }));
+  for (const n of out) {
+    await c.query('INSERT INTO notifications (id, clinic_id, user_id, kind, event, data) VALUES ($1,$2,$3,$4,$5,$6)', [n.id, clinicId, n.user_id, n.kind, n.event, n.data]);
+  }
+  return out;
+}
+
+/** A lab doctor uploaded results on the lab extranet (server/lab.mjs): the Admins and Doctors who want lab notifications. */
+export async function createLabNotifications(c, clinicId, data) {
+  const users = (await c.query(
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND data->>'role' IN ('ADMIN', 'DOCTOR')",
+    [clinicId],
+  )).rows;
+  const out = users
+    .filter((u) => !u.off.split(',').map((s) => s.trim()).includes('lab'))
+    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'lab', event: 'results', data }));
+  for (const n of out) {
+    await c.query('INSERT INTO notifications (id, clinic_id, user_id, kind, event, data) VALUES ($1,$2,$3,$4,$5,$6)', [n.id, clinicId, n.user_id, n.kind, n.event, n.data]);
+  }
+  return out;
+}
+
+/**
+ * An owner booked on their page (event 'online'), or someone with no record sent a request from the public booking
+ * page (event 'requested', server/booking.mjs): everyone at the clinic who wants appointment notifications.
+ */
+export async function createOnlineBookingNotifications(c, clinicId, data, event = 'online') {
+  const users = (await c.query(
+    "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND COALESCE(data->>'role', '') <> 'LAB'",
+    [clinicId],
+  )).rows;
+  const out = users
+    .filter((u) => !u.off.split(',').map((s) => s.trim()).includes('appointment'))
+    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'appointment', event, data }));
+  for (const n of out) {
+    await c.query('INSERT INTO notifications (id, clinic_id, user_id, kind, event, data) VALUES ($1,$2,$3,$4,$5,$6)', [n.id, clinicId, n.user_id, n.kind, n.event, n.data]);
+  }
+  return out;
+}
+
 const stampUser = (s) => (s ? s.split('|')[2] || null : null);
 /** Scheduled appointments overlapping `a` that arrived after `seenSeq` (not from this same push). */
 async function unseenOverlaps(c, clinicId, id, a, seenSeq, firstSeq) {
@@ -125,12 +175,15 @@ async function nameOf(c, clinicId, userId) {
 // ---------------------------------------------------------------- push text (the app renders its own from i18n)
 const T = {
   en: {
-    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced', queue: 'Waiting for the vet' },
+    title: { appointment: 'Appointment', visit: 'Visit', payment: 'Payment', conflict: 'Edit replaced', queue: 'Waiting for the vet', found: '🐾 Lost & found', lab: '🧪 Lab results' },
+    lab: { results: '{lab} sent {n} result(s) for {pet} ({owner})' },
+    found: { reported: '{pet} ({owner}) was found: someone scanned the collar tag', located: '{pet} ({owner}) was found: someone scanned the collar tag and shared the location' },
     queue: { waiting: '{by} sent {pet} ({owner}) to the vet: {complaint}', emergency: '🚨 Emergency: {pet} ({owner}) is waiting for the vet: {complaint}' },
     appointment: {
       booked: '{by} booked {pet} ({owner}) for {at}',
-      requested: 'New online booking: {pet} ({owner}, {phone}) for {at}. Accept or decline it.',
-      accepted: '{by} accepted the online booking for {pet} ({at})',
+      online: '🌐 {owner} booked {pet} online for {at}',
+      requested: '🌐 New booking request: {pet} ({owner}, {phone}) for {at}. Accept or decline it.',
+      accepted: '{by} accepted the online booking request for {pet} ({at})',
       moved: '{by} moved {pet}’s appointment to {at}',
       cancelled: '{by} cancelled {pet}’s appointment ({at})',
       no_show: '{pet} was marked no-show ({at})',
@@ -143,12 +196,15 @@ const T = {
     conflict: { replaced: '{by} changed {label} after you; your edit was replaced', kept: 'Your change to {label} was not applied: {by} changed it later' },
   },
   ar: {
-    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل', queue: 'في انتظار الطبيب' },
+    title: { appointment: 'موعد', visit: 'زيارة', payment: 'دفعة', conflict: 'تعديل استُبدل', queue: 'في انتظار الطبيب', found: '🐾 المفقودات', lab: '🧪 نتائج التحاليل' },
+    lab: { results: '{lab} أرسل {n} نتيجة لـ {pet} ({owner})' },
+    found: { reported: 'تم العثور على {pet} ({owner}): شخص مسح بطاقة الطوق', located: 'تم العثور على {pet} ({owner}): شخص مسح بطاقة الطوق وشارك الموقع' },
     queue: { waiting: '{by} أرسل {pet} ({owner}) إلى الطبيب: {complaint}', emergency: '🚨 حالة طارئة: {pet} ({owner}) في انتظار الطبيب: {complaint}' },
     appointment: {
       booked: '{by} حجز موعداً لـ {pet} ({owner}) يوم {at}',
-      requested: 'حجز جديد من الإنترنت: {pet} ({owner}، {phone}) يوم {at}. اقبله أو ارفضه.',
-      accepted: '{by} قبل الحجز الإلكتروني لـ {pet} ({at})',
+      online: '🌐 {owner} حجز موعداً لـ {pet} عبر الإنترنت يوم {at}',
+      requested: '🌐 طلب حجز جديد: {pet} ({owner}، {phone}) يوم {at}. اقبله أو ارفضه.',
+      accepted: '{by} قبل طلب الحجز لـ {pet} ({at})',
       moved: '{by} غيّر موعد {pet} إلى {at}',
       cancelled: '{by} ألغى موعد {pet} ({at})',
       no_show: '{pet} لم يحضر موعده ({at})',
@@ -175,6 +231,8 @@ export function urlFor(n) {
   if (n.kind === 'visit') return `/#/pets/${d.pet_id}`;
   if (n.kind === 'payment') return `/#/invoices/${d.invoice_id}`;
   if (n.kind === 'queue') return '/#/';
+  if (n.kind === 'found') return `/#/lost-found?open=${d.report_id}`;
+  if (n.kind === 'lab') return `/#/pets/${d.pet_id}?tab=labs`;
   if (n.kind === 'conflict') return d.tbl === 'appointments' ? `/#/appointments?open=${d.id}` : d.owner_id ? `/#/owners/${d.owner_id}` : d.pet_id ? `/#/pets/${d.pet_id}` : '/#/';
   return '/#/';
 }

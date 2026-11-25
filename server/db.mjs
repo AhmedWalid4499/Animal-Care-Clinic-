@@ -25,6 +25,15 @@ CREATE TABLE IF NOT EXISTS rows (
 );
 CREATE INDEX IF NOT EXISTS rows_clinic_seq ON rows (clinic_id, seq);
 CREATE INDEX IF NOT EXISTS rows_user_email ON rows (lower(data->>'email')) WHERE tbl = 'users';
+-- The owner page (server/portal.mjs, Phase 6): the owner by their link, and their records by owner / pet / visit.
+CREATE INDEX IF NOT EXISTS rows_pet_tag ON rows ((data->>'tag_token')) WHERE tbl = 'pets';
+CREATE INDEX IF NOT EXISTS rows_owner_portal ON rows ((data->>'portal_token')) WHERE tbl = 'owners';
+CREATE INDEX IF NOT EXISTS rows_by_owner ON rows (clinic_id, (data->>'owner_id')) WHERE tbl = 'pets';
+CREATE INDEX IF NOT EXISTS rows_by_pet ON rows (clinic_id, tbl, (data->>'pet_id')) WHERE tbl IN ('visits', 'vaccinations', 'appointments');
+CREATE INDEX IF NOT EXISTS rows_by_pet_docs ON rows (clinic_id, tbl, (data->>'pet_id')) WHERE tbl IN ('test_requests', 'attachments');
+CREATE INDEX IF NOT EXISTS rows_by_pet_found ON rows (clinic_id, (data->>'pet_id')) WHERE tbl = 'found_reports';
+CREATE INDEX IF NOT EXISTS rows_by_pet_labs ON rows (clinic_id, (data->>'pet_id')) WHERE tbl = 'lab_results';
+CREATE INDEX IF NOT EXISTS rows_by_visit ON rows (clinic_id, (data->>'visit_id')) WHERE tbl = 'prescriptions';
 CREATE TABLE IF NOT EXISTS notifications (
   id uuid PRIMARY KEY,
   clinic_id uuid NOT NULL REFERENCES clinics(id),
@@ -52,6 +61,17 @@ CREATE TABLE IF NOT EXISTS files (
   backed_up_at timestamptz,
   PRIMARY KEY (clinic_id, id)
 );
+-- Lab extranet (server/lab.mjs, schema v24 on devices): a lab doctor's browser session. Kept apart from the app's
+-- sessions so a lab account can never reach the sync API. pw = a fingerprint of the password hash at sign-in: a reset or
+-- a new password ends the session.
+CREATE TABLE IF NOT EXISTS lab_sessions (
+  token_hash text PRIMARY KEY,
+  clinic_id uuid NOT NULL REFERENCES clinics(id),
+  user_id text NOT NULL,
+  pw text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_seen timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash text PRIMARY KEY,
   clinic_id uuid NOT NULL REFERENCES clinics(id),
@@ -71,6 +91,15 @@ export function createPool(url) {
 export async function migrate(pool) {
   await pool.query(SCHEMA);
 }
+
+/**
+ * Change numbers (`rows.seq`) without gaps for devices (15 Nov 2026). Every transaction that numbers rows during a
+ * request (a push, an online booking, a found report, customer IDs) takes this per-clinic lock *shared* before its
+ * first nextval('change_seq'); a pull takes it *exclusive*. Writers still run side by side, but a pull only runs when
+ * no numbered row is uncommitted, so a row committed late (number N after N+1 was already pulled) can't be skipped.
+ */
+export const numberingLock = (c, clinicId) => c.query('SELECT pg_advisory_xact_lock_shared(hashtext($1))', [`seq:${clinicId}`]);
+export const pullLock = (c, clinicId) => c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`seq:${clinicId}`]);
 
 /** Run fn inside a transaction on one client. */
 export async function inTx(pool, fn) {
