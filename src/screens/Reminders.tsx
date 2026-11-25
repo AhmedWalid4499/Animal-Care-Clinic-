@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import { appointmentsBetween, dueVaccinations, getSettings, markAppointmentReminded, markRecalled, markVaccinationReminded, recallList } from '../db/repo';
+import { apptPet, apptWaText } from './Appointments';
 import { addDays, daysBetween, localDateOf, startOfDayIso, today } from '../lib/dates';
 import { Badge, WaButton, speciesEmoji } from '../components/ui';
 import { PageHead } from '../components/Layout';
@@ -58,7 +59,7 @@ function ThisWeek() {
             <li key={a.id} className={`link ${a.reminder_sent_at ? 'done' : ''}`} onClick={() => nav(`/appointments?view=day&date=${tomorrow}&open=${a.id}`)}>
               <span className="time">{fmt.time(a.scheduled_at)}</span>
               <div className="main-col">
-                <b>{speciesEmoji[a.species]} {a.pet_name}</b>
+                <b>{speciesEmoji[a.species]} {apptPet(a, t)}</b>
                 <div className="sub">
                   {a.owner_name} · {t(`visitType.${a.type}`)}
                   {a.reminder_sent_at && <> · ✓ {t('common.reminded', { when: fmt.date(a.reminder_sent_at) })}</>}
@@ -68,7 +69,7 @@ function ThisWeek() {
                 small
                 phone={a.whatsapp || a.phone}
                 label={a.reminder_sent_at ? t('reminders.again') : t('dashboard.remind')}
-                text={t('wa.appointment', { owner: a.owner_name, clinic, pet: a.pet_name, date: fmt.date(a.scheduled_at), time: fmt.time(a.scheduled_at) })}
+                text={apptWaText('wa.appointment', a, clinic, t, fmt)}
                 onSent={() => markAppointmentReminded(a.id)}
               />
             </li>

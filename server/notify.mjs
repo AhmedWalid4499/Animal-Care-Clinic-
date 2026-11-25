@@ -45,16 +45,19 @@ export async function createNotifications(c, clinicId, actor, events, conflicts,
   for (const e of events) {
     const a = e.after;
     if (e.tbl === 'appointments') {
-      const base = { appointment_id: e.id, pet_id: a.pet_id, at: a.scheduled_at, type: a.type, ...(await pet(a.pet_id)) };
+      // A guest (schema v25) has no pet/owner record yet: name them from the booking itself.
+      const who = a.pet_id ? await pet(a.pet_id) : { pet: a.guest_pet_name || a.guest_name || '', owner: a.guest_name || '', phone: a.guest_phone || '' };
+      const base = { appointment_id: e.id, pet_id: a.pet_id, at: a.scheduled_at, type: a.type, ...who };
       const placed = e.isNew || ('scheduled_at' in e.cols && e.before?.scheduled_at !== a.scheduled_at);
       if (e.isNew) everyoneElse('appointment', 'booked', base);
+      else if ('status' in e.cols && e.before?.status === 'REQUESTED' && a.status === 'SCHEDULED') everyoneElse('appointment', 'accepted', base);
       else if ('scheduled_at' in e.cols && e.before?.scheduled_at !== a.scheduled_at) everyoneElse('appointment', 'moved', { ...base, from: e.before?.scheduled_at });
       else if ('status' in e.cols && e.before?.status !== a.status) everyoneElse('appointment', String(a.status).toLowerCase(), base);
       // Double booking that no device could warn about (booked on two devices without a connection): the other
       // booking reached the server after this device last synced. Tell both people.
       if (placed && a.status === 'SCHEDULED' && seenSeq !== null && a.scheduled_at) {
         for (const o of await unseenOverlaps(c, clinicId, e.id, a, seenSeq, firstSeq)) {
-          const other = { ...(await pet(o.data.pet_id)) };
+          const other = o.data.pet_id ? { ...(await pet(o.data.pet_id)) } : { pet: o.data.guest_pet_name || o.data.guest_name || '' };
           add(actor.id, 'appointment', 'overlap', { ...base, other_pet: other.pet, other_at: o.data.scheduled_at, other_id: o.id });
           const booker = stampUser(o.versions?.scheduled_at);
           if (booker && booker !== actor.id) add(booker, 'appointment', 'overlap', { appointment_id: o.id, pet_id: o.data.pet_id, at: o.data.scheduled_at, ...other, other_pet: base.pet, other_at: a.scheduled_at, other_id: e.id });
@@ -122,15 +125,18 @@ export async function createLabNotifications(c, clinicId, data) {
   return out;
 }
 
-/** An owner booked on their page (server/booking.mjs): everyone at the clinic who wants appointment notifications. */
-export async function createOnlineBookingNotifications(c, clinicId, data) {
+/**
+ * An owner booked on their page (event 'online'), or someone with no record sent a request from the public booking
+ * page (event 'requested', server/booking.mjs): everyone at the clinic who wants appointment notifications.
+ */
+export async function createOnlineBookingNotifications(c, clinicId, data, event = 'online') {
   const users = (await c.query(
     "SELECT id, data->>'locale' AS locale, COALESCE(data->>'notify_off', '') AS off FROM rows WHERE clinic_id = $1 AND tbl = 'users' AND NOT deleted AND (data->>'is_active')::int = 1 AND COALESCE(data->>'role', '') <> 'LAB'",
     [clinicId],
   )).rows;
   const out = users
     .filter((u) => !u.off.split(',').map((s) => s.trim()).includes('appointment'))
-    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'appointment', event: 'online', data }));
+    .map((u) => ({ id: crypto.randomUUID(), user_id: u.id, locale: u.locale || 'ar', kind: 'appointment', event, data }));
   for (const n of out) {
     await c.query('INSERT INTO notifications (id, clinic_id, user_id, kind, event, data) VALUES ($1,$2,$3,$4,$5,$6)', [n.id, clinicId, n.user_id, n.kind, n.event, n.data]);
   }
@@ -176,6 +182,8 @@ const T = {
     appointment: {
       booked: '{by} booked {pet} ({owner}) for {at}',
       online: '🌐 {owner} booked {pet} online for {at}',
+      requested: '🌐 New booking request: {pet} ({owner}, {phone}) for {at}. Accept or decline it.',
+      accepted: '{by} accepted the online booking request for {pet} ({at})',
       moved: '{by} moved {pet}’s appointment to {at}',
       cancelled: '{by} cancelled {pet}’s appointment ({at})',
       no_show: '{pet} was marked no-show ({at})',
@@ -195,6 +203,8 @@ const T = {
     appointment: {
       booked: '{by} حجز موعداً لـ {pet} ({owner}) يوم {at}',
       online: '🌐 {owner} حجز موعداً لـ {pet} عبر الإنترنت يوم {at}',
+      requested: '🌐 طلب حجز جديد: {pet} ({owner}، {phone}) يوم {at}. اقبله أو ارفضه.',
+      accepted: '{by} قبل طلب الحجز لـ {pet} ({at})',
       moved: '{by} غيّر موعد {pet} إلى {at}',
       cancelled: '{by} ألغى موعد {pet} ({at})',
       no_show: '{pet} لم يحضر موعده ({at})',

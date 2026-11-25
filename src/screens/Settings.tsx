@@ -21,6 +21,7 @@ import { ThisDeviceSection } from '../components/ThisDevice';
 import { InviteDialog } from '../components/Account';
 import { LabAccountsTab } from '../components/LabAccounts';
 import { DevicesTab } from '../components/Devices';
+import { OnlineBookingSection } from '../components/OnlineBooking';
 import { serverUrl } from '../sync/engine';
 import { ActivityTab } from './Activity';
 import { WhatsAppTab } from '../components/WhatsAppAuto';
@@ -68,6 +69,7 @@ function ClinicTab() {
   const [f, setF] = useState<ClinicSettings>(s);
   const set = <K extends keyof ClinicSettings>(k: K, v: ClinicSettings[K]) => setF({ ...f, [k]: v });
   return (
+    <>
     <form
       style={{ maxWidth: 720 }}
       onSubmit={(e) => {
@@ -100,6 +102,8 @@ function ClinicTab() {
       </div>
       <div className="actionbar"><button className="btn primary">{t('common.save')}</button></div>
     </form>
+    <OnlineBookingSection />
+    </>
   );
 }
 

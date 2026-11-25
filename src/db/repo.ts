@@ -595,45 +595,53 @@ export const getAttachmentBytes = (id: string) =>
   get<{ data: Uint8Array }>('SELECT data FROM attachment_blobs WHERE attachment_id = ?', [id])?.data;
 
 // ---------------------------------------------------------------- appointments
-export interface ApptRow extends Appointment { pet_name: string; species: string; owner_name: string; phone: string; whatsapp: string | null }
+/**
+ * One appointment with who it is for. For a guest (no record yet, schema v6) pet_id/owner_id are null and the
+ * names come from the guest_* columns; is_guest = 1.
+ */
+export interface ApptRow extends Appointment { pet_name: string; species: string; owner_name: string; phone: string; whatsapp: string | null; is_guest: number }
+const apptSelect = `SELECT a.*, COALESCE(p.name, a.guest_pet_name, '') pet_name, COALESCE(p.species, a.guest_species, 'OTHER') species,
+  COALESCE(o.full_name, a.guest_name, '') owner_name, COALESCE(o.phone, a.guest_phone, '') phone, o.whatsapp, (a.pet_id IS NULL) is_guest
+  FROM appointments a LEFT JOIN pets p ON p.id = a.pet_id LEFT JOIN owners o ON o.id = a.owner_id`;
 export function appointmentsBetween(fromIso: string, toIso: string): ApptRow[] {
-  return all<ApptRow>(
-    `SELECT a.*, p.name pet_name, p.species, o.full_name owner_name, o.phone, o.whatsapp
-     FROM appointments a JOIN pets p ON p.id = a.pet_id JOIN owners o ON o.id = a.owner_id
-     WHERE a.scheduled_at >= ? AND a.scheduled_at < ? ORDER BY a.scheduled_at`,
-    [fromIso, toIso],
-  );
+  return all<ApptRow>(`${apptSelect} WHERE a.scheduled_at >= ? AND a.scheduled_at < ? ORDER BY a.scheduled_at`, [fromIso, toIso]);
 }
+/** Online booking requests still waiting for staff to accept or decline, soonest first (past ones included). */
+export const bookingRequests = () => all<ApptRow>(`${apptSelect} WHERE a.status = 'REQUESTED' ORDER BY a.scheduled_at`);
 export const petAppointments = (petId: string) =>
   all<Appointment>("SELECT * FROM appointments WHERE pet_id = ? AND status = 'SCHEDULED' AND scheduled_at >= ? ORDER BY scheduled_at", [petId, new Date(Date.now() - 3_600_000).toISOString()]);
-export const getAppointment = (id: string) =>
-  get<ApptRow>(
-    `SELECT a.*, p.name pet_name, p.species, o.full_name owner_name, o.phone, o.whatsapp FROM appointments a
-     JOIN pets p ON p.id = a.pet_id JOIN owners o ON o.id = a.owner_id WHERE a.id = ?`,
-    [id],
-  );
-/** Scheduled appointments whose time range intersects [start, start+duration). */
+export const getAppointment = (id: string) => get<ApptRow>(`${apptSelect} WHERE a.id = ?`, [id]);
+/** Scheduled appointments (and requests waiting for an answer) whose time range intersects [start, start+duration). */
 export function overlappingAppointments(startIso: string, durationMin: number, excludeId?: string): ApptRow[] {
   const s = new Date(startIso).getTime();
   const e = s + durationMin * 60_000;
   const dayFrom = new Date(s - 12 * 3_600_000).toISOString();
   const dayTo = new Date(e + 12 * 3_600_000).toISOString();
   return appointmentsBetween(dayFrom, dayTo).filter((a) => {
-    if (a.id === excludeId || a.status !== 'SCHEDULED') return false;
+    if (a.id === excludeId || (a.status !== 'SCHEDULED' && a.status !== 'REQUESTED')) return false;
     const as = new Date(a.scheduled_at).getTime();
     return as < e && as + a.duration_min * 60_000 > s;
   });
 }
-export interface ApptInput { pet_id: string; scheduled_at: string; duration_min: number; type: VisitType; notes: string }
+/** Who the appointment is for: a registered pet, or a guest with no record yet (name + phone are enough). */
+export type ApptFor = { pet_id: string } | { guest: { name: string; phone: string; pet_name: string; species: string | null } };
+export interface ApptInput { scheduled_at: string; duration_min: number; type: VisitType; notes: string; for: ApptFor }
 export function saveAppointment(d: ApptInput, id?: string): string {
   return tx(() => {
-    const pet = get<Pet>('SELECT * FROM pets WHERE id = ?', [d.pet_id])!;
-    const values = { pet_id: d.pet_id, owner_id: pet.owner_id, scheduled_at: d.scheduled_at, duration_min: d.duration_min, type: d.type, notes: blank(d.notes) };
+    const values: Record<string, unknown> = { scheduled_at: d.scheduled_at, duration_min: d.duration_min, type: d.type, notes: blank(d.notes) };
+    if ('pet_id' in d.for) {
+      const pet = get<Pet>('SELECT * FROM pets WHERE id = ?', [d.for.pet_id])!;
+      Object.assign(values, { pet_id: pet.id, owner_id: pet.owner_id });
+    } else {
+      const g = d.for.guest;
+      if (!g.name.trim() || digits(g.phone).length < 6) throw new Error('GUEST_REQUIRED');
+      Object.assign(values, { pet_id: null, owner_id: null, guest_name: g.name.trim(), guest_phone: g.phone.trim(), guest_pet_name: blank(g.pet_name), guest_species: g.species || null });
+    }
     if (id) {
       update('appointments', id, values);
       return id;
     }
-    return insert('appointments', { ...values, status: 'SCHEDULED' });
+    return insert('appointments', { ...values, status: 'SCHEDULED', source: 'CLINIC' });
   });
 }
 export function setAppointmentStatus(id: string, status: ApptStatus) {
@@ -641,6 +649,51 @@ export function setAppointmentStatus(id: string, status: ApptStatus) {
 }
 export function markAppointmentReminded(id: string) {
   tx(() => update('appointments', id, { reminder_sent_at: nowIso() }));
+}
+/**
+ * Guest appointments only (no-show, cancelled, declined online request): removed for good, nothing else
+ * refers to them. Registered appointments keep their history and are cancelled instead (CLAUDE.md data rules).
+ */
+export function deleteGuestAppointment(id: string) {
+  tx(() => {
+    const a = get<Appointment>('SELECT * FROM appointments WHERE id = ?', [id]);
+    if (!a) return;
+    if (a.pet_id) throw new Error('NOT_A_GUEST');
+    run('DELETE FROM appointments WHERE id = ?', [id]);
+    audit('appointments', id, 'DELETE', { guest_name: a.guest_name, guest_phone: a.guest_phone, scheduled_at: a.scheduled_at, status: a.status, source: a.source });
+  });
+}
+/**
+ * What registering a guest would do: the owner already on file with the same phone (if any), and that owner's
+ * active pet with the same name (if any). Nothing is written.
+ */
+export function guestMatch(id: string): { owner: Owner | null; pet: Pet | null } {
+  const a = get<Appointment>('SELECT * FROM appointments WHERE id = ?', [id]);
+  if (!a || a.pet_id || !a.guest_phone) return { owner: null, pet: null };
+  const owner = findDuplicatePhone(a.guest_phone) ?? null;
+  const name = (a.guest_pet_name ?? '').trim().toLowerCase();
+  const pet = owner && name
+    ? all<Pet>("SELECT * FROM pets WHERE owner_id = ? AND status = 'ACTIVE'", [owner.id]).find((p) => p.name.trim().toLowerCase() === name) ?? null
+    : null;
+  return { owner, pet };
+}
+/**
+ * The guest arrived: make them a real owner and pet (or use the owner with the same phone, and that owner's pet
+ * with the same name) and attach the appointment to them. Returns the pet id.
+ */
+export function registerGuest(id: string): { petId: string; ownerId: string; newOwner: boolean; newPet: boolean } {
+  return tx(() => {
+    const a = get<Appointment>('SELECT * FROM appointments WHERE id = ?', [id]);
+    if (!a) throw new Error('NOT_FOUND');
+    if (a.pet_id && a.owner_id) return { petId: a.pet_id, ownerId: a.owner_id, newOwner: false, newPet: false };
+    const m = guestMatch(id);
+    const ownerId = m.owner?.id ?? insert('owners', { full_name: a.guest_name?.trim() || '—', phone: a.guest_phone?.trim() || '—', status: 'ACTIVE' });
+    const species = a.guest_species && (SPECIES as readonly string[]).includes(a.guest_species) ? a.guest_species : 'OTHER';
+    const petId = m.pet?.id ?? insert('pets', { owner_id: ownerId, name: a.guest_pet_name?.trim() || a.guest_name?.trim() || '—', species, sex: 'UNKNOWN', is_neutered: 0, dob_is_estimate: 0, status: 'ACTIVE' });
+    // An online request answered by registering the guest is accepted at the same time.
+    update('appointments', id, { pet_id: petId, owner_id: ownerId, ...(a.status === 'REQUESTED' ? { status: 'SCHEDULED' } : {}) });
+    return { petId, ownerId, newOwner: !m.owner, newPet: !m.pet };
+  });
 }
 
 // ---------------------------------------------------------------- invoices
@@ -1055,7 +1108,7 @@ export function activityLog(f: { userId?: string; from?: string; to?: string; gr
          WHEN 'visits' THEN (SELECT p.name FROM visits x JOIN pets p ON p.id = x.pet_id WHERE x.id = a.record_id)
          WHEN 'vaccinations' THEN (SELECT p.name FROM vaccinations x JOIN pets p ON p.id = x.pet_id WHERE x.id = a.record_id)
          WHEN 'prescriptions' THEN (SELECT drug FROM prescriptions WHERE id = a.record_id)
-         WHEN 'appointments' THEN (SELECT p.name FROM appointments x JOIN pets p ON p.id = x.pet_id WHERE x.id = a.record_id)
+         WHEN 'appointments' THEN (SELECT COALESCE(p.name, x.guest_pet_name, x.guest_name) FROM appointments x LEFT JOIN pets p ON p.id = x.pet_id WHERE x.id = a.record_id)
          WHEN 'attachments' THEN (SELECT file_name FROM attachments WHERE id = a.record_id)
          WHEN 'invoices' THEN (SELECT number FROM invoices WHERE id = a.record_id)
          WHEN 'invoice_items' THEN (SELECT description FROM invoice_items WHERE id = a.record_id)

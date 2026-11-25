@@ -543,6 +543,16 @@ await app.close();
   for (const t of ['package_uses', 'pet_packages', 'package_types', 'purchase_items', 'supplier_payments', 'purchases', 'suppliers', 'wa_messages']) db.run(`DROP TABLE ${t}`);
   db.run('ALTER TABLE owners DROP COLUMN wa_opt_out');
   for (const c of ['wa_auto', 'wa_auto_kinds', 'wa_auto_hour']) db.run(`ALTER TABLE clinic_settings DROP COLUMN ${c}`);
+  // …nor guest appointments or the public booking page (schema v25): every appointment had a pet and an owner.
+  db.run(`CREATE TABLE appointments_v1 (id TEXT PRIMARY KEY, pet_id TEXT NOT NULL REFERENCES pets(id), owner_id TEXT NOT NULL REFERENCES owners(id),
+    scheduled_at TEXT NOT NULL, duration_min INTEGER NOT NULL DEFAULT 20, type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','DONE','NO_SHOW','CANCELLED')),
+    notes TEXT, visit_id TEXT REFERENCES visits(id), reminder_sent_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+  db.run(`INSERT INTO appointments_v1 SELECT id, pet_id, owner_id, scheduled_at, duration_min, type, status, notes, visit_id, reminder_sent_at, created_at, updated_at
+    FROM appointments WHERE pet_id IS NOT NULL AND status <> 'REQUESTED'`);
+  db.run('DROP TABLE appointments');
+  db.run('ALTER TABLE appointments_v1 RENAME TO appointments');
+  db.run('CREATE INDEX appointments_scheduled ON appointments(scheduled_at)');
+  db.run('ALTER TABLE clinic_settings DROP COLUMN online_booking');
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");

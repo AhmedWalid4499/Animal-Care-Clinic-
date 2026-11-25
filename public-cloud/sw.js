@@ -20,7 +20,7 @@ self.addEventListener('activate', (e) =>
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/o/') || url.pathname.startsWith('/t/') || url.pathname === '/health') return;
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/o/') || url.pathname.startsWith('/t/') || url.pathname.startsWith('/book') || url.pathname === '/health') return;
   // Which version the server runs: always ask (lib/webUpdate.ts). The manifest: fresh when online, so an
   // installed app picks up new shortcuts; the kept copy offline.
   if (url.pathname === '/version.json') return;

@@ -6,5 +6,8 @@ export const SYNC_TABLES = [
   'package_types', 'pet_packages', 'package_uses', 'suppliers', 'purchases', 'purchase_items', 'supplier_payments', 'wa_messages', 'audit_log',
 ];
 
-/** Only these may be hard-deleted, and only as part of editing their visit / invoice / purchase (CLAUDE.md data rules). */
+/**
+ * Only these may be hard-deleted, and only as part of editing their visit / invoice / purchase (CLAUDE.md data rules).
+ * Guest appointments (no owner/pet yet) may be deleted too: see rules.mjs.
+ */
 export const DELETABLE = new Set(['prescriptions', 'invoice_items', 'purchase_items']);

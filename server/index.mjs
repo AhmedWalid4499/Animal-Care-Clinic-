@@ -15,6 +15,7 @@ import { sendPush, setupPush } from './notify.mjs';
 import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backup.mjs';
 import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
 import { handleOwnerPage, ownerPagesChanged } from './portal.mjs';
+import { publicBookingApi } from './booking.mjs';
 import { handleTag } from './tags.mjs';
 import { handleClinicPage } from './clinic-page.mjs';
 import { handleLab } from './lab.mjs';
@@ -209,6 +210,16 @@ function deliver(clinicId, notifications) {
 // ---------------------------------------------------------------- routes
 async function api(req, res, url) {
   const p = url.pathname;
+  // The public booking page /book (no sign-in, server/booking.mjs): opening times and guest requests.
+  if (p.startsWith('/api/public/')) {
+    return publicBookingApi(pool, req, res, url, {
+      send, readJson,
+      after: (clinicId, notifications) => {
+        broadcast(clinicId, { type: 'changed' }); // devices pull the request
+        deliver(clinicId, notifications); // bell, tray, phones
+      },
+    });
+  }
   if (p === '/api/login' && req.method === 'POST') {
     const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
     if (tooManyTries(ip)) return send(res, 429, { error: 'Too many attempts. Wait a few minutes.' });
@@ -391,6 +402,19 @@ function serveStatic(req, res, url) {
   fs.createReadStream(file).pipe(res);
 }
 
+// The public booking page: one self-contained file, read once.
+const BOOK_HTML = fs.readFileSync(path.join(here, 'book.html'));
+function serveBookingPage(res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'",
+  });
+  res.end(BOOK_HTML);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
@@ -400,6 +424,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+    // The public booking page for people with no owner page yet (server/book.html). Public.
+    if (url.pathname === '/book' || url.pathname === '/book/') return serveBookingPage(res);
     // An owner's page from their QR code (server/portal.mjs): public, the link itself is the key.
     if ((url.pathname.startsWith('/o/') || url.pathname.startsWith('/o-font/')) && (await handleOwnerPage(pool, req, res, url, {
       // An owner booked online (server/booking.mjs): devices pull the appointment, open owner pages refresh, staff are told.

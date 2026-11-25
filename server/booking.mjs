@@ -57,10 +57,11 @@ export function openSlots(now = Date.now()) {
   return days;
 }
 
+/** Times already held: scheduled appointments, and booking requests from /book not answered yet. */
 async function busy(q, clinicId, fromMs, toMs) {
   const rows = (await q.query(
     `SELECT data->>'scheduled_at' AS at, COALESCE((data->>'duration_min')::int, 20) AS dur FROM rows
-     WHERE clinic_id = $1 AND tbl = 'appointments' AND NOT deleted AND data->>'status' = 'SCHEDULED'
+     WHERE clinic_id = $1 AND tbl = 'appointments' AND NOT deleted AND data->>'status' IN ('SCHEDULED','REQUESTED')
        AND (data->>'scheduled_at')::timestamptz < $3::timestamptz AND (data->>'scheduled_at')::timestamptz > $2::timestamptz - interval '1 day'`,
     [clinicId, new Date(fromMs).toISOString(), new Date(toMs).toISOString()],
   )).rows;
@@ -133,4 +134,105 @@ export async function bookSlot(pool, owner, input, now = Date.now()) {
     });
     return { status: 200, body: { ok: true, appointment: { id, at: data.scheduled_at, pet: pet.data.name, type } }, notifications };
   });
+}
+
+// ---------------------------------------------------------------- public booking page (/book), no account needed
+// Change request, 25 Nov 2026: people who aren't clients yet (no owner page) request one of the same opening times.
+// The request is a guest appointment (no owner / pet record, schema v25) with status REQUESTED: it holds the time, and
+// staff accept it (→ SCHEDULED) or decline it (→ deleted) in the app. Nothing a visitor sends creates an owner or pet.
+const SPECIES_OK = ['DOG', 'CAT', 'BIRD', 'RABBIT', 'REPTILE', 'HAMSTER', 'TURTLE', 'OTHER'];
+const MAX_REQUESTS_PER_PHONE = 2;
+const MAX_REQUESTS_WAITING = 60; // a flood of fake requests can't bury the calendar
+const digits = (s) => String(s ?? '').replace(/\D/g, '');
+// Text from strangers: no control or direction-override characters, single spaces, capped.
+const clean = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '');
+// The address the proxy in front of us saw (the last X-Forwarded-For entry): earlier entries are whatever the visitor
+// sent, so they can't be used to dodge the limits.
+const ipOf = (req) => req.headers['x-forwarded-for']?.split(',').pop().trim() || req.socket.remoteAddress || '';
+
+async function clinicAndSettings(pool) {
+  const clinic = (await pool.query('SELECT id FROM clinics ORDER BY created_at LIMIT 1')).rows[0];
+  if (!clinic) return { clinicId: null, settings: {} };
+  const s = (await pool.query("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'clinic_settings' AND NOT deleted ORDER BY id LIMIT 1", [clinic.id])).rows[0];
+  return { clinicId: clinic.id, settings: s?.data ?? {} };
+}
+const bookingOn = (settings) => Number(settings.online_booking) === 1;
+
+/** A request from the public page. Returns { status, body, notifications? }. */
+export async function bookGuest(pool, clinicId, input, now = Date.now()) {
+  const name = clean(input?.name, 80);
+  const phone = clean(input?.phone, 25);
+  const petName = clean(input?.pet_name, 60);
+  const note = clean(input?.notes, 300);
+  const species = SPECIES_OK.includes(input?.species) ? input.species : null;
+  const type = BOOKABLE_TYPES.includes(input?.type) ? input.type : 'CHECKUP';
+  if (name.length < 2) return { status: 400, body: { error: 'name' } };
+  if (digits(phone).length < 8 || digits(phone).length > 15) return { status: 400, body: { error: 'phone' } };
+  const start = Date.parse(String(input?.at ?? ''));
+  if (!Number.isFinite(start) || !openSlots(now).some((d) => d.starts.includes(start))) return { status: 400, body: { error: 'time' } };
+  return inTx(pool, async (c) => {
+    // The same lock as the owner page's bookings: nobody can take the time between the check and the insert.
+    await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`book:${clinicId}`]);
+    await numberingLock(c, clinicId);
+    if (taken(await busy(c, clinicId, start, start + HOURS.slotMin * 60_000), start)) return { status: 409, body: { error: 'taken' } };
+    const waiting = (await c.query(
+      `SELECT data->>'guest_phone' AS ph FROM rows WHERE clinic_id = $1 AND tbl = 'appointments' AND NOT deleted
+         AND data->>'status' IN ('REQUESTED','SCHEDULED') AND data->>'pet_id' IS NULL AND (data->>'scheduled_at')::timestamptz > now()`,
+      [clinicId],
+    )).rows;
+    const key = digits(phone).slice(-9);
+    if (waiting.filter((x) => digits(x.ph).slice(-9) === key).length >= MAX_REQUESTS_PER_PHONE) return { status: 429, body: { error: 'phone_limit' } };
+    const pending = Number((await c.query("SELECT COUNT(*) n FROM rows WHERE clinic_id = $1 AND tbl = 'appointments' AND NOT deleted AND data->>'status' = 'REQUESTED'", [clinicId])).rows[0].n);
+    if (pending >= MAX_REQUESTS_WAITING) return { status: 503, body: { error: 'full' } };
+    const stamp = new Date(now).toISOString();
+    const id = crypto.randomUUID();
+    const data = {
+      id, pet_id: null, owner_id: null, scheduled_at: new Date(start).toISOString(), duration_min: HOURS.slotMin, type,
+      status: 'REQUESTED', notes: note || null, visit_id: null, reminder_sent_at: null,
+      guest_name: name, guest_phone: phone, guest_pet_name: petName || null, guest_species: species, source: 'ONLINE',
+      created_at: stamp, updated_at: stamp,
+    };
+    const versions = Object.fromEntries(Object.keys(data).map((k) => [k, `${stamp}|server`]));
+    await c.query("INSERT INTO rows (clinic_id, tbl, id, data, versions, deleted, seq) VALUES ($1, 'appointments', $2, $3, $4, false, nextval('change_seq'))", [clinicId, id, data, versions]);
+    const notifications = await createOnlineBookingNotifications(c, clinicId, {
+      appointment_id: id, pet_id: null, at: data.scheduled_at, type, pet: petName || name, owner: name, phone,
+    }, 'requested');
+    return { status: 200, body: { ok: true, at: data.scheduled_at }, notifications };
+  });
+}
+
+/**
+ * /api/public/* for the booking page (no sign-in). Returns true if it answered. `after(clinicId, notifications)` tells
+ * open apps and phones about a new request.
+ */
+export async function publicBookingApi(pool, req, res, url, { send, readJson, after }) {
+  const p = url.pathname;
+  if (!p.startsWith('/api/public/')) return false;
+  const ip = ipOf(req);
+  const answer = (status, body) => (send(res, status, body), true);
+
+  if (p === '/api/public/booking' && req.method === 'GET') {
+    if (over(`info:${ip}`, 120, 60_000)) return answer(429, { error: 'busy' });
+    const { clinicId, settings } = await clinicAndSettings(pool);
+    const enabled = !!clinicId && bookingOn(settings);
+    const logo = typeof settings.logo_url === 'string' && settings.logo_url.length < 300_000 ? settings.logo_url : null;
+    return answer(200, {
+      enabled, name_en: settings.name_en ?? 'Animal Care Clinic', name_ar: settings.name_ar ?? '', phone: settings.phone ?? null,
+      whatsapp: settings.whatsapp ?? null, address: settings.address ?? null, logo, types: BOOKABLE_TYPES, species: SPECIES_OK,
+      ...(enabled ? await slotsFor(pool, clinicId) : { days: [], hours: publicHours() }),
+    });
+  }
+
+  if (p === '/api/public/book' && req.method === 'POST') {
+    const b = await readJson(req);
+    // Bots fill in every field; people never see this one. Pretend it worked and store nothing.
+    if (b && typeof b.website === 'string' && b.website.trim()) return answer(200, { ok: true });
+    if (over(`guest:${ip}`, 8, 3600_000) || over(`guest-day:${ip}`, 20, 24 * 3600_000)) return answer(429, { error: 'too_many_tries' });
+    const { clinicId, settings } = await clinicAndSettings(pool);
+    if (!clinicId || !bookingOn(settings)) return answer(403, { error: 'closed' });
+    const r = await bookGuest(pool, clinicId, b);
+    if (r.notifications) after(clinicId, r.notifications);
+    return answer(r.status, r.body);
+  }
+  return answer(404, { error: 'not found' });
 }

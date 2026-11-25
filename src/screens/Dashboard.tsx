@@ -9,13 +9,14 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import {
-  appointmentsBetween, dueVaccinations, expiringStock, getSettings, lowDrugs, lowStock, markAppointmentReminded, newFoundCount, openBalance, quickSearch,
+  appointmentsBetween, bookingRequests, dueVaccinations, expiringStock, getSettings, lowDrugs, lowStock, markAppointmentReminded, newFoundCount, openBalance, quickSearch,
   waitingQueue, wardBoard,
 } from '../db/repo';
 import { addDays, daysBetween, startOfDayIso, today } from '../lib/dates';
 import { Badge, Icon, StatusBadge, WaButton, speciesEmoji } from '../components/ui';
 import { QueueSection } from './IntakeForm';
 import { remindersLeft } from './Reminders';
+import { apptPet, apptWaText } from './Appointments';
 
 const greeting = (h = new Date().getHours()) => (h < 12 ? 'login.morning' : h < 17 ? 'login.afternoon' : 'login.evening');
 
@@ -60,6 +61,7 @@ export function Dashboard() {
   const lowItems = useQuery(lowStock);
   const lowDrugList = useQuery(lowDrugs);
   const expiring = useQuery(() => expiringStock(30));
+  const requests = useQuery(bookingRequests);
   const settings = useQuery(getSettings);
   const clinic = locale === 'ar' ? settings.name_ar : settings.name_en;
   const now = Date.now();
@@ -79,6 +81,10 @@ export function Dashboard() {
   }
   if (late > 0) {
     rows.push(<Attn key="ward" className="attn-ward" icon="⏰" tone="bad" title={t('dashboard.wardLate', { n: late })} sub={t('dashboard.wardSub', { n: ward.length })} action={t('dashboard.openWard')} onAction={() => nav('/ward')} />);
+  }
+  if (requests.length > 0) {
+    // Online booking requests from /book (people with no record yet): staff accept or decline them in Appointments.
+    rows.push(<Attn key="requests" className="attn-requests" icon="🌐" tone="warn" title={t('dashboard.requests', { n: requests.length })} action={t('dashboard.requestsOpen')} onAction={() => nav('/appointments?view=week')} />);
   }
   if (waitingNow > 0) {
     rows.push(<Attn key="queue" className="attn-queue" icon="🩺" tone="warn" title={t('dashboard.waitingRow', { n: waitingNow })} action={t('dashboard.seeQueue')}
@@ -169,8 +175,8 @@ export function Dashboard() {
               <li key={a.id} className={`link ${a.status === 'CANCELLED' || a.status === 'NO_SHOW' ? 'greyed' : ''} ${a.id === next?.id ? 'next' : ''}`} onClick={() => nav(`/appointments?view=day&date=${d}&open=${a.id}`)}>
                 <span className="time">{fmt.time(a.scheduled_at)}</span>
                 <div className="main-col">
-                  <b>{speciesEmoji[a.species]} {a.pet_name}</b>
-                  <div className="sub">{a.owner_name} · {t(`visitType.${a.type}`)}{a.notes ? ` · ${a.notes}` : ''}</div>
+                  <b>{speciesEmoji[a.species]} {apptPet(a, t)}</b>
+                  <div className="sub">{a.owner_name}{a.is_guest ? ` (${t('appointments.guest')})` : ''} · {t(`visitType.${a.type}`)}{a.notes ? ` · ${a.notes}` : ''}</div>
                 </div>
                 {a.id === next?.id ? <Badge kind="info">{t('dashboard.nextBadge')}</Badge> : <StatusBadge ns="apptStatus" value={a.status} />}
                 {a.status === 'SCHEDULED' && (
@@ -178,7 +184,7 @@ export function Dashboard() {
                     small
                     phone={a.whatsapp || a.phone}
                     label=""
-                    text={t('wa.appointment', { owner: a.owner_name, clinic, pet: a.pet_name, date: fmt.date(a.scheduled_at), time: fmt.time(a.scheduled_at) })}
+                    text={apptWaText('wa.appointment', a, clinic, t, fmt)}
                     onSent={() => markAppointmentReminded(a.id)}
                   />
                 )}

@@ -227,6 +227,11 @@ export function seedDemo() {
     appt(max, o1, at(1, 12, 0), 'FOLLOW_UP');
     appt(bondo, o5, at(2, 16, 0), 'CHECKUP');
     appt(rocky, o2, at(3, 18, 40), 'SURGERY', { duration_min: 60, notes: 'Lump removal' });
+    // A guest booked by phone (no record yet), and a request from the online booking page.
+    const guest = (scheduled_at: string, type: string, g: Record<string, unknown>) =>
+      insert('appointments', { pet_id: null, owner_id: null, scheduled_at, type, duration_min: 20, ...g });
+    guest(at(0, 15, 0), 'CHECKUP', { status: 'SCHEDULED', source: 'CLINIC', guest_name: 'Karim Fathy', guest_phone: '01001234567', guest_pet_name: 'Simba', guest_species: 'CAT' });
+    guest(at(1, 19, 20), 'VACCINATION', { status: 'REQUESTED', source: 'ONLINE', guest_name: 'نور حسن', guest_phone: '01112223334', guest_pet_name: 'بوبي', guest_species: 'DOG', notes: 'First vaccines' });
 
     // Invoices: one paid, one partial, one unpaid.
     const inv = (n: number, owner_id: string, pet_id: string, visit_id: string | null, items: [string, number, number][], paid: number, daysAgo: number) => {

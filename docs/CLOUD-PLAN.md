@@ -248,6 +248,7 @@ These are outside SCOPE §4, so they are change requests, quoted at list price a
 - **Built for several clinics** (`clinic_id`, platform owner console): SCOPE §5 lists multi-clinic as v2.
 - **Phase 5:** the pre-assessment step (a new workflow), device management, and invite / password reset.
 - **Hosting under Ahmed's account** instead of Dr. Waleed's (§4 and §8).
+- **Guest appointments and the public booking page** (25 Nov 2026): appointments for people with no record yet (deleted if they don't come), and `/book`, where people without an owner page request one of the opening times; staff accept or decline.
 - **Phase 6:** the owner page is the "owner-facing portal" SCOPE §5 puts in v2 (read-only, no booking); the prescription archive is a new view of data already in scope.
 - **14 Nov:** customer ID, lab report, case report and X-ray request (one new column, three new documents).
 

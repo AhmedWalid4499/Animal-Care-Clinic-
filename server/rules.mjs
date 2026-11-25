@@ -42,7 +42,9 @@ export function refuse(role, change, before, userId) {
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
   // Lab accounts (schema v24) never sync; they use the lab extranet, which writes through server/lab.mjs.
   if (role === 'LAB') return 'lab accounts use the lab extranet only';
-  if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
+  // A guest appointment (no owner/pet record, schema v25) may be deleted: a no-show or a declined online request.
+  const guestAppt = tbl === 'appointments' && (!before || !before.pet_id);
+  if (op === 'delete' && !DELETABLE.has(tbl) && !guestAppt) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
   // Lost & found: reports come only from a pet's collar tag page (the server writes them); anyone at the clinic may
   // mark one handled, and nothing else about it changes.
