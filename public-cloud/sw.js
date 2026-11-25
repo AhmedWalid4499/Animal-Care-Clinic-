@@ -11,7 +11,8 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname === '/health') return;
+  // /book is the public booking page, not the app: never keep it as the app's page.
+  if (req.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname === '/health' || url.pathname.startsWith('/book')) return;
   if (req.mode === 'navigate') {
     // The page: fresh from the server when it answers (so updates arrive), the kept copy when it doesn't.
     e.respondWith(

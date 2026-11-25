@@ -13,6 +13,7 @@ import { applyChanges, bootstrapRows, pullSince } from './sync.mjs';
 import { sendPush, setupPush } from './notify.mjs';
 import { backupStatus, dump, restore, runBackup, scheduleBackups } from './backup.mjs';
 import { MAX_FILE, fileBytes, readBody, saveFile, storageInfo, validFileId } from './files.mjs';
+import { publicApi } from './booking.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8080);
@@ -189,6 +190,16 @@ function deliver(clinicId, notifications) {
 // ---------------------------------------------------------------- routes
 async function api(req, res, url) {
   const p = url.pathname;
+  // The public booking page (no sign-in): free slots and new requests.
+  if (p.startsWith('/api/public/')) {
+    return publicApi(pool, req, res, url, {
+      send, readJson,
+      after: (clinicId, seq, notifications) => {
+        broadcast(clinicId, { type: 'changed', seq });
+        deliver(clinicId, notifications);
+      },
+    });
+  }
   if (p === '/api/login' && req.method === 'POST') {
     const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
     if (tooManyTries(ip)) return send(res, 429, { error: 'Too many attempts. Wait a few minutes.' });
@@ -347,6 +358,19 @@ function serveStatic(req, res, url) {
   fs.createReadStream(file).pipe(res);
 }
 
+// The public booking page: one self-contained file, read once.
+const BOOK_HTML = fs.readFileSync(path.join(here, 'book.html'));
+function serveBookingPage(res) {
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'",
+  });
+  res.end(BOOK_HTML);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
@@ -356,6 +380,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+    if (url.pathname === '/book' || url.pathname === '/book/') return serveBookingPage(res);
     return serveStatic(req, res, url);
   } catch (e) {
     console.error(req.method, url.pathname, e);

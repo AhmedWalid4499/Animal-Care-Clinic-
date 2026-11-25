@@ -18,6 +18,7 @@ import { ServerBackupPanel } from '../components/ServerBackup';
 import { UpdatesSection } from '../components/Updates';
 import { InviteDialog } from '../components/Account';
 import { DevicesTab } from '../components/Devices';
+import { OnlineBookingSection } from '../components/OnlineBooking';
 import { serverUrl } from '../sync/engine';
 import { PRICE_CATEGORIES, ROLES, SPECIES, type ClinicSettings, type PriceItem, type Role, type User, type VaccineType } from '../db/types';
 
@@ -53,6 +54,7 @@ function ClinicTab() {
   const [f, setF] = useState<ClinicSettings>(s);
   const set = <K extends keyof ClinicSettings>(k: K, v: ClinicSettings[K]) => setF({ ...f, [k]: v });
   return (
+    <>
     <form
       style={{ maxWidth: 720 }}
       onSubmit={(e) => {
@@ -85,6 +87,8 @@ function ClinicTab() {
       </div>
       <div className="actionbar"><button className="btn primary">{t('common.save')}</button></div>
     </form>
+    <OnlineBookingSection />
+    </>
   );
 }
 

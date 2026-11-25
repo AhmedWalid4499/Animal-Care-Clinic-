@@ -5,7 +5,7 @@
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','OTHER'`;
 const visitType = `'CHECKUP','VACCINATION','SURGERY','EMERGENCY','FOLLOW_UP','OTHER'`;
@@ -22,6 +22,29 @@ const visitIntake = `stage TEXT NOT NULL DEFAULT 'DONE' CHECK (stage IN ('WAITIN
   intake_at TEXT`;
 const ts = `created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`;
+// Guest appointments (schema v6, change request 25 Nov 2026): a booking for someone with no owner/pet record
+// yet (walk-in by phone, or the public booking page). pet_id/owner_id stay empty and the guest_* columns hold
+// what we know; when the guest arrives the front desk registers them and pet_id/owner_id are filled in. A guest
+// appointment may be hard-deleted (no-show, declined request). REQUESTED = sent from the public booking page,
+// waiting for staff to accept (→ SCHEDULED) or decline (→ deleted).
+const appointmentsTable = (name: string) => `CREATE TABLE ${name} (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT REFERENCES pets(id),
+  owner_id TEXT REFERENCES owners(id),
+  scheduled_at TEXT NOT NULL,
+  duration_min INTEGER NOT NULL DEFAULT 20,
+  type TEXT NOT NULL CHECK (type IN (${visitType})),
+  status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('REQUESTED','SCHEDULED','DONE','NO_SHOW','CANCELLED')),
+  notes TEXT,
+  visit_id TEXT REFERENCES visits(id),
+  reminder_sent_at TEXT,
+  guest_name TEXT,
+  guest_phone TEXT,
+  guest_pet_name TEXT,
+  guest_species TEXT,
+  source TEXT NOT NULL DEFAULT 'CLINIC' CHECK (source IN ('CLINIC','ONLINE')),
+  ${ts}
+);`;
 
 export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -179,19 +202,7 @@ CREATE TABLE vaccinations (
 CREATE INDEX vaccinations_next_due ON vaccinations(next_due_at);
 CREATE INDEX vaccinations_latest ON vaccinations(pet_id, vaccine_type_id, administered_at DESC);
 
-CREATE TABLE appointments (
-  id TEXT PRIMARY KEY,
-  pet_id TEXT NOT NULL REFERENCES pets(id),
-  owner_id TEXT NOT NULL REFERENCES owners(id),
-  scheduled_at TEXT NOT NULL,
-  duration_min INTEGER NOT NULL DEFAULT 20,
-  type TEXT NOT NULL CHECK (type IN (${visitType})),
-  status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','DONE','NO_SHOW','CANCELLED')),
-  notes TEXT,
-  visit_id TEXT REFERENCES visits(id),
-  reminder_sent_at TEXT,
-  ${ts}
-);
+${appointmentsTable('appointments')}
 CREATE INDEX appointments_scheduled ON appointments(scheduled_at);
 
 CREATE TABLE attachments (
@@ -222,6 +233,7 @@ CREATE TABLE clinic_settings (
   currency TEXT NOT NULL DEFAULT 'EGP',
   locale_default TEXT NOT NULL DEFAULT 'ar',
   receipt_footer TEXT,
+  online_booking INTEGER NOT NULL DEFAULT 0,
   ${ts}
 );
 
@@ -284,6 +296,18 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   // v5 (5 Nov 2026, Phase 2): each queued change remembers who made it, so it is sent under that person's sign-in.
   5: `ALTER TABLE sync_outbox ADD COLUMN user_id TEXT;`,
+  // v6 (25 Nov 2026, change request): guest appointments (no owner/pet yet) and the public booking page.
+  // SQLite can't drop NOT NULL or change a CHECK in place, so appointments is rebuilt (sync triggers are
+  // recreated after every migration).
+  6: `
+    ${appointmentsTable('appointments_v6')}
+    INSERT INTO appointments_v6 (id, pet_id, owner_id, scheduled_at, duration_min, type, status, notes, visit_id, reminder_sent_at, created_at, updated_at)
+      SELECT id, pet_id, owner_id, scheduled_at, duration_min, type, status, notes, visit_id, reminder_sent_at, created_at, updated_at FROM appointments;
+    DROP TABLE appointments;
+    ALTER TABLE appointments_v6 RENAME TO appointments;
+    CREATE INDEX appointments_scheduled ON appointments(scheduled_at);
+    ALTER TABLE clinic_settings ADD COLUMN online_booking INTEGER NOT NULL DEFAULT 0;
+  `,
 };
 
 /** Tables included in the one-click export, in dependency order. */

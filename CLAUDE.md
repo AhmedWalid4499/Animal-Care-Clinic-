@@ -18,7 +18,8 @@ The original plan (Next.js 15 + Prisma + Postgres on Railway + PWA) was replaced
 
 ## Data rules (do not break)
 - Pet belongs to exactly one owner (`pets.owner_id NOT NULL`). Clinical rows hang off `pets`; money hangs off `owners`.
-- Never hard-delete owners, pets, visits, invoices — use `status`. Hard delete is allowed only for `prescriptions` / `invoice_items` via cascade from their parent edit.
+- Never hard-delete owners, pets, visits, invoices — use `status`. Hard delete is allowed only for `prescriptions` / `invoice_items` via cascade from their parent edit, and for **guest appointments** (no `pet_id`: no-show or declined online request; `deleteGuestAppointment`, `server/rules.mjs`).
+- An appointment has a pet + owner **or** is a guest (`guest_name` + `guest_phone`, schema v6). Code that reads appointments must cope with `pet_id IS NULL` (use `apptSelect` / `ApptRow` in `repo.ts`).
 - Every write goes through `src/db/repo.ts` inside `tx()` and appends to `audit_log`.
 - Invoice `total` = Σ `line_total` − `discount`; `status` recomputed on every payment write (`UNPAID` / `PARTIAL` / `PAID`).
 - Vaccination `next_due_at` default = `administered_at + vaccine_types.interval_days`; editable.
@@ -36,9 +37,16 @@ Routes are hash routes (`#/owners`) because the app loads from `file://`.
 | `/pets/[id]` (+ `?tab=timeline\|vaccinations\|weight\|files`) | 4 Pet record |
 | `/pets/[id]/visits/new`, `/visits/[id]/edit` | 5 Visit |
 | `/intake/new`, `/pets/[id]/intake`, `/visits/[id]/intake` | 5a Pre-diagnosis (Phase 5 change request; queue on the dashboard) |
-| `/appointments` (`?view=day\|week`) | 6 Appointments |
+| `/appointments` (`?view=day\|week`) | 6 Appointments (+ guests and online booking requests: change request 25 Nov 2026) |
+| `<server>/book` (served by `server/book.html` + `server/booking.mjs`, no sign-in) | Public booking page: free 20-min slots, 9:00–22:00 Cairo, next 30 days → `REQUESTED` guest appointment; on/off + link in Settings → Clinic |
 | `/invoices`, `/invoices/[id]`, `/invoices/[id]/print` | 7 Invoices |
 | `/settings` (clinic, prices, vaccines, users, devices, export, clinic server) | 8 Settings — Admin only |
+
+## Online booking (change request, 25 Nov 2026)
+- Needs the clinic server (the page is on Railway). Admin turns it on in Settings → Clinic → Online booking and shares `<server>/book`.
+- No account for the visitor; nothing they send creates an owner or pet. Staff accept / decline in Appointments (strip at the top; dashboard banner). Accept → SCHEDULED; Decline → deleted (WhatsApp "sorry" text offered first). Arrival → "register owner & pet" (reuses the owner with the same phone).
+- Brakes in `server/booking.mjs`: 8 tries/hour and 20/day per address, 2 upcoming requests per phone, 60 waiting requests in total, honeypot field, slot re-checked under a lock. The page never shows who else is booked.
+- Hours/slot length are constants in `server/booking.mjs` and `src/screens/Appointments.tsx` (keep them equal).
 
 ## The one integration
 WhatsApp click-to-chat: `https://wa.me/<E164>?text=<encoded>` with templates in `lib/whatsapp.ts` (AR/EN): vaccination reminder, appointment reminder, invoice balance. Set `reminder_sent_at` when the button is clicked. **No WhatsApp Business API** — out of scope.

@@ -229,6 +229,10 @@ table.t input, table.t select { min-height: 32px; padding: 4px 8px; }
 .slot .appt.DONE { border-color: var(--ok); background: var(--ok-soft); }
 .slot .appt.NO_SHOW, .slot .appt.CANCELLED { border-color: var(--ink-3); background: var(--bg-2); color: var(--ink-3); }
 .slot .appt.NO_SHOW b, .slot .appt.CANCELLED b { text-decoration: line-through; }
+/* Online booking requests (waiting for staff) and guests: dashed = not confirmed / no record yet. */
+.chip.REQUESTED, .slot .appt.REQUESTED { border-inline-start-style: dashed; border-color: var(--warn); background: var(--warn-soft); }
+.section.requests { margin: 4px 0 18px; }
+.section.requests .time { line-height: 1.25; font-size: 12px; }
 .slot.add:hover { background: var(--bg-2); cursor: pointer; }
 
 /* totals */

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
-import { appointmentsBetween, dashboardCounts, dueVaccinations, getSettings, markAppointmentReminded, markVaccinationReminded, quickSearch } from '../db/repo';
+import { appointmentsBetween, bookingRequests, dashboardCounts, dueVaccinations, getSettings, markAppointmentReminded, markVaccinationReminded, quickSearch } from '../db/repo';
 import { addDays, daysBetween, startOfDayIso, today } from '../lib/dates';
 import { Badge, Icon, StatusBadge, WaButton, speciesEmoji } from '../components/ui';
 import { PageHead } from '../components/Layout';
 import { QueueSection } from './IntakeForm';
+import { apptPet, apptWaText } from './Appointments';
 
 export function Dashboard() {
   const { t, fmt, canVisit, locale } = useApp();
@@ -16,6 +17,7 @@ export function Dashboard() {
   const appts = useQuery(() => appointmentsBetween(startOfDayIso(d), startOfDayIso(addDays(d, 1))), [d]);
   const due = useQuery(() => dueVaccinations(7));
   const counts = useQuery(dashboardCounts);
+  const requests = useQuery(bookingRequests);
   const settings = useQuery(getSettings);
   const clinic = locale === 'ar' ? settings.name_ar : settings.name_en;
 
@@ -55,6 +57,12 @@ export function Dashboard() {
         </ul>
       )}
 
+      {requests.length > 0 && (
+        <div className="note warn link" role="button" tabIndex={0} style={{ marginTop: 14, cursor: 'pointer' }} onClick={() => nav('/appointments?view=week')} onKeyDown={(e) => e.key === 'Enter' && nav('/appointments?view=week')}>
+          <b>{t('dashboard.requests', { n: requests.length })}</b> · {t('dashboard.requestsOpen')}
+        </div>
+      )}
+
       <QueueSection />
 
       <div className="cols" style={{ marginTop: 26 }}>
@@ -69,8 +77,8 @@ export function Dashboard() {
               <li key={a.id} className={`link ${a.status === 'CANCELLED' || a.status === 'NO_SHOW' ? 'greyed' : ''}`} onClick={() => nav(`/appointments?view=day&date=${d}&open=${a.id}`)}>
                 <span className="time">{fmt.time(a.scheduled_at)}</span>
                 <div className="main-col">
-                  <b>{speciesEmoji[a.species]} {a.pet_name}</b>
-                  <div className="sub">{a.owner_name} · {t(`visitType.${a.type}`)}{a.notes ? ` · ${a.notes}` : ''}</div>
+                  <b>{speciesEmoji[a.species]} {apptPet(a, t)}</b>
+                  <div className="sub">{a.owner_name}{a.is_guest ? ` (${t('appointments.guest')})` : ''} · {t(`visitType.${a.type}`)}{a.notes ? ` · ${a.notes}` : ''}</div>
                 </div>
                 <StatusBadge ns="apptStatus" value={a.status} />
                 {a.status === 'SCHEDULED' && (
@@ -78,7 +86,7 @@ export function Dashboard() {
                     small
                     phone={a.whatsapp || a.phone}
                     label=""
-                    text={t('wa.appointment', { owner: a.owner_name, clinic, pet: a.pet_name, date: fmt.date(a.scheduled_at), time: fmt.time(a.scheduled_at) })}
+                    text={apptWaText('wa.appointment', a, clinic, t, fmt)}
                     onSent={() => markAppointmentReminded(a.id)}
                   />
                 )}

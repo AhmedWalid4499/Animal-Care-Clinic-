@@ -2,7 +2,7 @@ export const SPECIES = ['DOG', 'CAT', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER'] as c
 export const SEXES = ['MALE', 'FEMALE', 'UNKNOWN'] as const;
 export const PET_STATUS = ['ACTIVE', 'DECEASED', 'TRANSFERRED'] as const;
 export const VISIT_TYPES = ['CHECKUP', 'VACCINATION', 'SURGERY', 'EMERGENCY', 'FOLLOW_UP', 'OTHER'] as const;
-export const APPT_STATUS = ['SCHEDULED', 'DONE', 'NO_SHOW', 'CANCELLED'] as const;
+export const APPT_STATUS = ['REQUESTED', 'SCHEDULED', 'DONE', 'NO_SHOW', 'CANCELLED'] as const;
 export const ATTACHMENT_KINDS = ['LAB', 'XRAY', 'PHOTO', 'DOCUMENT', 'OTHER'] as const;
 export const PRICE_CATEGORIES = ['CONSULTATION', 'VACCINE', 'SURGERY', 'MEDICATION', 'BOARDING', 'GROOMING', 'OTHER'] as const;
 export const INVOICE_STATUS = ['UNPAID', 'PARTIAL', 'PAID', 'VOID'] as const;
@@ -52,9 +52,12 @@ export interface Vaccination {
   id: string; pet_id: string; visit_id: string | null; vaccine_type_id: string; administered_at: string;
   next_due_at: string | null; batch_no: string | null; reminder_sent_at: string | null;
 }
+/** pet_id/owner_id are null for a guest (no record yet; schema v6): the guest_* columns describe them. */
 export interface Appointment {
-  id: string; pet_id: string; owner_id: string; scheduled_at: string; duration_min: number; type: VisitType;
+  id: string; pet_id: string | null; owner_id: string | null; scheduled_at: string; duration_min: number; type: VisitType;
   status: ApptStatus; notes: string | null; visit_id: string | null; reminder_sent_at: string | null;
+  guest_name: string | null; guest_phone: string | null; guest_pet_name: string | null; guest_species: string | null;
+  source: 'CLINIC' | 'ONLINE';
 }
 export interface Attachment {
   id: string; pet_id: string; visit_id: string | null; kind: AttachmentKind; file_url: string; file_name: string;
@@ -73,5 +76,5 @@ export interface Payment {
 }
 export interface ClinicSettings {
   id: 1; name_en: string; name_ar: string; logo_url: string | null; phone: string | null; whatsapp: string | null;
-  address: string | null; currency: string; locale_default: Locale; receipt_footer: string | null;
+  address: string | null; currency: string; locale_default: Locale; receipt_footer: string | null; online_booking?: number;
 }

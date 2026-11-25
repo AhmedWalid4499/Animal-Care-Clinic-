@@ -208,6 +208,7 @@ These are outside SCOPE §4, so they are change requests, quoted at list price a
 - **Built for several clinics** (`clinic_id`, platform owner console): SCOPE §5 lists multi-clinic as v2.
 - **Phase 5:** the pre-assessment step (a new workflow), device management, and invite / password reset.
 - **Hosting under Ahmed's account** instead of Dr. Waleed's (§4 and §8).
+- **Guest appointments and the public booking link** (25 Nov 2026): appointments for people with no record yet (deletable if they don't come), and a page anyone can open to request a slot, accepted or declined by staff. Screen 6 grows; the booking page is a new public screen.
 
 The rest moves the project back towards the scope: the phone install (§4, §7.8), Railway hosting in the EU (§8), and the nightly backup (§7.7).
 

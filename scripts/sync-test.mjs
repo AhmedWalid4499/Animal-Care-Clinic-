@@ -455,6 +455,130 @@ await step('notify: read', async () => {
   check('notify-read', '“Mark all read” clears the count, on every device of that person', (await bell(B)) === 0 && !!r.v, `bell count now ${await bell(B)}; server unread for the doctor: ${r.v ? 0 : 'not 0'}`);
 });
 
+// ---------------------------------------------------------------- Guest appointments + public booking link (change request, 25 Nov 2026)
+const tomorrowCairo = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() + 86_400_000));
+const publicBook = (body) => api('/api/public/book', body);
+const apptRow = async (id) => (await pool.query("SELECT data, deleted FROM rows WHERE tbl = 'appointments' AND id = $1", [id])).rows[0];
+const booking = {};
+
+await step('booking: link on', async () => {
+  const closed = (await api(`/api/public/slots?date=${tomorrowCairo()}`)).status;
+  await go(A, '#/settings?tab=clinic');
+  await A.win.getByLabel(/استقبال طلبات الحجز|Accept booking requests/).check();
+  const on = await until(async () => (await pool.query("SELECT 1 FROM rows WHERE tbl = 'clinic_settings' AND (data->>'online_booking')::int = 1")).rowCount === 1, 15_000);
+  const link = await A.win.locator('input[aria-label="رابط الحجز"], input[aria-label="Booking link"]').inputValue();
+  await A.win.screenshot({ path: path.join(out, 'booking-settings.png') });
+  check('booking-on', 'The Admin turns online booking on in Settings and gets the link to share; before that the page takes no bookings',
+    closed === 403 && !!on.v && link === `${SERVER}/book`, `slots while off → ${closed}; switched on in ${on.ms} ms; link shown: ${link}`);
+});
+
+await step('booking: phone books a slot', async () => {
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 }, deviceScaleFactor: 2 });
+  await page.goto(`${SERVER}/book`);
+  await page.locator('.day').nth(1).click(); // tomorrow
+  await page.locator('.slot').nth(9).waitFor();
+  const slot = (await page.locator('.slot').nth(9).innerText()).trim();
+  await page.locator('.slot').nth(9).click();
+  await page.locator('#name').fill('Salma Online');
+  await page.locator('#phone').fill('0101 555 7788');
+  await page.locator('#petName').fill('Zizi');
+  await page.locator('#species').selectOption('CAT');
+  await page.screenshot({ path: path.join(out, 'booking-page.png'), fullPage: true });
+  const t0 = Date.now();
+  await page.locator('#send').click();
+  await page.locator('#done').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.screenshot({ path: path.join(out, 'booking-sent.png') });
+  await browser.close();
+  const row = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'appointments' AND data->>'guest_name' = 'Salma Online' AND NOT deleted")).rows[0];
+  booking.id = row?.id;
+  booking.date = tomorrowCairo();
+  booking.time = slot;
+  const cairoTime = row && new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(row.data.scheduled_at));
+  const noted = await until(async () => {
+    const who = await Promise.all(['admin', 'doctor', 'desk'].map(async (w) => (await notesFor(w)).some((n) => n.event === 'requested' && n.data.appointment_id === row.id)));
+    return who.every(Boolean) && who;
+  }, 5_000);
+  // The doctor's laptop gets it live and the dashboard says a request is waiting.
+  await go(B, '#/');
+  const banner = await until(async () => (await B.win.locator('.note.warn', { hasText: /طلب حجز|online booking request/ }).count()) > 0, 10_000, 200);
+  await B.win.screenshot({ path: path.join(out, 'booking-dashboard-banner.png') });
+  check('booking-public', 'Someone with no account books from a phone: a guest request is stored (no owner/pet record), every staff member is notified, and laptops show it at once',
+    !!row && row.data.status === 'REQUESTED' && row.data.source === 'ONLINE' && row.data.pet_id === null && cairoTime === slot && !!noted.v && !!banner.v,
+    `picked ${booking.date} ${slot} (Cairo) on a 390 px phone; stored ${row?.data.status} ${row?.data.scheduled_at} (= ${cairoTime} Cairo), pet_id ${row?.data.pet_id}; notified admin/doctor/assistant: ${!!noted.v}; doctor's dashboard banner after ${banner.ms + (Date.now() - t0 - banner.ms)} ms: ${!!banner.v}`);
+});
+
+await step('booking: abuse brakes', async () => {
+  const base = { name: 'Salma Online', phone: '01015557788', date: booking.date };
+  const taken = await publicBook({ ...base, time: booking.time });
+  const offGrid = await publicBook({ ...base, time: '10:07' });
+  const freeNow = (await api(`/api/public/slots?date=${booking.date}`)).body.slots ?? [];
+  const second = await publicBook({ ...base, time: freeNow[freeNow.length - 1] });
+  booking.second = (await pool.query("SELECT id FROM rows WHERE tbl = 'appointments' AND data->>'guest_name' = 'Salma Online' AND id <> $1 AND NOT deleted", [booking.id])).rows[0]?.id;
+  const third = await publicBook({ ...base, time: freeNow[freeNow.length - 2] });
+  const before = (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'appointments'")).rows[0].n;
+  const bot = await publicBook({ name: 'Bot', phone: '01000000001', date: booking.date, time: freeNow[0], website: 'http://spam.example' });
+  const after = (await pool.query("SELECT COUNT(*) n FROM rows WHERE tbl = 'appointments'")).rows[0].n;
+  const listed = freeNow.includes(booking.time);
+  check('booking-brakes', 'The booking page cannot double-book, accepts only real slots, caps requests per phone, and quietly drops bots',
+    taken.status === 409 && taken.body.error === 'taken' && offGrid.status === 400 && !listed && second.status === 200 && third.body.error === 'phone_limit' && bot.status === 200 && before === after,
+    `same slot again → ${taken.status} ${taken.body.error}; 10:07 → ${offGrid.status} ${offGrid.body.error}; booked slot still offered: ${listed}; 2nd request same phone → ${second.status}; 3rd → ${third.status} ${third.body.error}; honeypot → ${bot.status}, rows ${before}→${after}`);
+});
+
+await step('booking: accept, arrive, decline', async () => {
+  // Accept on the doctor's laptop.
+  await go(B, '#/appointments?view=week');
+  await B.win.locator('.section.requests li').first().waitFor({ timeout: 10_000 });
+  const strip = await B.win.locator('.section.requests li').count();
+  await B.win.locator('.section.requests li', { hasText: 'Zizi' }).click();
+  await B.win.screenshot({ path: path.join(out, 'booking-request-dialog.png') });
+  await B.win.locator('.dialog footer .btn.primary').click();
+  const accepted = await until(async () => (await apptRow(booking.id)).data.status === 'SCHEDULED', 10_000);
+  const told = await until(async () => (await notesFor('admin')).some((n) => n.event === 'accepted' && n.data.appointment_id === booking.id), 5_000);
+  // The guest arrives: the front desk registers them in one tap (laptop B), which makes an owner and a pet.
+  await go(B, `#/appointments?view=day&date=${booking.date}&open=${booking.id}`);
+  await B.win.locator('.dialog .note .btn.primary').click();
+  const reg = await until(async () => {
+    const a = await apptRow(booking.id);
+    if (!a.data.pet_id) return null;
+    const pet = (await pool.query("SELECT data FROM rows WHERE tbl = 'pets' AND id = $1", [a.data.pet_id])).rows[0]?.data;
+    const owner = (await pool.query("SELECT data FROM rows WHERE tbl = 'owners' AND id = $1", [a.data.owner_id])).rows[0]?.data;
+    return pet && owner ? { pet, owner } : null;
+  }, 10_000);
+  // Decline the second request on the admin's laptop: it is deleted everywhere.
+  await go(A, `#/appointments?open=${booking.second}`);
+  await A.win.locator('.dialog footer .btn.danger').first().click();
+  await A.win.locator('.note.bad .btn.danger').click();
+  const gone = await until(async () => (await apptRow(booking.second))?.deleted === true, 10_000);
+  const goneOnB = await until(async () => {
+    const db = new SQL.Database(fs.readFileSync(path.join(B.dataDir, 'clinic.sqlite')));
+    const n = db.exec('SELECT COUNT(*) FROM appointments WHERE id = ?', [booking.second])[0].values[0][0];
+    db.close();
+    return n === 0;
+  }, 15_000, 500);
+  check('booking-flow', 'Staff accept a request, register the guest as owner + pet when they arrive, and decline (delete) another; every laptop follows',
+    strip >= 2 && !!accepted.v && !!told.v && reg.v?.pet.name === 'Zizi' && reg.v?.pet.species === 'CAT' && reg.v?.owner.full_name === 'Salma Online' && !!gone.v && !!goneOnB.v,
+    `requests listed: ${strip}; accepted on B → SCHEDULED: ${!!accepted.v}, admin notified: ${!!told.v}; registered → owner "${reg.v?.owner.full_name}" (${reg.v?.owner.phone}), pet "${reg.v?.pet.name}" ${reg.v?.pet.species}; declined on A → deleted on server: ${!!gone.v}, gone from laptop B: ${!!goneOnB.v}`);
+});
+
+await step('booking: guest appointments and rules', async () => {
+  // A walk-in booked by phone at the desk (assistant): no owner/pet; deleting it is allowed, deleting a registered one is not.
+  const g = crypto.randomUUID();
+  const mk = await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: g, op: 'upsert', at: nowIso(), cols: { id: g, pet_id: null, owner_id: null, scheduled_at: new Date(Date.now() + 2 * 86_400_000).toISOString(), duration_min: 20, type: 'CHECKUP', status: 'SCHEDULED', guest_name: 'Walk-in Wael', guest_phone: '01200000001', source: 'CLINIC', created_at: nowIso(), updated_at: nowIso() } }] }, tokens.desk);
+  const del = await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: g, op: 'delete', at: nowIso(), cols: {} }] }, tokens.desk);
+  const delReg = await api('/api/sync/push', { changes: [{ tbl: 'appointments', id: booking.id, op: 'delete', at: nowIso(), cols: {} }] }, tokens.desk);
+  const stillThere = (await apptRow(booking.id)).deleted === false;
+  // Switched off: the page says "call the clinic" and takes no bookings.
+  await go(A, '#/settings?tab=clinic');
+  await A.win.getByLabel(/استقبال طلبات الحجز|Accept booking requests/).uncheck();
+  const off = await until(async () => (await api(`/api/public/slots?date=${booking.date}`)).status === 403, 15_000);
+  const afterOff = await publicBook({ name: 'Late', phone: '01000000002', date: booking.date, time: '20:00' });
+  check('booking-rules', 'A guest appointment can be deleted (no-show), a registered one cannot; switching the link off stops bookings',
+    !mk.body.rejected?.length && !del.body.rejected?.length && (await apptRow(g)).deleted && delReg.body.rejected?.[0]?.reason === 'records are archived, never deleted' && stillThere && !!off.v && afterOff.status === 403,
+    `assistant books a guest → ${mk.body.rejected?.length ? 'refused' : 'ok'}; deletes it → ${del.body.rejected?.length ? 'refused' : 'deleted'}; deletes a registered appointment → "${delReg.body.rejected?.[0]?.reason}"; switched off → slots 403: ${!!off.v}, booking → ${afterOff.status}`);
+});
+
 // ---------------------------------------------------------------- Phase 5: pre-diagnosis, password reset, devices
 await step('phase5: pre-diagnosis', async () => {
   // The doctor on laptop B records the intake; the admin on laptop A is the vet.

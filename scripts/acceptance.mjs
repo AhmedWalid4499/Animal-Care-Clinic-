@@ -408,6 +408,16 @@ await app.close();
   for (const c of ['stage', 'urgency', 'history', 'heart_rate', 'resp_rate', 'intake_notes', 'intake_by', 'intake_at']) db.run(`ALTER TABLE visits DROP COLUMN ${c}`);
   db.run('DROP TABLE sync_outbox');
   db.run('DROP TABLE sync_state');
+  // Version 0.1 appointments always had a pet and owner, and there was no online booking (schema v6).
+  db.run(`CREATE TABLE appointments_v1 (id TEXT PRIMARY KEY, pet_id TEXT NOT NULL REFERENCES pets(id), owner_id TEXT NOT NULL REFERENCES owners(id),
+    scheduled_at TEXT NOT NULL, duration_min INTEGER NOT NULL DEFAULT 20, type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED','DONE','NO_SHOW','CANCELLED')),
+    notes TEXT, visit_id TEXT REFERENCES visits(id), reminder_sent_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+  db.run(`INSERT INTO appointments_v1 SELECT id, pet_id, owner_id, scheduled_at, duration_min, type, status, notes, visit_id, reminder_sent_at, created_at, updated_at
+    FROM appointments WHERE pet_id IS NOT NULL AND status <> 'REQUESTED'`);
+  db.run('DROP TABLE appointments');
+  db.run('ALTER TABLE appointments_v1 RENAME TO appointments');
+  db.run('CREATE INDEX appointments_scheduled ON appointments(scheduled_at)');
+  db.run('ALTER TABLE clinic_settings DROP COLUMN online_booking');
   db.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
   fs.writeFileSync(dbFile, Buffer.from(db.export()));
 }
@@ -424,7 +434,7 @@ const afterRelaunch = counts(openDbFile());
     const ver = db2.exec("SELECT value FROM meta WHERE key = 'schema_version'")[0].values[0][0];
     const roles = db2.exec('SELECT role, COUNT(*) FROM users GROUP BY role')[0].values.map((r) => `${r[0]}×${r[1]}`).join(', ');
     const settingsLink = await win.locator('.nav a[href="#/settings"]').count();
-    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '5' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
+    check('upgrade-roles', 'Updating from version 0.1 turns the Vet into an Admin and keeps every user', ver === '6' && !roles.includes('VET') && roles.includes('ADMIN') && settingsLink === 1,
       `schema ${ver}; roles now ${roles}; the former Vet still has Settings: ${settingsLink ? 'yes' : 'no'}`);
   }
   check('upgrade', 'Updating an older install adds the clinic logo and details', loginLogo && sideLogo && String(row[0]).startsWith('data:image/png') && row[1] === '01227007428' && row[2] === 'Giza · الجيزة' && row[3] === 'Where pets are people · شكراً لثقتكم',

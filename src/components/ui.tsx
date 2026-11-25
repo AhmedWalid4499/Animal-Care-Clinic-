@@ -99,7 +99,7 @@ export function Badge({ kind, children }: { kind?: 'ok' | 'warn' | 'bad' | 'info
 }
 
 const statusKind: Record<string, 'ok' | 'warn' | 'bad' | 'info' | undefined> = {
-  PAID: 'ok', PARTIAL: 'warn', UNPAID: 'bad', VOID: undefined, SCHEDULED: 'info', DONE: 'ok', NO_SHOW: 'bad', CANCELLED: undefined,
+  PAID: 'ok', PARTIAL: 'warn', UNPAID: 'bad', VOID: undefined, REQUESTED: 'warn', SCHEDULED: 'info', DONE: 'ok', NO_SHOW: 'bad', CANCELLED: undefined,
   ACTIVE: 'ok', DECEASED: undefined, TRANSFERRED: undefined, ARCHIVED: undefined,
 };
 export function StatusBadge({ ns, value }: { ns: string; value: string }) {

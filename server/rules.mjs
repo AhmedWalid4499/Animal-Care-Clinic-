@@ -20,7 +20,9 @@ const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_passw
 export function refuse(role, change, before, userId) {
   const { tbl, op, cols } = change;
   if (!SYNC_TABLES.includes(tbl)) return 'unknown table';
-  if (op === 'delete' && !DELETABLE.has(tbl)) return 'records are archived, never deleted';
+  // A guest appointment (no owner/pet record, schema v6) may be deleted: a no-show or a declined online request.
+  const guestAppt = tbl === 'appointments' && (!before || !before.pet_id);
+  if (op === 'delete' && !DELETABLE.has(tbl) && !guestAppt) return 'records are archived, never deleted';
   if (tbl === 'audit_log' && before) return 'the audit log is append-only';
   if (role === 'ADMIN') return null;
   if (tbl === 'users' && before && change.id === userId && op === 'upsert' && Object.keys(cols).every((c) => OWN_USER_COLS.has(c))) return null;
