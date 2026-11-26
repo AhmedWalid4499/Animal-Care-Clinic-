@@ -4,14 +4,14 @@ import { useState } from 'react';
 import { useApp, useQuery } from '../lib/app';
 import { getSettings, saveSettings } from '../db/repo';
 import { platform } from '../lib/platform';
-import { serverUrl } from '../sync/engine';
+import { publicBase } from '../lib/site';
 import { Icon } from './ui';
 
 export function OnlineBookingSection() {
   const { t, toast, locale } = useApp();
   const s = useQuery(getSettings);
   const [copied, setCopied] = useState(false);
-  const base = serverUrl();
+  const base = publicBase();
   const on = Number(s.online_booking) === 1;
   const link = base ? `${base}/book${locale === 'en' ? '?lang=en' : ''}` : null;
   const clinic = locale === 'ar' ? s.name_ar : s.name_en;

@@ -1,7 +1,7 @@
 // Animal Care Clinic sync server (docs/CLOUD-PLAN.md). Runs on Railway (railway.json) or locally:
 //   DATABASE_URL=postgres://… ADMIN_EMAIL=… ADMIN_PASSWORD=… node server/index.mjs
 // Serves the web app from dist-cloud/, the sync API under /api, and live change pings on /api/live.
-import { CLINIC_ADDRESS, OLD_ADDRESS as OLD_PLACEHOLDER } from './clinic.mjs';
+import { CLINIC_ADDRESS, OLD_ADDRESS as OLD_PLACEHOLDER, redirectToSite } from './clinic.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -423,6 +423,8 @@ const server = http.createServer(async (req, res) => {
       await pool.query('SELECT 1');
       return send(res, 200, { ok: true });
     }
+    // A public page opened on the Railway address goes to the same page on the clinic's domain (server/clinic.mjs).
+    if (redirectToSite(req, res, url)) return;
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     // The public booking page for people with no owner page yet (server/book.html). Public.
     if (url.pathname === '/book' || url.pathname === '/book/') return serveBookingPage(res);

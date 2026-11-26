@@ -650,6 +650,30 @@ await step('booking: guest appointments and rules', async () => {
     `assistant books a guest → ${mk.body.rejected?.length ? 'refused' : 'ok'}; deletes it → ${del.body.rejected?.length ? 'refused' : 'deleted'}; deletes a registered appointment → "${delReg.body.rejected?.[0]?.reason}"; switched off → page closed: ${!!off.v}, request → ${afterOff.status}`);
 });
 
+await step('links use the clinic domain', async () => {
+  // A link opened on the Railway address (same server) goes to the clinic's own domain; the apps' API there still answers.
+  const RAILWAY = 'animal-care-clinic-production.up.railway.app';
+  const get = (p, host) => new Promise((resolve, reject) => {
+    const r = http.request({ host: '127.0.0.1', port: PORT, path: p, method: 'GET', headers: { Host: host } }, (res) => {
+      res.resume();
+      resolve({ status: res.statusCode, location: res.headers.location ?? '' });
+    });
+    r.on('error', reject);
+    r.end();
+  });
+  const site = JSON.parse(fs.readFileSync('src/lib/clinic-info.json', 'utf8')).site;
+  const book = await get('/book?lang=en', RAILWAY);
+  const clinicPage = await get('/clinic', RAILWAY);
+  const ownerPage = await get('/o/abc123', RAILWAY);
+  const apiThere = await get('/api/public/booking', RAILWAY);
+  const health = await get('/health', RAILWAY);
+  const local = await get('/book', `127.0.0.1:${PORT}`);
+  check('domain-links', 'Public pages opened on the Railway address go to the clinic’s domain; the apps keep working on either address',
+    book.status === 302 && book.location === `${site}/book?lang=en` && clinicPage.location === `${site}/clinic` && ownerPage.location === `${site}/o/abc123` &&
+      apiThere.status === 200 && health.status === 200 && local.status === 200,
+    `/book on ${RAILWAY} → ${book.status} ${book.location}; /clinic → ${clinicPage.location}; owner page → ${ownerPage.location}; API there → ${apiThere.status}, /health → ${health.status}; same page on the server's own address → ${local.status}`);
+});
+
 // ---------------------------------------------------------------- Phase 5: pre-diagnosis, password reset, devices
 await step('phase5: pre-diagnosis', async () => {
   // The doctor on laptop B records the intake; the admin on laptop A is the vet.

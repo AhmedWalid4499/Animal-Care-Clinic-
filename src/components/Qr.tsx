@@ -1,11 +1,11 @@
 // QR codes (owner page card, collar tags, and the clinic QR at the bottom left of every printed document).
 import { useMemo } from 'react';
 import qrcode from 'qrcode-generator';
-import { serverUrl } from '../sync/engine';
+import { publicBase } from '../lib/site';
 import info from '../lib/clinic-info.json';
 
 /** The clinic's own page on the clinic server (server/clinic-page.mjs): name, head, address, phone, InstaPay. */
-export const clinicPageUrl = () => `${serverUrl() ?? info.site}/clinic`;
+export const clinicPageUrl = () => `${publicBase() ?? info.site}/clinic`;
 
 /** QR code as crisp SVG (one path; dark modules on white with the 4-module quiet zone scanners need). */
 export function QrCode({ text, size = 176, label }: { text: string; size?: number; label?: string }) {

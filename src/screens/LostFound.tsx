@@ -7,10 +7,10 @@ import { useApp, useQuery } from '../lib/app';
 import { createPetTag, disablePetTag, foundReports, getPet, getSettings, markFoundHandled, replacePetTag } from '../db/repo';
 import { platform } from '../lib/platform';
 import { telUrl } from '../lib/whatsapp';
-import { serverUrl } from '../sync/engine';
 import { PageHead } from '../components/Layout';
 import { Badge, Confirm, Icon, OwnerCode, PetAvatar, SavePdfButton, WaButton } from '../components/ui';
 import { QrCode } from '../components/OwnerPage';
+import { publicBase } from '../lib/site';
 
 const mapUrl = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}`;
 
@@ -78,7 +78,7 @@ export function PetTag() {
   const s = useQuery(getSettings);
   const [confirm, setConfirm] = useState<'replace' | 'disable' | null>(null);
   if (!pet) return null;
-  const base = serverUrl();
+  const base = publicBase();
   const url = pet.tag_token && base ? `${base}/t/${pet.tag_token}` : null;
   const clinic = locale === 'ar' ? s.name_ar : s.name_en;
   const Tag = ({ size }: { size: 'lg' | 'sm' | 'round' }) => (
