@@ -5,17 +5,17 @@
 import { useState } from 'react';
 import { useApp, useQuery } from '../lib/app';
 import { getSettings, listLabUsers, resetPassword, saveLabUser } from '../db/repo';
-import { serverUrl } from '../sync/engine';
 import { platform } from '../lib/platform';
 import type { User } from '../db/types';
 import { Dialog, Field, Icon } from './ui';
 import { InviteDialog } from './Account';
+import { publicBase } from '../lib/site';
 
 export function LabAccountsTab() {
   const { t, fmt, locale } = useApp();
   const rows = useQuery(listLabUsers);
   const settings = useQuery(getSettings);
-  const server = serverUrl();
+  const server = publicBase();
   const link = server ? `${server.replace(/\/+$/, '')}/lab` : null;
   const [edit, setEdit] = useState<Partial<User> | null>(null);
   const [invite, setInvite] = useState<{ person: User | Pick<User, 'name' | 'email' | 'role' | 'roles' | 'lab_name'>; password: string } | null>(null);

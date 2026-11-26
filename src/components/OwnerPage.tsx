@@ -10,9 +10,10 @@ import { serverUrl } from '../sync/engine';
 import { platform } from '../lib/platform';
 import { Confirm, Icon, SavePdfButton, WaButton, SheetAddress } from './ui';
 
-export const ownerPageUrl = (token: string, base = serverUrl()) => (base ? `${base}/o/${token}` : null);
+export const ownerPageUrl = (token: string, base = publicBase()) => (base ? `${base}/o/${token}` : null);
 
 import { QrCode } from './Qr';
+import { publicBase } from '../lib/site';
 export { QrCode };
 
 /** Owner detail → "Owner page": QR, link, print card, WhatsApp, Admin replace / off. */
@@ -21,7 +22,7 @@ export function OwnerPageSection({ owner }: { owner: Owner }) {
   const nav = useNavigate();
   const settings = useQuery(getSettings);
   const [confirm, setConfirm] = useState<'replace' | 'disable' | null>(null);
-  const base = serverUrl();
+  const base = publicBase();
   const url = owner.portal_token ? ownerPageUrl(owner.portal_token, base) : null;
   const clinic = locale === 'ar' ? settings.name_ar : settings.name_en;
 

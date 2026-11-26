@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pageHtml } from './portal-page.mjs';
 import { fileBytes } from './files.mjs';
-import { clinicAddress } from './clinic.mjs';
+import { clinicAddress, siteFor } from './clinic.mjs';
 import { slotsFor, bookSlot } from './booking.mjs';
 import { docPageHtml, prescriptionSheet, requestSheet } from './doc-page.mjs';
 
@@ -364,7 +364,7 @@ export async function handleOwnerPage(pool, req, res, url, hooks = {}) {
       ...baseHeaders, 'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
     });
-    const site = `${req.headers['x-forwarded-proto'] === 'http' || !req.headers['x-forwarded-proto'] && !req.socket.encrypted ? 'http' : 'https'}://${req.headers.host}`;
+    const site = siteFor(req); // the clinic's domain, also when opened on the Railway address
     const dd = { ...d, site };
     res.end(req.method === 'HEAD' ? undefined : docPageHtml({
       nonce, lang, title,
