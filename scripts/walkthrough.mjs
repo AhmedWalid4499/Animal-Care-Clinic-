@@ -627,7 +627,8 @@ await step('consent form signed on screen', async () => {
   const sign = win.getByRole('button', { name: 'Sign and save' });
   if (!(await sign.isDisabled())) throw new Error('saving allowed without a signature');
   await win.getByLabel('I have read this form and agree').check();
-  await win.locator('.sigpad canvas').scrollIntoViewIfNeeded();
+  // Centred, clear of the sticky action bar at the bottom.
+  await win.locator('.sigpad canvas').evaluate((el) => el.scrollIntoView({ block: 'center' }));
   const pad = await win.locator('.sigpad canvas').boundingBox();
   await win.mouse.move(pad.x + 30, pad.y + 100);
   await win.mouse.down();
@@ -645,6 +646,9 @@ await step('consent form signed on screen', async () => {
 await step('consent form sent to sign at home', async () => {
   // 27 Nov 2026 change request: the owner doesn't have to be at the clinic. The form is made, sent (PDF, WhatsApp, the
   // owner's page) and the signed copy that comes back is uploaded.
+  await go('#/owners');
+  await win.getByText('Mona Hassan').first().click();
+  await win.locator('.list li', { hasText: 'Luna' }).first().click();
   await win.locator('.pagehead').getByRole('button', { name: 'Print & forms' }).click();
   await win.getByRole('menuitem', { name: 'Consent form' }).click();
   await win.getByLabel('Procedure').fill('Dental cleaning under anaesthesia');
