@@ -45,6 +45,11 @@ function Both({ k, vars, block }: { k: string; vars?: Record<string, string>; bl
   );
 }
 
+/** Under a blank line on the paper form: the English label above the Arabic one (narrow columns). */
+function PaperLabel({ k }: { k: string }) {
+  return <span className="cp-label"><span dir="ltr">{pick(en as Dict, k)}</span><span dir="rtl" lang="ar">{pick(ar as Dict, k)}</span></span>;
+}
+
 /** A canvas you sign on. Returns a PNG data URL (null while empty). */
 function SignaturePad({ onChange }: { onChange: (png: string | null) => void }) {
   const { t } = useApp();
@@ -248,9 +253,9 @@ export function ConsentView() {
             <>
               {/* Signed by hand: blank lines for the owner, and how to send it back. */}
               <div className="consent-paper">
-                <div className="cp-field"><span className="cp-line" /><Both k="consent.paperName" /></div>
-                <div className="cp-field"><span className="cp-line tall" /><Both k="consent.paperSignature" /></div>
-                <div className="cp-field"><span className="cp-line" /><Both k="consent.paperDate" /></div>
+                <div className="cp-field"><span className="cp-line" /><PaperLabel k="consent.paperName" /></div>
+                <div className="cp-field"><span className="cp-line tall" /><PaperLabel k="consent.paperSignature" /></div>
+                <div className="cp-field"><span className="cp-line" /><PaperLabel k="consent.paperDate" /></div>
               </div>
               <p className="consent-return"><Both k="consent.text.return" /></p>
             </>

@@ -141,6 +141,7 @@ export function consentSheet(d, c, lang) {
   const en = translator('en');
   const ar = translator('ar');
   const both = (k, vars) => `<span dir="ltr">${esc(en(k, vars))}</span> · <span dir="rtl" lang="ar">${esc(ar(k, vars))}</span>`;
+  const label = (k) => `<span class="cp-label"><span dir="ltr">${esc(en(k))}</span><span dir="rtl" lang="ar">${esc(ar(k))}</span></span>`;
   const block = (k, vars) => `<p class="en" dir="ltr">${esc(en(k, vars))}</p><p class="ar" dir="rtl" lang="ar">${esc(ar(k, vars))}</p>`;
   const pet = d.pets.find((p) => p.id === c.pet_id) ?? { name: c.pet_name, species: 'OTHER' };
   const vars = { owner: d.owner.full_name, pet: pet.name, procedure: c.procedure };
@@ -166,9 +167,9 @@ ${block('consent.text.cost')}
 ${block('consent.text.contact')}
 </div>
 <div class="consent-paper">
-<div class="cp-field"><span class="cp-line"></span>${both('consent.paperName')}</div>
-<div class="cp-field"><span class="cp-line tall"></span>${both('consent.paperSignature')}</div>
-<div class="cp-field"><span class="cp-line"></span>${both('consent.paperDate')}</div>
+<div class="cp-field"><span class="cp-line"></span>${label('consent.paperName')}</div>
+<div class="cp-field"><span class="cp-line tall"></span>${label('consent.paperSignature')}</div>
+<div class="cp-field"><span class="cp-line"></span>${label('consent.paperDate')}</div>
 </div>
 <p class="consent-return">${both('consent.text.return')}</p>
 ${addressFoot(d)}
