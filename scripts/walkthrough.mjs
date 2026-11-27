@@ -627,6 +627,7 @@ await step('consent form signed on screen', async () => {
   const sign = win.getByRole('button', { name: 'Sign and save' });
   if (!(await sign.isDisabled())) throw new Error('saving allowed without a signature');
   await win.getByLabel('I have read this form and agree').check();
+  await win.locator('.sigpad canvas').scrollIntoViewIfNeeded();
   const pad = await win.locator('.sigpad canvas').boundingBox();
   await win.mouse.move(pad.x + 30, pad.y + 100);
   await win.mouse.down();
