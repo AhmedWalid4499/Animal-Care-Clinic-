@@ -436,6 +436,13 @@ const server = http.createServer(async (req, res) => {
         ownerPagesChanged(clinicId);
         deliver(clinicId, notifications);
       },
+      // An owner sent back a signed consent form (schema v26): devices pull it and its file, staff are told to check it.
+      afterConsent: (clinicId, notifications, fileId) => {
+        broadcast(clinicId, { type: 'changed' });
+        if (fileId) broadcast(clinicId, { type: 'files', id: fileId });
+        ownerPagesChanged(clinicId);
+        deliver(clinicId, notifications);
+      },
     }))) return;
     // The lab extranet (server/lab.mjs): the lab doctor's own sign-in; uploads reach every device, the owner's page and the vets.
     if ((url.pathname === '/lab' || url.pathname.startsWith('/lab/')) && (await handleLab(pool, req, res, url, {

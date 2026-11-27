@@ -22,6 +22,8 @@ export function notificationText(n: ClinicNotification, t: T, fmt: Formatters): 
     amount: d.amount != null ? fmt.money(Number(d.amount)) : '',
     // Lab extranet uploads (change request 20 Nov): which lab, how many results.
     lab: String(d.lab ?? ''), n: String(d.n ?? ''),
+    // A signed consent form an owner sent back from their page (schema v26).
+    procedure: String(d.procedure ?? ''),
   };
   return t(`notify.${n.kind}.${n.event}`, vars).replace(/\(\s*\)/g, '').replace(/[:：]\s*$/, '').trim();
 }
@@ -35,7 +37,7 @@ function ago(iso: string, t: T, locale: string) {
   return rtf.format(-Math.round(s / 86400), 'day');
 }
 
-const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard', found: 'paw', lab: 'file' };
+const KIND_ICON: Record<NotifyKind, string> = { appointment: 'calendar', visit: 'stethoscope', payment: 'receipt', conflict: 'edit', queue: 'clipboard', found: 'paw', lab: 'file', consent: 'edit' };
 
 /** The bell: unread count, the list, and each person's on/off choices. */
 export function NotificationBell({ floating }: { floating?: boolean }) {

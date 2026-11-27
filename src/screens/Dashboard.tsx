@@ -9,7 +9,7 @@ import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp, useQuery } from '../lib/app';
 import {
-  appointmentsBetween, bookingRequests, dueVaccinations, expiringStock, getSettings, lowDrugs, lowStock, markAppointmentReminded, newFoundCount, openBalance, quickSearch,
+  appointmentsBetween, bookingRequests, consentsToCheck, dueVaccinations, expiringStock, getSettings, lowDrugs, lowStock, markAppointmentReminded, newFoundCount, openBalance, quickSearch,
   waitingQueue, wardBoard,
 } from '../db/repo';
 import { addDays, daysBetween, startOfDayIso, today } from '../lib/dates';
@@ -62,6 +62,7 @@ export function Dashboard() {
   const lowDrugList = useQuery(lowDrugs);
   const expiring = useQuery(() => expiringStock(30));
   const requests = useQuery(bookingRequests);
+  const consentsBack = useQuery(consentsToCheck);
   const settings = useQuery(getSettings);
   const clinic = locale === 'ar' ? settings.name_ar : settings.name_en;
   const now = Date.now();
@@ -85,6 +86,13 @@ export function Dashboard() {
   if (requests.length > 0) {
     // Online booking requests from /book (people with no record yet): staff accept or decline them in Appointments.
     rows.push(<Attn key="requests" className="attn-requests" icon="🌐" tone="warn" title={t('dashboard.requests', { n: requests.length })} action={t('dashboard.requestsOpen')} onAction={() => nav('/appointments?view=week')} />);
+  }
+  if (consentsBack.length > 0) {
+    // Signed consent forms owners sent back from their page (schema v26): someone checks each one.
+    const first = consentsBack[0];
+    rows.push(<Attn key="consents" className="attn-consents" icon="✍" tone="warn" title={`${t('consent.toCheck')}: ${consentsBack.length}`}
+      sub={consentsBack.slice(0, 3).map((c) => `${c.pet_name} (${c.owner_name}) · ${c.procedure}`).join(' — ')}
+      action={t('common.open')} onAction={() => nav(`/consents/${first.id}`)} />);
   }
   if (waitingNow > 0) {
     rows.push(<Attn key="queue" className="attn-queue" icon="🩺" tone="warn" title={t('dashboard.waitingRow', { n: waitingNow })} action={t('dashboard.seeQueue')}

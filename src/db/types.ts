@@ -149,9 +149,16 @@ export interface LabResult {
   /** The scanned report it came from, and the request it answers (lab extranet, schema v24). */
   attachment_id?: string | null; request_id?: string | null;
 }
+/** Schema v26: a form sent to the owner waits (AWAITING), comes back from their page (RECEIVED) and is checked (SIGNED). */
+export type ConsentStatus = 'AWAITING' | 'RECEIVED' | 'SIGNED' | 'CANCELLED';
+/** How it was signed: on screen, a signed copy staff uploaded, or one the owner uploaded on their page. */
+export type ConsentMethod = 'SCREEN' | 'UPLOAD' | 'OWNER_PAGE';
 export interface Consent {
   id: string; pet_id: string; visit_id: string | null; procedure: string; anaesthesia: number; estimate: number | null; notes: string | null;
-  signer_name: string; signature: string; signed_at: string; user_id: string | null; created_at: string;
+  /** Empty until the owner signs (a form sent to sign at home). signature = PNG data URL, signed on screen only. */
+  signer_name: string | null; signature: string | null; signed_at: string | null; user_id: string | null; created_at: string;
+  status: ConsentStatus; method: ConsentMethod | null; sent_at: string | null; on_page: number;
+  pdf_id: string | null; signed_file_id: string | null; reviewed_by: string | null;
 }
 export interface Admission {
   id: string; pet_id: string; visit_id: string | null; admitted_at: string; reason: string | null; cage: string | null; vet_id: string | null;

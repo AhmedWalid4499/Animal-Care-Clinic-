@@ -19,7 +19,7 @@ const LAB = JSON.parse(fs.readFileSync(src('lib', 'lab-tests.json'), 'utf8')).gr
 // The app's sheet styles: every one-line rule for the printed documents, taken from src/styles.css at start-up.
 const SHEET_CSS = (() => {
   const css = fs.readFileSync(src('styles.css'), 'utf8');
-  const want = /^(\.sheet|\.rx-sheet|\.doc[ .]|\.xray-sheet|\.xray-grid|\.xbox|\.xside|\.xray-opts|\.xray-write|\.lab-request|\.lab-grid)/;
+  const want = /^(\.sheet|\.rx-sheet|\.doc[ .]|\.xray-sheet|\.xray-grid|\.xbox|\.xside|\.xray-opts|\.xray-write|\.lab-request|\.lab-grid|\.consent-sheet|\.consent-text)/;
   return css.split('\n').filter((l) => want.test(l) && l.trim().endsWith('}') && !l.includes('var(--accent)')).join('\n');
 })();
 
@@ -128,6 +128,49 @@ ${grid}
 </div>
 <div class="doc-sign"><div class="line"></div>${esc(t('certificate.signature'))}</div>
 <div class="foot">${esc(t(`${prefix}.foot`))}</div>
+${addressFoot(d)}
+</div>`;
+}
+
+/**
+ * A consent form sent to the owner to sign at home (schema v26; ConsentView in src/screens/Consent.tsx): English and
+ * Arabic together whatever the page language, as the clinic prints it, with blank lines for the owner's signature.
+ * The estimated cost is on it because it is part of what the owner agrees to.
+ */
+export function consentSheet(d, c, lang) {
+  const en = translator('en');
+  const ar = translator('ar');
+  const both = (k, vars) => `<span dir="ltr">${esc(en(k, vars))}</span> · <span dir="rtl" lang="ar">${esc(ar(k, vars))}</span>`;
+  const block = (k, vars) => `<p class="en" dir="ltr">${esc(en(k, vars))}</p><p class="ar" dir="rtl" lang="ar">${esc(ar(k, vars))}</p>`;
+  const pet = d.pets.find((p) => p.id === c.pet_id) ?? { name: c.pet_name, species: 'OTHER' };
+  const vars = { owner: d.owner.full_name, pet: pet.name, procedure: c.procedure };
+  const code = shownCode(d.owner.code);
+  const money = c.estimate != null ? `EGP ${(c.estimate / 100).toLocaleString('en-GB', { maximumFractionDigits: 2 })}` : '—';
+  const name = d.clinic.name_en || d.clinic.name_ar || '';
+  return `<div class="sheet a5 consent-sheet doc" dir="${lang === 'ar' ? 'rtl' : 'ltr'}" lang="${lang}">
+<div class="head"><div><b style="font-size:15px">${esc(name)}</b>${d.clinic.name_ar ? `<div dir="rtl" lang="ar" style="font-size:13px;font-weight:600">${esc(d.clinic.name_ar)}</div>` : ''}<div style="font-size:10px">${d.clinic.phone ? `<span class="ltr">${esc(d.clinic.phone)}</span>` : ''}</div></div>${d.clinic.logo ? `<img src="${esc(d.clinic.logo)}" alt="">` : ''}</div>
+<h2 class="consent-title">${both('consent.title')}</h2>
+<table class="facts-table"><tbody>
+<tr><td>${both('consent.pet')}</td><td><b>${esc(pet.name)}</b> · ${both(`species.${pet.species}`)}</td></tr>
+<tr><td>${both('consent.owner')}</td><td>${esc(d.owner.full_name)} · <span class="ltr">${esc(d.owner.phone ?? '')}</span>${code ? ` · <span class="ltr">${esc(code)}</span>` : ''}</td></tr>
+<tr><td>${both('consent.procedure')}</td><td><b>${esc(c.procedure)}</b></td></tr>
+<tr><td>${both('consent.estimate')}</td><td>${esc(money)}</td></tr>
+${c.form_notes ? `<tr><td>${both('common.notes')}</td><td>${esc(c.form_notes)}</td></tr>` : ''}
+<tr><td>${both('consent.sentOn')}</td><td>${esc(dateIn('en', c.sent_at))}</td></tr>
+</tbody></table>
+<div class="consent-text">
+${block('consent.text.intro', vars)}
+${c.anaesthesia ? block('consent.text.anaesthesia') : ''}
+${block('consent.text.risks')}
+${block('consent.text.cost')}
+${block('consent.text.contact')}
+</div>
+<div class="consent-paper">
+<div class="cp-field"><span class="cp-line"></span>${both('consent.paperName')}</div>
+<div class="cp-field"><span class="cp-line tall"></span>${both('consent.paperSignature')}</div>
+<div class="cp-field"><span class="cp-line"></span>${both('consent.paperDate')}</div>
+</div>
+<p class="consent-return">${both('consent.text.return')}</p>
 ${addressFoot(d)}
 </div>`;
 }

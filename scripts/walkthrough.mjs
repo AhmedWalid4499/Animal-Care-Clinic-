@@ -622,6 +622,8 @@ await step('consent form signed on screen', async () => {
   await win.getByRole('menuitem', { name: 'Consent form' }).click();
   await win.getByLabel('Procedure').fill('Spay (ovariohysterectomy)');
   await win.getByLabel('Estimated cost (EGP)').fill('2500');
+  // Sending it to sign at home is the default (27 Nov 2026); the owner is here, so they sign on screen.
+  await win.getByRole('radio', { name: 'The owner is here: sign on screen' }).click();
   const sign = win.getByRole('button', { name: 'Sign and save' });
   if (!(await sign.isDisabled())) throw new Error('saving allowed without a signature');
   await win.getByLabel('I have read this form and agree').check();
@@ -637,6 +639,32 @@ await step('consent form signed on screen', async () => {
   await shot('consent-signed');
   await win.getByRole('button', { name: 'Back' }).click();
   await win.locator('.consents li', { hasText: 'Spay (ovariohysterectomy)' }).waitFor();
+});
+
+await step('consent form sent to sign at home', async () => {
+  // 27 Nov 2026 change request: the owner doesn't have to be at the clinic. The form is made, sent (PDF, WhatsApp, the
+  // owner's page) and the signed copy that comes back is uploaded.
+  await win.locator('.pagehead').getByRole('button', { name: 'Print & forms' }).click();
+  await win.getByRole('menuitem', { name: 'Consent form' }).click();
+  await win.getByLabel('Procedure').fill('Dental cleaning under anaesthesia');
+  const make = win.getByRole('button', { name: 'Make the form to send' });
+  if ((await win.getByRole('radio', { name: 'Send it to sign at home' }).getAttribute('aria-checked')) !== 'true') throw new Error('sending is not the default');
+  await shot('consent-send-form');
+  await make.click();
+  await win.locator('.consent-panel .badge', { hasText: "Waiting for the owner's signature" }).waitFor();
+  await win.locator('.consent-sheet .consent-paper').waitFor(); // blank lines to sign by hand
+  if (await win.locator('.consent-sheet .consent-sign img').count()) throw new Error('a sent form shows a signature');
+  await shot('consent-sent');
+  // The signed copy came back on WhatsApp: staff upload it.
+  const signed = path.join(out, 'signed-consent.png');
+  await win.locator('.consent-sheet').screenshot({ path: signed });
+  await app.evaluate(({ dialog }, f) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] }); }, signed);
+  await win.locator('.upload-signed').click();
+  await win.locator('.consent-panel .badge', { hasText: 'Signed' }).waitFor();
+  await win.locator('.consent-copy img').waitFor();
+  await shot('consent-signed-copy');
+  await win.getByRole('button', { name: 'Back' }).click();
+  await win.locator('.consents li', { hasText: 'Dental cleaning under anaesthesia' }).filter({ hasText: 'Signed' }).waitFor();
 });
 
 // Prescription sheet for the owner, "not seen in a while", activity log (7 Nov 2026).

@@ -6,7 +6,7 @@ import type { Database } from 'sql.js';
 //  * timestamps are ISO-8601 text; dates-only (date_of_birth) are 'YYYY-MM-DD';
 //  * vaccine_types.species is a comma-separated list ('DOG,CAT') instead of a Postgres array;
 //  * attachments keep the file bytes in attachment_blobs so one .sqlite file is the whole backup.
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 // HAMSTER, TURTLE: added 20 Nov 2026 with the Body tab (change request, Ahmed), schema v23.
 const species = `'DOG','CAT','BIRD','RABBIT','REPTILE','HAMSTER','TURTLE','OTHER'`;
@@ -94,7 +94,7 @@ const expensesTable = `CREATE TABLE IF NOT EXISTS expenses (
 CREATE INDEX IF NOT EXISTS expenses_date ON expenses(spent_at);`;
 // Schema v11 (7 Nov 2026): lab results (one row per value, with the reference range used, so trends can be charted) and
 // signed consent forms (append-only: a signed form is never changed; the signature is a PNG data URL).
-const clinicalDocs = `CREATE TABLE IF NOT EXISTS lab_results (
+const labResultsTable = `CREATE TABLE IF NOT EXISTS lab_results (
   id TEXT PRIMARY KEY,
   pet_id TEXT NOT NULL REFERENCES pets(id),
   visit_id TEXT REFERENCES visits(id),
@@ -112,7 +112,9 @@ const clinicalDocs = `CREATE TABLE IF NOT EXISTS lab_results (
   request_id TEXT,
   ${ts}
 );
-CREATE INDEX IF NOT EXISTS lab_results_pet ON lab_results(pet_id, taken_at);
+CREATE INDEX IF NOT EXISTS lab_results_pet ON lab_results(pet_id, taken_at);`;
+// The consents table as v11 made it (signed on screen only). Schema v26 rebuilds it as consentsTable().
+const clinicalDocs = `${labResultsTable}
 CREATE TABLE IF NOT EXISTS consents (
   id TEXT PRIMARY KEY,
   pet_id TEXT NOT NULL REFERENCES pets(id),
@@ -128,6 +130,33 @@ CREATE TABLE IF NOT EXISTS consents (
   ${ts}
 );
 CREATE INDEX IF NOT EXISTS consents_pet ON consents(pet_id);`;
+// Schema v26 (27 Nov 2026, change request): a consent form can be sent to the owner to sign at home. Until it comes back
+// it has no signature, so signer_name / signature / signed_at may be empty. status: AWAITING (sent, waiting for the
+// owner) → RECEIVED (the owner uploaded a signed copy on their page; staff check it) → SIGNED; or CANCELLED. method:
+// SCREEN (signed on screen), UPLOAD (staff uploaded the signed copy), OWNER_PAGE (the owner uploaded it). on_page = shown
+// on the owner's page. pdf_id = the blank form as a PDF (made by the desktop app), signed_file_id = the signed copy;
+// both are attachments of the pet. reviewed_by = who uploaded or accepted the signed copy. SIGNED / CANCELLED never change.
+const consentsTable = (name: string) => `CREATE TABLE ${name} (
+  id TEXT PRIMARY KEY,
+  pet_id TEXT NOT NULL REFERENCES pets(id),
+  visit_id TEXT REFERENCES visits(id),
+  procedure TEXT NOT NULL,
+  anaesthesia INTEGER NOT NULL DEFAULT 1,
+  estimate INTEGER,
+  notes TEXT,
+  signer_name TEXT,
+  signature TEXT,
+  signed_at TEXT,
+  user_id TEXT REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'SIGNED' CHECK (status IN ('AWAITING','RECEIVED','SIGNED','CANCELLED')),
+  method TEXT,
+  sent_at TEXT,
+  on_page INTEGER NOT NULL DEFAULT 0,
+  pdf_id TEXT,
+  signed_file_id TEXT,
+  reviewed_by TEXT,
+  ${ts}
+);`;
 // Schema v12 (7 Nov 2026): the in-patient board. An admission is a pet staying in the clinic; its care tasks are
 // timed treatments (a repeating one is stored as one row per time) that anyone ticks off; the vet admits and discharges.
 // Schema v17 (14 Nov 2026): X-ray and lab requests the vet gives the owner, kept in the pet's history. items = the
@@ -582,7 +611,9 @@ ${calcTables}
 ${stockTable}
 ${stockBatchCols}
 ${expensesTable}
-${clinicalDocs}
+${labResultsTable}
+${consentsTable('consents')}
+CREATE INDEX consents_pet ON consents(pet_id);
 ${wardTables}
 ${requestTables}
 ${requestPdfCols}
@@ -756,6 +787,17 @@ ${v22Cols}`,
     ALTER TABLE appointments_v25 RENAME TO appointments;
     CREATE INDEX appointments_scheduled ON appointments(scheduled_at);
     ALTER TABLE clinic_settings ADD COLUMN online_booking INTEGER NOT NULL DEFAULT 0;
+  `,
+  // v26 (27 Nov 2026, change request): consent forms sent to the owner to sign at home and send back (on WhatsApp or
+  // their page). The signature columns may now be empty, so consents is rebuilt; every form signed so far is SIGNED
+  // on screen.
+  26: `
+    ${consentsTable('consents_v26')}
+    INSERT INTO consents_v26 (id, pet_id, visit_id, procedure, anaesthesia, estimate, notes, signer_name, signature, signed_at, user_id, status, method, sent_at, created_at, updated_at)
+      SELECT id, pet_id, visit_id, procedure, anaesthesia, estimate, notes, signer_name, signature, signed_at, user_id, 'SIGNED', 'SCREEN', signed_at, created_at, updated_at FROM consents;
+    DROP TABLE consents;
+    ALTER TABLE consents_v26 RENAME TO consents;
+    CREATE INDEX consents_pet ON consents(pet_id);
   `,
 };
 
