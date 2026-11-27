@@ -326,11 +326,15 @@ function Files({ petId }: { petId: string }) {
     <div>
       {consents.length > 0 && (
         <section className="section consents">
-          <header><h2>✍ {t('consent.signedForms')}</h2><span className="count">{consents.length}</span></header>
+          <header><h2>✍ {t('consent.forms')}</h2><span className="count">{consents.length}</span></header>
           <ul className="list">
             {consents.map((c) => (
               <li key={c.id} className="link" onClick={() => nav(`/consents/${c.id}`)}>
-                <div className="main-col"><b>{c.procedure}</b><div className="sub">{fmt.dateTime(c.signed_at)} · {c.signer_name}</div></div>
+                <div className="main-col">
+                  <b>{c.procedure}</b>
+                  <div className="sub">{c.signed_at ? `${fmt.dateTime(c.signed_at)} · ${c.signer_name ?? ''}` : fmt.dateTime(c.sent_at ?? c.created_at)}</div>
+                </div>
+                <Badge kind={c.status === 'SIGNED' ? 'ok' : c.status === 'RECEIVED' ? 'info' : c.status === 'AWAITING' ? 'warn' : undefined}>{t(`consent.status.${c.status}`)}</Badge>
                 <Icon name="print" />
               </li>
             ))}

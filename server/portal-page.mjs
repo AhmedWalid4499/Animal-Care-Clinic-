@@ -179,6 +179,11 @@ main { padding: 20px 0 40px; }
 .book-msg.ok > svg.i { color: var(--ok); }
 .book-msg.bad { background: var(--warn-soft); border-color: transparent; }
 .book-msg.bad > svg.i { color: var(--warn); }
+/* consent forms to sign at home (schema v26) */
+a.consent-alert { display: flex; gap: 12px; align-items: center; color: inherit; text-decoration: none; border-color: var(--warn); }
+a.consent-alert .grow { flex: 1; min-width: 0; }
+.consent-item .book-msg { margin: 12px 0 0; padding: 10px 12px; }
+.consent-how { margin: 10px 0 0; }
 .book-hours { display: flex; gap: 8px; align-items: center; margin: 4px 2px 12px; }
 .book-form .label, .book-cal .label, .book-confirm .label { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 10px 0 6px; }
 .book-form .label:first-child, .book-cal .label:first-child { margin-top: 0; }
@@ -309,10 +314,12 @@ footer.site b { color: var(--ink-2); }
     steth: 'M5 3v6a5 5 0 0010 0V3M10 14v2a5 5 0 0010 0v-2M20 11a2 2 0 100 4 2 2 0 000-4z',
     chart: 'M3 3v18h18M7 15l4-4 3 3 5-6',
     star: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
+    pen: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
+    upload: 'M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12',
   };
   const VIEWS = ['home', 'pets', 'appointments', 'prescriptions', 'requests', 'details'];
-  const NAV_ICON = { home: 'home', pets: 'paw', appointments: 'calendar', prescriptions: 'pill', requests: 'clip', details: 'user', book: 'calendar' };
-  const EXTRA_VIEWS = ['book']; // reached from buttons, not the tab bar
+  const NAV_ICON = { home: 'home', pets: 'paw', appointments: 'calendar', prescriptions: 'pill', requests: 'clip', details: 'user', book: 'calendar', consents: 'pen' };
+  const EXTRA_VIEWS = ['book', 'consents']; // reached from buttons (and the clinic's WhatsApp link), not the tab bar
   const base = location.pathname.replace(/\\/+$/, '');
   let lang = null;
   try { lang = localStorage.getItem('owner-page-lang'); } catch (e) {}
@@ -526,7 +533,7 @@ footer.site b { color: var(--ink-2); }
         : h('div', { class: 'empty' }, t('noPets')));
   }
   function homeView() {
-    return [foundBanner(), nextCard(), stats(), h('div', { class: 'grid2' }, attentionCard(), latestRxCard()), petStrip()];
+    return [foundBanner(), consentCard(), nextCard(), stats(), h('div', { class: 'grid2' }, attentionCard(), latestRxCard()), petStrip()];
   }
 
   function petsView() {
@@ -701,6 +708,102 @@ footer.site b { color: var(--ink-2); }
       labReqs.length ? [h('h2', { class: 'section-title' }, icon('flask'), t('labRequests')), labReqs.map(requestCard)] : null,
       labFiles.length ? [h('h2', { class: 'section-title' }, icon('download'), t('labFiles')), fileGallery(labFiles)] : null,
     ];
+  }
+
+  // ---- consent forms the clinic sent to sign at home (schema v26): download, sign, upload the signed copy here
+  const consentMsg = {}; // consent id -> { ok, text } after an upload
+  const uploading = {};
+  const toSign = () => (d.consents || []).filter((c) => c.status === 'AWAITING');
+  function consentCard() {
+    const list = toSign();
+    if (!list.length) return null;
+    return h('a', { class: 'card consent-alert', href: '#consents' },
+      h('div', { class: 'icobox warn' }, icon('pen')),
+      h('div', { class: 'grow' },
+        h('b', null, list.length === 1 ? t('consentToSign') : t('consentToSignN', { n: list.length })),
+        h('div', { class: 'muted small' }, list.map((c) => c.pet_name + ' · ' + c.procedure).join(' — '))),
+      icon('chevron', 'flip'));
+  }
+  // A phone photo can be several MB: send a smaller JPEG (still sharp enough to read the page) when it is large.
+  function shrink(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 2400;
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k);
+        cv.height = Math.round(img.height * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        resolve(cv.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+  function readFile(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+  }
+  async function sendSigned(c, file) {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) { consentMsg[c.id] = { ok: false, text: t('consentTooBig') }; render(); return; }
+    uploading[c.id] = true;
+    consentMsg[c.id] = null;
+    render();
+    let res = null;
+    let body = {};
+    try {
+      let url = await readFile(file);
+      if (['data:image/jpeg', 'data:image/png', 'data:image/webp'].some((p) => url.startsWith(p)) && file.size > 1.5 * 1024 * 1024) url = await shrink(url);
+      res = await fetch(base + '/consent/' + encodeURIComponent(c.id) + '/upload', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: { name: file.name, data: url.slice(url.indexOf(',') + 1) } }),
+      });
+      body = await res.json().catch(() => ({}));
+    } catch (e) {}
+    uploading[c.id] = false;
+    if (res && res.ok) { consentMsg[c.id] = { ok: true, text: t('consentUploaded') }; load(); }
+    else if (res && res.status === 413) consentMsg[c.id] = { ok: false, text: t('consentTooBig') };
+    else if (res && res.status === 400 && body.error === 'file_type') consentMsg[c.id] = { ok: false, text: t('consentBadType') };
+    else if (res && res.status === 429) consentMsg[c.id] = { ok: false, text: t('consentTooMany') };
+    else consentMsg[c.id] = { ok: false, text: t('consentUploadFailed') };
+    render();
+  }
+  function uploadButton(c) {
+    const busy = !!uploading[c.id];
+    return h('button', { type: 'button', class: 'btn sm ' + (c.status === 'AWAITING' ? 'primary' : '') + ' consent-upload', disabled: busy ? true : null, onclick: () => {
+      // The phone offers the camera, photos or files; the input is not shown.
+      const input = h('input', { type: 'file', accept: 'image/*,application/pdf', hidden: true });
+      input.addEventListener('change', () => { const f = input.files && input.files[0]; input.remove(); sendSigned(c, f); });
+      document.body.append(input);
+      input.click();
+    } }, icon('upload'), busy ? t('consentUploading') : c.status === 'AWAITING' ? t('consentUpload') : t('consentUploadAgain'));
+  }
+  function consentItem(c) {
+    const cls = c.status === 'SIGNED' ? 'ok' : c.status === 'RECEIVED' ? 'info' : 'warn';
+    const msg = consentMsg[c.id];
+    const open = c.status === 'AWAITING' || c.status === 'RECEIVED';
+    return h('article', { class: 'card consent-item', id: 'consent-' + c.id },
+      h('div', { class: 'rxhead' },
+        h('b', null, t('consentSent', { date: fmtDate(c.sent_at) })), h('span', { class: 'badge' }, c.pet_name),
+        h('span', { class: 'badge ' + cls }, t('consentStatus.' + c.status))),
+      h('div', { class: 'dx' }, h('span', null, t('consentProcedure')), h('b', null, c.procedure)),
+      c.status === 'AWAITING' ? h('p', { class: 'muted small consent-how' }, t('consentHow')) : null,
+      msg ? h('div', { class: 'card book-msg ' + (msg.ok ? 'ok' : 'bad'), role: 'status' }, icon(msg.ok ? 'check' : 'alert'), h('div', null, msg.text)) : null,
+      h('div', { class: 'actions' },
+        c.pdf ? h('a', { class: 'btn sm pdf-link', href: base + '/f/' + encodeURIComponent(c.pdf) + '?download=1', download: c.pdf_name || '' }, icon('download'), t('downloadPdf')) : null,
+        docButton('consent', c.id),
+        open ? uploadButton(c) : null,
+        c.signed_file ? h('a', { class: 'btn sm ghost', href: base + '/f/' + encodeURIComponent(c.signed_file), target: '_blank', rel: 'noopener' }, icon('eye'), t('consentSignedCopy')) : null));
+  }
+  function consentsView() {
+    const list = d.consents || [];
+    if (!list.length) return [h('div', { class: 'card' }, h('div', { class: 'empty' }, h('div', { class: 'icobox' }, icon('pen')), t('noConsents')))];
+    return list.map(consentItem);
   }
 
   function detailsView() {
@@ -957,7 +1060,7 @@ footer.site b { color: var(--ink-2); }
     const v = view();
     const pid = profileId();
     const profilePet = pid ? d.pets.find((p) => p.id === pid) : null;
-    const body = profilePet ? petProfile(profilePet) : { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, requests: requestsView, details: detailsView, book: bookView }[v]();
+    const body = profilePet ? petProfile(profilePet) : { home: homeView, pets: petsView, appointments: appointmentsView, prescriptions: prescriptionsView, requests: requestsView, details: detailsView, book: bookView, consents: consentsView }[v]();
     app.replaceChildren(...[
       topbar(),
       v === 'home' ? hero() : null,

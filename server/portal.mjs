@@ -5,6 +5,8 @@
 //   GET /o/<token>/live            Server-Sent Events: "changed" whenever the clinic's records change
 //   GET /o/<token>/calendar.ics    calendar feed: upcoming appointments + vaccination due dates (subscribe once)
 //   GET /o/<token>/a/<id>.ics      one appointment, for "add to calendar"
+//   GET /o/<token>/doc/consent/<id>  a consent form the clinic sent to sign at home (schema v26), to print / save as PDF
+//   POST /o/<token>/consent/<id>/upload  the signed copy (photo or PDF) → the clinic checks it
 // The token (owners.portal_token, 128 random bits, made on a clinic device) is the only key: no owner login.
 // Staff can replace it (old QR stops working) or switch it off. Only what an owner should see leaves the server:
 // diagnoses (Dr. Waleed, 14 Nov), never staff notes, treatment notes, national ID, money, or other owners' data.
@@ -13,10 +15,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pageHtml } from './portal-page.mjs';
-import { fileBytes } from './files.mjs';
+import { fileBytes, saveFile } from './files.mjs';
 import { clinicAddress, siteFor } from './clinic.mjs';
 import { slotsFor, bookSlot } from './booking.mjs';
-import { docPageHtml, prescriptionSheet, requestSheet } from './doc-page.mjs';
+import { consentSheet, docPageHtml, prescriptionSheet, requestSheet } from './doc-page.mjs';
+import { createConsentNotifications } from './notify.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
@@ -75,10 +78,12 @@ export async function ownerPageData(pool, owner) {
   const settings = (await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'clinic_settings' AND NOT deleted LIMIT 1", [cid]))[0] ?? {};
   const pets = await rows("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'pets' AND data->>'owner_id' = $2 AND NOT deleted", [cid, String(owner.id)]);
   const petIds = pets.map((p) => String(p.id));
-  const [visitsAll, vaccinations, appointments, labRows, requestRows, files] = await Promise.all([
+  const [visitsAll, vaccinations, appointments, labRows, requestRows, files, consentRows] = await Promise.all([
     forPets('visits', petIds), forPets('vaccinations', petIds), forPets('appointments', petIds), forPets('lab_results', petIds),
-    forPets('test_requests', petIds), forPets('attachments', petIds),
+    forPets('test_requests', petIds), forPets('attachments', petIds), forPets('consents', petIds),
   ]);
+  // Consent forms the clinic put on this page to sign at home (schema v26); cancelled ones are taken off.
+  const consents = consentRows.filter((c) => Number(c.on_page) === 1 && c.status && c.status !== 'CANCELLED');
   // Lost & found (schema v18): someone scanned one of this owner's collar tags and pressed Alert; shown until the clinic
   // marks it handled (and for 30 days at most).
   const since = new Date(Date.now() - 30 * 86400_000).toISOString();
@@ -89,7 +94,7 @@ export async function ownerPageData(pool, owner) {
   // for its upload). Other files (documents, photos) stay with the clinic.
   const xrayFiles = files.filter((a) => a.kind === 'XRAY' || a.kind === 'LAB');
   // A saved request's PDF (schema v20, made by the clinic's device from the printed sheet), to download.
-  const pdfIds = new Set(requestRows.map((r) => r.pdf_id).filter(Boolean).map(String));
+  const pdfIds = new Set([...requestRows.map((r) => r.pdf_id), ...consents.flatMap((c) => [c.pdf_id, c.signed_file_id])].filter(Boolean).map(String));
   const pdfFiles = files.filter((a) => pdfIds.has(String(a.id)));
   const wanted = [...xrayFiles, ...pdfFiles].map((a) => String(a.id));
   const onServer = new Set(wanted.length
@@ -171,6 +176,22 @@ export async function ownerPageData(pool, owner) {
         id: String(a.id), pet_id: String(a.pet_id), pet_name: petName.get(String(a.pet_id)) ?? '', at: a.created_at, file_name: a.file_name, kind: a.kind,
         image: /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(a.mime_type ?? '') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.file_name ?? ''),
       })),
+    // Consent forms to sign at home: the form (the clinic's PDF once its bytes are here, else the page to print) and,
+    // once the owner or the clinic uploaded it, the signed copy.
+    consents: consents
+      .sort((a, b) => byText('sent_at')(b, a))
+      .map((c) => {
+        const signed = c.signed_file_id && onServer.has(String(c.signed_file_id)) ? String(c.signed_file_id) : null;
+        const signedName = signed ? pdfName.get(signed) ?? null : null;
+        return {
+          id: String(c.id), pet_id: String(c.pet_id), pet_name: petName.get(String(c.pet_id)) ?? '', procedure: c.procedure, anaesthesia: Number(c.anaesthesia) === 1,
+          // form_notes: the vet's instructions printed on the form (fasting…), not staff notes.
+          estimate: num(c.estimate), form_notes: c.notes ?? null, status: c.status, sent_at: c.sent_at ?? c.created_at, signed_at: c.signed_at ?? null,
+          pdf: c.pdf_id && onServer.has(String(c.pdf_id)) ? String(c.pdf_id) : null, pdf_name: c.pdf_id ? pdfName.get(String(c.pdf_id)) ?? null : null,
+          signed_file: signed, signed_file_name: signedName,
+          signed_image: !!signedName && /\.(png|jpe?g|webp)$/i.test(signedName),
+        };
+      }),
     prescriptions: visits
       .map((v) => ({
         visit_id: String(v.id), pet_id: String(v.pet_id), pet_name: petName.get(String(v.pet_id)) ?? '', visited_at: v.visited_at, type: v.type, diagnosis: v.diagnosis ?? null,
@@ -292,9 +313,9 @@ export async function handleOwnerPage(pool, req, res, url, hooks = {}) {
     fs.createReadStream(file).pipe(res);
     return true;
   }
-  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics|\/f\/([^/]+)|\/doc\/(rx|req)\/([^/]+)|\/slots|\/book)?\/?$/.exec(p);
+  const m = /^\/o\/([^/]+)(\/data|\/live|\/calendar\.ics|\/manifest\.webmanifest|\/a\/([^/]+)\.ics|\/f\/([^/]+)|\/doc\/(rx|req|consent)\/([^/]+)|\/slots|\/book|\/consent\/([^/]+)\/upload)?\/?$/.exec(p);
   if (!m) return false;
-  const posting = req.method === 'POST' && m[2] === '/book';
+  const posting = req.method === 'POST' && (m[2] === '/book' || m[7] != null);
   if (req.method !== 'GET' && req.method !== 'HEAD' && !posting) return notFound(res);
   const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress;
   if (tooManyMisses(ip)) {
@@ -335,12 +356,36 @@ export async function handleOwnerPage(pool, req, res, url, hooks = {}) {
     res.end(JSON.stringify(r.body));
     return true;
   }
+  // The signed copy of a consent form (schema v26): a photo or PDF, stored like any clinic file; the clinic checks it.
+  if (m[7] != null) {
+    if (!posting) return notFound(res);
+    if (tooManyUploads(ip, token)) {
+      res.writeHead(429, { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': '3600' });
+      res.end(JSON.stringify({ error: 'too_many' }));
+      return true;
+    }
+    let input;
+    try {
+      input = await readJson(req, Math.ceil(OWNER_UPLOAD_MAX * 1.37) + 4096);
+    } catch (e) {
+      res.writeHead(/too large/.test(e.message) ? 413 : 400, { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: /too large/.test(e.message) ? 'file_too_large' : 'bad request' }));
+      return true;
+    }
+    const r = await uploadSignedConsent(pool, owner, decodeURIComponent(m[7]), input);
+    if (r.status === 200) hooks.afterConsent?.(owner.clinic_id, r.notifications ?? [], r.body.attachment_id);
+    res.writeHead(r.status, { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(r.body));
+    return true;
+  }
   const d = await ownerPageData(pool, owner);
   // An X-ray image of one of this owner's pets (only those listed in their data), from the server's volume.
   if (sub.startsWith('/f/')) {
     const fid = decodeURIComponent(m[4]);
     const x = d.xrays.find((f) => f.id === fid)
-      ?? (d.requests || []).filter((r) => r.pdf === fid).map((r) => ({ id: r.pdf, file_name: r.pdf_name || 'request.pdf' }))[0];
+      ?? (d.requests || []).filter((r) => r.pdf === fid).map((r) => ({ id: r.pdf, file_name: r.pdf_name || 'request.pdf' }))[0]
+      ?? d.consents.filter((c) => c.pdf === fid).map((c) => ({ id: c.pdf, file_name: c.pdf_name || 'consent.pdf' }))[0]
+      ?? d.consents.filter((c) => c.signed_file === fid).map((c) => ({ id: c.signed_file, file_name: c.signed_file_name || 'signed.pdf' }))[0];
     const bytes = x ? fileBytes(owner.clinic_id, x.id) : null;
     if (!bytes) return notFound(res);
     const ext = (x.file_name.split('.').pop() || '').toLowerCase();
@@ -355,9 +400,10 @@ export async function handleOwnerPage(pool, req, res, url, hooks = {}) {
     const lang = url.searchParams.get('lang') === 'en' ? 'en' : url.searchParams.get('lang') === 'ar' ? 'ar' : d.clinic.locale;
     const rx = m[5] === 'rx' ? d.prescriptions.find((v) => v.visit_id === id) : null;
     const rq = m[5] === 'req' ? (d.requests || []).find((r) => r.id === id) : null;
-    if (!rx && !rq) return notFound(res);
+    const cs = m[5] === 'consent' ? d.consents.find((c) => c.id === id) : null;
+    if (!rx && !rq && !cs) return notFound(res);
     const T = TEXT[lang];
-    const title = rx ? `${T.docRx} — ${rx.pet_name}` : `${rq.kind === 'LAB' ? T.labRequests : T.xrayRequests} — ${rq.pet_name}`;
+    const title = rx ? `${T.docRx} — ${rx.pet_name}` : cs ? `${T.consentDoc} — ${cs.pet_name}` : `${rq.kind === 'LAB' ? T.labRequests : T.xrayRequests} — ${rq.pet_name}`;
     const other = lang === 'ar' ? 'en' : 'ar';
     const nonce = crypto.randomBytes(16).toString('base64');
     res.writeHead(200, {
@@ -368,8 +414,8 @@ export async function handleOwnerPage(pool, req, res, url, hooks = {}) {
     const dd = { ...d, site };
     res.end(req.method === 'HEAD' ? undefined : docPageHtml({
       nonce, lang, title,
-      sheet: rx ? prescriptionSheet(dd, rx, lang) : requestSheet(dd, rq, lang),
-      back: `/o/${token}#${rx ? 'prescriptions' : 'requests'}`,
+      sheet: rx ? prescriptionSheet(dd, rx, lang) : cs ? consentSheet(dd, cs, lang) : requestSheet(dd, rq, lang),
+      back: `/o/${token}#${rx ? 'prescriptions' : cs ? 'consents' : 'requests'}`,
       other: { lang: other, label: other === 'en' ? 'English' : 'عربي', href: `/o/${token}/doc/${m[5]}/${encodeURIComponent(id)}?lang=${other}` },
     }));
     return true;
@@ -406,6 +452,85 @@ export async function handleOwnerPage(pool, req, res, url, hooks = {}) {
   res.writeHead(200, { ...baseHeaders, 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': `${sub === '/calendar.ics' ? 'inline' : 'attachment'}; filename="${filename}"` });
   res.end(req.method === 'HEAD' ? undefined : body);
   return true;
+}
+
+// ---------------------------------------------------------------- signed consent forms (schema v26)
+const OWNER_UPLOAD_MAX = 15 * 1024 * 1024; // a phone photo or a scanned PDF
+const UPLOAD_TYPES = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+/** What the bytes are (the name and type the phone sends are not trusted). */
+function sniff(b) {
+  if (b.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
+  if (b[0] === 0x89 && b.subarray(1, 4).toString('latin1') === 'PNG') return 'image/png';
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+// 10 uploads an hour per address and per owner page: enough to try again with a clearer photo.
+const uploads = new Map();
+function tooManyUploads(ip, token) {
+  const now = Date.now();
+  const keys = [`ip:${ip}`, `o:${token}`];
+  const recent = keys.map((k) => (uploads.get(k) || []).filter((t) => now - t < 3600_000));
+  keys.forEach((k, i) => uploads.set(k, recent[i]));
+  if (recent.some((l) => l.length >= 10)) return true;
+  keys.forEach((k, i) => recent[i].push(now));
+  return false;
+}
+setInterval(() => {
+  for (const [k, v] of uploads) if (!v.some((t) => Date.now() - t < 3600_000)) uploads.delete(k);
+}, 600_000).unref();
+
+/**
+ * The owner sends back a consent form they signed: stored as a DOCUMENT attachment of the pet (bytes on the volume),
+ * the form becomes RECEIVED (the clinic checks it: accept, or ask for a new copy), with an audit_log row and a
+ * notification. Only a form of one of this owner's pets that the clinic put on this page and that still waits.
+ * An owner may send it again until the clinic accepts it (the earlier file stays in the pet's Files).
+ */
+export async function uploadSignedConsent(pool, owner, consentId, input) {
+  const bytes = Buffer.from(String(input?.file?.data ?? ''), 'base64');
+  if (!bytes.length) return { status: 400, body: { error: 'file' } };
+  if (bytes.length > OWNER_UPLOAD_MAX) return { status: 413, body: { error: 'file_too_large' } };
+  const mime = sniff(bytes);
+  if (!mime) return { status: 400, body: { error: 'file_type' } };
+  const cid = owner.clinic_id;
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    const row = (await c.query("SELECT data, versions FROM rows WHERE clinic_id = $1 AND tbl = 'consents' AND id = $2 AND NOT deleted FOR UPDATE", [cid, String(consentId)])).rows[0];
+    const pet = row && (await c.query("SELECT data FROM rows WHERE clinic_id = $1 AND tbl = 'pets' AND id = $2 AND NOT deleted", [cid, String(row.data.pet_id)])).rows[0]?.data;
+    const ok = row && pet && String(pet.owner_id) === String(owner.id) && Number(row.data.on_page) === 1 && ['AWAITING', 'RECEIVED'].includes(row.data.status);
+    if (!ok) {
+      await c.query('ROLLBACK');
+      return { status: 404, body: { error: 'not found' } };
+    }
+    const stamp = new Date().toISOString();
+    const v = `${stamp}|server`;
+    const insert = async (tbl, data) => c.query("INSERT INTO rows (clinic_id, tbl, id, data, versions, deleted, seq) VALUES ($1, $2, $3, $4, $5, false, nextval('change_seq'))",
+      [cid, tbl, data.id, data, Object.fromEntries(Object.keys(data).map((k) => [k, v]))]);
+    const attId = crypto.randomUUID();
+    const fileName = `Signed consent form ${stamp.slice(0, 10)}.${UPLOAD_TYPES[mime]}`;
+    await insert('attachments', {
+      id: attId, pet_id: String(pet.id), visit_id: row.data.visit_id ?? null, kind: 'DOCUMENT', file_url: `db://attachments/${attId}`, file_name: fileName,
+      mime_type: mime, size_bytes: bytes.length, uploaded_by: null, created_at: stamp, updated_at: stamp,
+    });
+    const patch = { status: 'RECEIVED', method: 'OWNER_PAGE', signed_file_id: attId, signed_at: stamp, signer_name: owner.data.full_name ?? null, updated_at: stamp };
+    await c.query("UPDATE rows SET data = data || $4::jsonb, versions = $5, seq = nextval('change_seq') WHERE clinic_id = $1 AND tbl = $2 AND id = $3",
+      [cid, 'consents', String(consentId), patch, { ...row.versions, ...Object.fromEntries(Object.keys(patch).map((k) => [k, v])) }]);
+    const audit = (table, recordId, action, diff) => insert('audit_log', { id: crypto.randomUUID(), user_id: null, table_name: table, record_id: recordId, action, diff: JSON.stringify(diff), at: stamp });
+    await audit('attachments', attId, 'CREATE', { kind: 'DOCUMENT', file_name: fileName, size_bytes: bytes.length, via: 'owner page' });
+    await audit('consents', String(consentId), 'UPDATE', { status: [row.data.status, 'RECEIVED'], signed_file_id: attId, via: 'owner page' });
+    await saveFile(c, cid, attId, bytes);
+    const notifications = await createConsentNotifications(c, cid, {
+      consent_id: String(consentId), pet_id: String(pet.id), pet: pet.name, owner: owner.data.full_name ?? '', procedure: row.data.procedure,
+    });
+    await c.query('COMMIT');
+    return { status: 200, body: { ok: true, attachment_id: attId }, notifications };
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
 }
 
 /** A small JSON body (a booking), at most 4 KB. */

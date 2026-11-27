@@ -30,6 +30,24 @@ const PACKAGE_DESK_COLS = new Set(['notes', 'updated_at']);
 const USE_COLS = new Set(['status', 'note', 'updated_at']);
 const OWN_USER_COLS = new Set(['notify_off', 'password_hash', 'must_change_password', 'updated_at']);
 
+// Consent forms (schema v26). A form signed so far has no status: it was signed on screen.
+const CONSENT_PROGRESS_COLS = new Set(['status', 'method', 'on_page', 'pdf_id', 'signed_file_id', 'signed_at', 'signer_name', 'reviewed_by', 'updated_at']);
+const CONSENT_NEXT = { AWAITING: ['AWAITING', 'SIGNED', 'CANCELLED'], RECEIVED: ['RECEIVED', 'SIGNED', 'AWAITING', 'CANCELLED'] };
+function consentChange({ op, cols }, before) {
+  if (op !== 'upsert') return null;
+  if (!before) {
+    const st = cols.status ?? 'SIGNED';
+    if (st === 'SIGNED' && !cols.signature) return 'a consent form is signed on screen, or sent to the owner to sign';
+    if (st !== 'SIGNED' && st !== 'AWAITING') return 'a new consent form is signed, or waits for the owner';
+    return null;
+  }
+  const was = before.status ?? 'SIGNED';
+  if (was === 'SIGNED' || was === 'CANCELLED') return 'signed consent forms cannot be changed';
+  if (!Object.keys(cols).every((c) => CONSENT_PROGRESS_COLS.has(c))) return 'a consent form sent to the owner cannot be reworded: cancel it and make a new one';
+  if ('status' in cols && !CONSENT_NEXT[was]?.includes(cols.status)) return 'that consent form step is not allowed';
+  return null;
+}
+
 /**
  * @param {'ADMIN'|'DOCTOR'|'ASSISTANT'} role
  * @param {{tbl:string, op:'upsert'|'delete', cols:Record<string,unknown>}} change
@@ -71,7 +89,13 @@ export function refuse(role, change, before, userId) {
   // and count corrections are the Admin's.
   if (tbl === 'stock_moves' && before) return 'stock movements are append-only';
   // A signed consent form is a record of what the owner agreed to: it is never changed afterwards. Anyone may record one.
-  if (tbl === 'consents' && before) return 'signed consent forms cannot be changed';
+  // A form sent to the owner to sign at home (schema v26) waits for the signed copy: what it says is fixed (the owner
+  // may already have printed it), only its progress changes — on/off the owner's page, its PDF, the signed copy,
+  // accepted / asked again, cancelled.
+  if (tbl === 'consents') {
+    const refused = consentChange(change, before);
+    if (refused) return refused;
+  }
   if (tbl === 'stock_moves' && role !== 'ADMIN' && (cols.reason !== 'INVOICE' || !cols.invoice_id)) return 'restocking and corrections are for admins';
   if (role === 'ADMIN') return null;
   if (tbl === 'users' && before && change.id === userId && op === 'upsert' && Object.keys(cols).every((c) => OWN_USER_COLS.has(c))) return null;

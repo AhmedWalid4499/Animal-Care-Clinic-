@@ -1315,17 +1315,96 @@ export function knownAnalytes(species: string): { analyte: string; unit: string 
 }
 
 // ---------------------------------------------------------------- consent forms (7 Nov 2026 change request)
-export interface ConsentRow extends Consent { user_name: string | null; pet_name: string; species: Species; owner_name: string; owner_phone: string }
-export function saveConsent(d: { pet_id: string; visit_id?: string | null; procedure: string; anaesthesia: boolean; estimate: number | null; notes: string; signer_name: string; signature: string }, userId: string | null): string {
+// Schema v26 (27 Nov 2026, change request): a form can also be sent to the owner to sign at home — printed, as a PDF,
+// on WhatsApp or on their page — and the signed copy comes back as a file (staff upload it, or the owner does on their
+// page, server/portal.mjs). A form signed on screen, or a signed copy that was checked, never changes again.
+export interface ConsentRow extends Consent {
+  user_name: string | null; reviewed_by_name: string | null; pet_name: string; species: Species; owner_id: string; owner_name: string; owner_phone: string;
+  owner_whatsapp: string | null; owner_portal_token: string | null; owner_status: string; signed_file_name: string | null; signed_file_mime: string | null;
+}
+export interface ConsentInput { pet_id: string; visit_id?: string | null; procedure: string; anaesthesia: boolean; estimate: number | null; notes: string }
+const consentCols = (d: ConsentInput) => ({
+  pet_id: d.pet_id, visit_id: d.visit_id ?? null, procedure: d.procedure.trim(), anaesthesia: d.anaesthesia ? 1 : 0, estimate: d.estimate, notes: blank(d.notes),
+});
+/** Signed on screen, with the owner there. */
+export function saveConsent(d: ConsentInput & { signer_name: string; signature: string }, userId: string | null): string {
+  const at = nowIso();
   return tx(() => insert('consents', {
-    pet_id: d.pet_id, visit_id: d.visit_id ?? null, procedure: d.procedure.trim(), anaesthesia: d.anaesthesia ? 1 : 0, estimate: d.estimate,
-    notes: blank(d.notes), signer_name: d.signer_name.trim(), signature: d.signature, signed_at: nowIso(), user_id: userId,
+    ...consentCols(d), signer_name: d.signer_name.trim(), signature: d.signature, signed_at: at, sent_at: at, user_id: userId, status: 'SIGNED', method: 'SCREEN',
   }));
 }
-const consentSql = `SELECT c.*, u.name user_name, p.name pet_name, p.species, o.full_name owner_name, o.phone owner_phone
-  FROM consents c JOIN pets p ON p.id = c.pet_id JOIN owners o ON o.id = p.owner_id LEFT JOIN users u ON u.id = c.user_id`;
+/** A form to send to the owner to sign at home; waits for the signed copy. */
+export function prepareConsent(d: ConsentInput, userId: string | null): string {
+  return tx(() => insert('consents', { ...consentCols(d), sent_at: nowIso(), user_id: userId, status: 'AWAITING' }));
+}
+const consentSql = `SELECT c.*, u.name user_name, rv.name reviewed_by_name, p.name pet_name, p.species, o.id owner_id, o.full_name owner_name, o.phone owner_phone,
+    o.whatsapp owner_whatsapp, o.portal_token owner_portal_token, o.status owner_status, a.file_name signed_file_name, a.mime_type signed_file_mime
+  FROM consents c JOIN pets p ON p.id = c.pet_id JOIN owners o ON o.id = p.owner_id LEFT JOIN users u ON u.id = c.user_id
+  LEFT JOIN users rv ON rv.id = c.reviewed_by LEFT JOIN attachments a ON a.id = c.signed_file_id`;
 export const getConsent = (id: string) => get<ConsentRow>(`${consentSql} WHERE c.id = ?`, [id]);
-export const petConsents = (petId: string) => all<ConsentRow>(`${consentSql} WHERE c.pet_id = ? ORDER BY c.signed_at DESC`, [petId]);
+/** Waiting ones first (a copy to check before those still out with the owner), then newest first. */
+export const petConsents = (petId: string) => all<ConsentRow>(
+  `${consentSql} WHERE c.pet_id = ? ORDER BY CASE c.status WHEN 'RECEIVED' THEN 0 WHEN 'AWAITING' THEN 1 ELSE 2 END, COALESCE(c.signed_at, c.sent_at, c.created_at) DESC`, [petId]);
+/** Signed copies owners uploaded on their page that nobody has checked yet (dashboard). */
+export const consentsToCheck = () => all<ConsentRow>(`${consentSql} WHERE c.status = 'RECEIVED' ORDER BY c.signed_at`);
+const waiting = (id: string) => {
+  const c = get<Consent>('SELECT * FROM consents WHERE id = ?', [id]);
+  return c && (c.status === 'AWAITING' || c.status === 'RECEIVED') ? c : null;
+};
+/** Show the form on the owner's page (they download it there and upload the signed copy), or take it off. */
+export function setConsentOnPage(id: string, on: boolean) {
+  if (!waiting(id)) return;
+  tx(() => update('consents', id, { on_page: on ? 1 : 0 }));
+}
+/** The blank form as a PDF (desktop app, from the sheet on screen), kept with the pet so the owner's page can offer it. */
+export function saveConsentPdf(id: string, bytes: Uint8Array, userId: string | null) {
+  const c = waiting(id);
+  if (!c || bytes.length > MAX_ATTACHMENT_BYTES) return null;
+  return tx(() => {
+    const att = uuid();
+    insert('attachments', {
+      id: att, pet_id: c.pet_id, visit_id: c.visit_id, kind: 'DOCUMENT', file_url: `db://attachments/${att}`, file_name: `Consent form ${(c.sent_at ?? c.created_at).slice(0, 10)}.pdf`,
+      mime_type: 'application/pdf', size_bytes: bytes.length, uploaded_by: userId,
+    });
+    run('INSERT INTO attachment_blobs (attachment_id, data) VALUES (?, ?)', [att, bytes]);
+    update('consents', id, { pdf_id: att });
+    return att;
+  });
+}
+/** The signed copy came back (WhatsApp, email, paper scanned at the desk): staff upload it and the form is signed. */
+export function attachSignedConsent(id: string, file: { name: string; bytes: Uint8Array; mime: string }, userId: string | null) {
+  const c = waiting(id);
+  if (!c) return null;
+  if (file.bytes.length > MAX_ATTACHMENT_BYTES) throw new Error('FILE_TOO_LARGE');
+  const owner = get<{ full_name: string }>('SELECT o.full_name FROM pets p JOIN owners o ON o.id = p.owner_id WHERE p.id = ?', [c.pet_id]);
+  return tx(() => {
+    const att = uuid();
+    insert('attachments', {
+      id: att, pet_id: c.pet_id, visit_id: c.visit_id, kind: 'DOCUMENT', file_url: `db://attachments/${att}`, file_name: file.name,
+      mime_type: file.mime, size_bytes: file.bytes.length, uploaded_by: userId,
+    });
+    run('INSERT INTO attachment_blobs (attachment_id, data) VALUES (?, ?)', [att, file.bytes]);
+    update('consents', id, { status: 'SIGNED', method: 'UPLOAD', signed_file_id: att, signed_at: nowIso(), signer_name: owner?.full_name ?? null, reviewed_by: userId });
+    return att;
+  });
+}
+/** The owner's upload (from their page) is the signed form: accept it. */
+export function acceptConsent(id: string, userId: string | null) {
+  const c = waiting(id);
+  if (c?.status !== 'RECEIVED') return;
+  tx(() => update('consents', id, { status: 'SIGNED', reviewed_by: userId }));
+}
+/** The owner's upload is unreadable or not signed: back to waiting (the file stays in the pet's Files). */
+export function askConsentAgain(id: string) {
+  const c = waiting(id);
+  if (c?.status !== 'RECEIVED') return;
+  tx(() => update('consents', id, { status: 'AWAITING', method: null, signed_file_id: null, signed_at: null, signer_name: null }));
+}
+/** No longer needed (the procedure was called off, or the wording must change: make a new form). */
+export function cancelConsent(id: string) {
+  if (!waiting(id)) return;
+  tx(() => update('consents', id, { status: 'CANCELLED', on_page: 0 }));
+}
 
 // ---------------------------------------------------------------- in-patient board (7 Nov 2026 change request)
 export interface WardTask extends CareTask { done_by_name: string | null }

@@ -1565,6 +1565,95 @@ await step('lab extranet', async () => {
     `app sign-in with the lab account → ${appLogin}; POST without the page's header → ${csrf}; switched off on laptop A → on the server: ${!!offOnServer.v}; lab doctor's session then → ${ended}`);
 });
 
+await step('consent form sent to sign at home', async () => {
+  // Schema v26 (27 Nov 2026, change request): the form goes to the owner (PDF, WhatsApp, their page); they sign it at
+  // home and upload a photo on their page; the clinic checks it.
+  const pet = (await pool.query("SELECT p.id, p.data FROM rows p JOIN rows o ON o.tbl = 'owners' AND o.id = p.data->>'owner_id' WHERE p.tbl = 'pets' AND NOT p.deleted AND p.data->>'status' = 'ACTIVE' AND o.data->>'portal_token' IS NOT NULL ORDER BY p.data->>'name' = 'Luna' DESC LIMIT 1")).rows[0];
+  const token = (await pool.query("SELECT data->>'portal_token' t FROM rows WHERE tbl = 'owners' AND id = $1", [pet.data.owner_id])).rows[0].t;
+  const admin = (await pool.query("SELECT id FROM rows WHERE tbl = 'users' AND data->>'email' = $1", [ADMIN.email])).rows[0].id;
+  const procedure = 'Dental cleaning (sync test)';
+  await go(A, `#/pets/${pet.id}/consent/new`);
+  await A.win.getByLabel(/الإجراء|Procedure/).first().fill(procedure);
+  const sendFirst = await A.win.locator('.consent-how-send.on').count(); // sending is the default
+  await A.win.locator('.actionbar .btn.primary').click();
+  await A.win.waitForSelector('.consent-panel');
+  await A.win.locator('.consent-on-page').check();
+  await A.win.screenshot({ path: path.join(out, 'A-consent-sent.png'), fullPage: true });
+  const row = await until(async () => (await pool.query("SELECT id, data FROM rows WHERE tbl = 'consents' AND data->>'procedure' = $1 AND (data->>'on_page')::int = 1", [procedure])).rows[0], 15_000);
+  const cid = row.v?.id;
+  // The desktop app makes the PDF for the owner's page; its bytes reach the server.
+  const withPdf = await until(async () => {
+    const d = await (await fetch(`${SERVER}/o/${token}/data`)).json();
+    return (d.consents ?? []).find((c) => c.id === cid && c.pdf);
+  }, 30_000, 500);
+  const pdfRes = withPdf.v ? await fetch(`${SERVER}/o/${token}/f/${withPdf.v.pdf}?download=1`) : null;
+  const pdfOk = !!pdfRes && pdfRes.status === 200 && (await pdfRes.arrayBuffer()).byteLength > 1000;
+  const docRes = await fetch(`${SERVER}/o/${token}/doc/consent/${cid}?lang=en`);
+  const docHtml = await docRes.text();
+
+  // The owner, on their phone: the home page says a form is waiting; they open it and upload a photo of the signed page.
+  const { chromium } = require('playwright');
+  const browser = await chromium.launch();
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const errors = [];
+  phone.on('pageerror', (e) => errors.push(String(e)));
+  await phone.goto(`${SERVER}/o/${token}/doc/consent/${cid}?lang=en`);
+  const photo = path.join(out, 'consent-signed-photo.png');
+  await phone.locator('.sheet').screenshot({ path: photo }); // stands in for the photo of the signed page
+  await phone.goto(`${SERVER}/o/${token}?lang=en`);
+  await phone.waitForSelector('.hello');
+  const homeCard = await phone.locator('a.consent-alert').count();
+  await phone.locator('a.consent-alert').click();
+  await phone.waitForSelector(`#consent-${cid}`);
+  await phone.screenshot({ path: path.join(out, 'owner-page-consent.png'), fullPage: true });
+  const [chooser] = await Promise.all([phone.waitForEvent('filechooser'), phone.locator(`#consent-${cid} .consent-upload`).click()]);
+  await chooser.setFiles(photo);
+  await phone.waitForSelector(`#consent-${cid} .book-msg.ok`, { timeout: 15_000 });
+  await phone.screenshot({ path: path.join(out, 'owner-page-consent-sent.png'), fullPage: true });
+  const back = (await pool.query("SELECT data FROM rows WHERE tbl = 'consents' AND id = $1", [cid])).rows[0].data;
+  const att = back.signed_file_id ? (await pool.query("SELECT data FROM rows WHERE tbl = 'attachments' AND id = $1", [back.signed_file_id])).rows[0]?.data : null;
+  const bytesOnServer = back.signed_file_id ? (await pool.query('SELECT 1 FROM files WHERE id = $1', [back.signed_file_id])).rowCount === 1 : false;
+  const audited = (await pool.query("SELECT 1 FROM rows WHERE tbl = 'audit_log' AND data->>'record_id' = $1 AND data->>'diff' LIKE '%owner page%'", [cid])).rowCount > 0;
+  const told = await until(async () => (await pool.query("SELECT 1 FROM notifications WHERE kind = 'consent' AND user_id = $1 AND data->>'consent_id' = $2", [admin, cid])).rowCount > 0, 10_000);
+  // Someone else's link, or a file that is not a photo / PDF, is refused.
+  const other = (await pool.query("SELECT data->>'portal_token' t FROM rows WHERE tbl = 'owners' AND data->>'portal_token' IS NOT NULL AND data->>'portal_token' <> $1 LIMIT 1", [token])).rows[0]?.t;
+  const post = (tk, data) => fetch(`${SERVER}/o/${tk}/consent/${cid}/upload`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file: { name: 'x', data } }) }).then((r) => r.status);
+  const wrongOwner = other ? await post(other, fs.readFileSync(photo).toString('base64')) : 404;
+  const notAFile = await post(token, Buffer.from('<script>alert(1)</script>').toString('base64'));
+
+  // Laptop A: the dashboard asks someone to check it; the Admin opens it, sees the photo, accepts it.
+  const onA = await until(async () => localState(A.dataDir, `SELECT status FROM consents WHERE id = '${cid}'`)[0]?.[0] === 'RECEIVED', 20_000, 500);
+  await go(A, '#/');
+  const dash = await until(async () => (await A.win.locator('.attn-consents').count()) > 0, 10_000, 300);
+  await go(A, `#/consents/${cid}`);
+  const preview = await until(async () => (await A.win.locator('.consent-copy img').count()) > 0, 15_000, 300);
+  await A.win.screenshot({ path: path.join(out, 'A-consent-received.png'), fullPage: true });
+  await A.win.locator('.accept-consent').click();
+  const signed = await until(async () => (await pool.query("SELECT data FROM rows WHERE tbl = 'consents' AND id = $1 AND data->>'status' = 'SIGNED'", [cid])).rows[0]?.data, 15_000);
+  const ownerSees = await until(async () => ((await (await fetch(`${SERVER}/o/${token}/data`)).json()).consents ?? []).find((c) => c.id === cid && c.status === 'SIGNED' && c.signed_file), 10_000);
+  // Signed: the owner can't send another, and nobody changes it.
+  const lateUpload = await post(token, fs.readFileSync(photo).toString('base64'));
+  const at = nowIso();
+  const reword = await api('/api/sync/push', { changes: [{ tbl: 'consents', id: cid, op: 'upsert', at, cols: { procedure: 'Something else', updated_at: at } }] }, tokens.admin);
+  const reopen = await api('/api/sync/push', { changes: [{ tbl: 'consents', id: cid, op: 'upsert', at, cols: { status: 'AWAITING', updated_at: at } }] }, tokens.admin);
+  // A form still waiting can't be reworded, and only the server marks one as received from the owner.
+  const wid = crypto.randomUUID();
+  const waitingForm = await api('/api/sync/push', { changes: [{ tbl: 'consents', id: wid, op: 'upsert', at, cols: { id: wid, pet_id: pet.id, procedure: 'X-ray under sedation', anaesthesia: 1, status: 'AWAITING', sent_at: at, on_page: 0, created_at: at, updated_at: at } }] }, tokens.desk);
+  const rewordWaiting = await api('/api/sync/push', { changes: [{ tbl: 'consents', id: wid, op: 'upsert', at, cols: { procedure: 'Spay', updated_at: at } }] }, tokens.desk);
+  const fakeReceived = await api('/api/sync/push', { changes: [{ tbl: 'consents', id: wid, op: 'upsert', at, cols: { status: 'RECEIVED', updated_at: at } }] }, tokens.desk);
+  const deskCancel = await api('/api/sync/push', { changes: [{ tbl: 'consents', id: wid, op: 'upsert', at, cols: { status: 'CANCELLED', updated_at: at } }] }, tokens.desk);
+  const unsignedSigned = await api('/api/sync/push', { changes: [{ tbl: 'consents', id: crypto.randomUUID(), op: 'upsert', at, cols: { pet_id: pet.id, procedure: 'Y', status: 'SIGNED', created_at: at, updated_at: at } }] }, tokens.desk);
+  await browser.close();
+  check('consent-sent-home', 'A consent form is sent to the owner instead of signed at the clinic: on their page they download it (PDF), upload a photo of the signed page, and the clinic is told, checks it and accepts it',
+    sendFirst === 1 && !!cid && pdfOk && docRes.status === 200 && docHtml.includes(procedure) && homeCard === 1 && back.status === 'RECEIVED' && back.method === 'OWNER_PAGE' &&
+      att?.kind === 'DOCUMENT' && bytesOnServer && audited && !!told.v && !!onA.v && !!dash.v && !!preview.v && signed.v?.reviewed_by === admin && !!ownerSees.v && errors.length === 0,
+    `"send it" is the default: ${sendFirst === 1}; on the owner's page: ${!!cid}; PDF made on laptop A and downloadable: ${pdfOk}; form as a page: ${docRes.status}, has the procedure: ${docHtml.includes(procedure)}; home card: ${homeCard}; after the upload: ${back.status} via ${back.method}, file ${att?.kind} (bytes on server: ${bytesOnServer}), audit: ${audited}; Admin told: ${!!told.v}; on laptop A: ${!!onA.v}, on the dashboard: ${!!dash.v}, photo shown: ${!!preview.v}; accepted by the Admin: ${signed.v?.status ?? 'no'}; owner sees it signed with their copy: ${!!ownerSees.v}; page errors: ${errors.length}`);
+  check('consent-sent-home-locked', 'Only that owner can send it back, only a photo or PDF, only while it waits; a sent form is never reworded, only the server marks one received, and a signed one never changes',
+    wrongOwner === 404 && notAFile === 400 && lateUpload === 404 && reword.body.rejected?.length === 1 && reopen.body.rejected?.length === 1 &&
+      waitingForm.body.rejected?.length === 0 && rewordWaiting.body.rejected?.length === 1 && fakeReceived.body.rejected?.length === 1 && deskCancel.body.rejected?.length === 0 && unsignedSigned.body.rejected?.length === 1,
+    `another owner's link → ${wrongOwner}; a file that isn't a photo or PDF → ${notAFile}; after it was accepted → ${lateUpload}; rewording the signed form: ${reword.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; reopening it: ${reopen.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; assistant sends a form: ${waitingForm.body.rejected?.[0]?.reason ?? 'accepted'}; rewording it while it waits: ${rewordWaiting.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; a device marking it received: ${fakeReceived.body.rejected?.[0]?.reason ?? 'ACCEPTED'}; cancelling it: ${deskCancel.body.rejected?.[0]?.reason ?? 'accepted'}; "signed" without a signature: ${unsignedSigned.body.rejected?.[0]?.reason ?? 'ACCEPTED'}`);
+});
+
 await step('phase2: both laptops offline', async () => {
   const owners = (await pool.query("SELECT id, data FROM rows WHERE tbl = 'owners' AND NOT deleted AND data->>'status' = 'ACTIVE' AND data->>'full_name' NOT LIKE 'Load Owner%' ORDER BY id LIMIT 2")).rows;
   const [X, Y] = owners;

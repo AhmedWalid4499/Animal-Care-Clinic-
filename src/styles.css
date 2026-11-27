@@ -621,6 +621,21 @@ table.labs tr.flag td b { color: var(--bad); }
 .consent-sheet .consent-sign { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-top: 10px; font-size: 9pt; }
 .consent-sheet .consent-sign img { max-height: 22mm; max-width: 65mm; display: block; }
 .consent-sheet .consent-sign .line { border-bottom: 1px solid #111; width: 65mm; margin-bottom: 3px; }
+/* Sent to sign at home (schema v26): blank lines for the owner's name, signature and date, and how to send it back. */
+.consent-sheet .consent-paper { display: grid; grid-template-columns: 1.2fr 1.4fr .8fr; gap: 10px 14px; margin-top: 12px; font-size: 8.5pt; align-items: end; }
+.consent-sheet .cp-field { display: flex; flex-direction: column; gap: 3px; }
+.consent-sheet .cp-line { display: block; border-bottom: 1px solid #111; height: 9mm; }
+.consent-sheet .cp-line.tall { height: 16mm; }
+.consent-sheet .cp-label span { display: block; }
+.consent-sheet .cp-label span[dir='rtl'] { text-align: right; }
+.consent-sheet .consent-return { margin: 8px 0 0; font-size: 8.5pt; color: #333; }
+.consent-how { margin: 16px 0 8px; }
+.consent-how .seg button { padding: 8px 14px; font-size: 14px; }
+.consent-panel { margin-bottom: 16px; }
+.consent-panel header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
+.consent-panel .row { margin-top: 8px; }
+.consent-panel label.check { margin-top: 10px; }
+.consent-copy img { display: block; max-width: 100%; max-height: 360px; margin-top: 10px; border: 1px solid var(--rule); border-radius: var(--radius); }
 
 /* In-patient board (7 Nov 2026) */
 .ward-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
